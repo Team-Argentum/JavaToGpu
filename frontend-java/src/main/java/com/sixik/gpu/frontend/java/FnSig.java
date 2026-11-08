@@ -45,6 +45,10 @@ record FnSig(int retKind, int[] paramKinds, int[] elemKinds, int[] spaces, TypeM
                 if (elems[i] == JavaTypes.K_AGG) {
                     aggs[i] = comp;
                 }
+            } else if (k == JavaTypes.K_PTR) {
+                Aggregates.Ptr ptr = Aggregates.pointer(t);
+                elems[i] = ptr.elemKind();
+                spaces[i] = ptr.space();
             } else {
                 elems[i] = -1;
                 spaces[i] = -1;

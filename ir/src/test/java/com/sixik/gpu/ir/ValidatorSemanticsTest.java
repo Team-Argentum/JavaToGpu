@@ -533,6 +533,42 @@ class ValidatorSemanticsTest {
     }
 
     @Test
+    void access_pointerStoredInLocalMarksBaseParameterConservatively() {
+        IrBuilder b = new IrBuilder();
+        int pg = b.ptr(AddressSpace.GLOBAL, Types.F32);
+        int pc = b.ptr(AddressSpace.CONSTANT, Types.F32);
+        int g = b.array(AddressSpace.GLOBAL, Types.F32);
+        int c = b.array(AddressSpace.CONSTANT, Types.F32);
+        int other = b.array(AddressSpace.GLOBAL, Types.F32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, g, c, other);
+        int p = b.declareLocal(pg);
+        int q = b.declareLocal(pc);
+        b.endFunction(b.block(
+                b.localDecl(p, b.elemPtr(b.param(0), b.constI32(4))),
+                b.localDecl(q, b.elemPtr(b.param(1), b.constI32(1))),
+                b.store(b.elemPtr(b.param(2), b.constI32(0)), b.constF32(1))));
+        Validator.Report r = Validator.validate(b.build());
+        assertFalse(r.hasErrors(), r.diagnostics().toString());
+        assertArrayEquals(new int[]{Validator.ACCESS_READ | Validator.ACCESS_WRITE, Validator.ACCESS_READ,
+                Validator.ACCESS_WRITE}, r.functions()[0].paramAccess(),
+                "через локаль-указатель чтение/запись не видны, режим занижать нельзя; constant только читается");
+    }
+
+    @Test
+    void access_pointerReturnedFromFunctionMarksBaseParameter() {
+        IrBuilder b = new IrBuilder();
+        int pg = b.ptr(AddressSpace.GLOBAL, Types.F32);
+        int g = b.array(AddressSpace.GLOBAL, Types.F32);
+        b.beginFunction(IrModule.DEVICE, pg, g);
+        b.endFunction(b.block(b.returnStmt(b.elemPtr(b.param(0), b.constI32(2)))));
+        b.beginFunction(IrModule.KERNEL, Types.VOID, g);
+        b.endFunction(b.block());
+        Validator.Report r = Validator.validate(b.build());
+        assertFalse(r.hasErrors(), r.diagnostics().toString());
+        assertArrayEquals(new int[]{Validator.ACCESS_READ | Validator.ACCESS_WRITE}, r.functions()[0].paramAccess());
+    }
+
+    @Test
     void access_onlyReadParameter() {
         IrModule m = kernel(b -> new int[]{b.array(AddressSpace.GLOBAL, Types.F32), b.array(AddressSpace.GLOBAL, Types.F32)},
                 b -> {

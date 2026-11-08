@@ -401,7 +401,19 @@ class EmitterTest {
         Result<Artifact> r = OpenClEmitter.emit(rich, Target.GENERIC);
         assertFalse(r.isOk());
         assertTrue(r.diagnostics().stream().allMatch(d -> d.code().equals("CG-U01")), r.diagnostics().toString());
-        assertTrue(r.diagnostics().size() > 3, "все нарушения за один проход");
+        assertTrue(r.diagnostics().toString().contains("M10"), "остался только local memory: " + r.diagnostics());
+    }
+
+    @Test
+    void everyViolationIsReportedInOnePass() {
+        IrBuilder b = new IrBuilder();
+        int arr = b.array(AddressSpace.GLOBAL, Types.I32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr, b.ptr(AddressSpace.GLOBAL, Types.I32));
+        int la = b.declareLocal(b.array(AddressSpace.LOCAL, Types.I32));
+        b.endFunction(b.block(b.localArrayDecl(la, b.constI32(8)), b.barrier(1)));
+        Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
+        assertTrue(r.diagnostics().stream().allMatch(d -> d.code().equals("CG-U01")), r.diagnostics().toString());
+        assertTrue(r.diagnostics().size() >= 3, "указатель-параметр, local_array_decl и barrier: " + r.diagnostics());
     }
 
     @Test
@@ -418,16 +430,57 @@ class EmitterTest {
     }
 
     @Test
-    void pointersToLocalsAreMilestoneM9() {
+    void pointerToLocalIsAddressOfAndAccessThroughItNamesTheLocalDirectly() {
         IrBuilder b = new IrBuilder();
+        int pf = b.ptr(AddressSpace.PRIVATE, Types.F32);
+        int inc = b.beginFunction(IrModule.DEVICE, Types.VOID, pf);
+        b.nameFunction("inc");
+        b.nameParams("p");
+        b.endFunction(b.block(b.store(b.param(0), b.binary(Op.ADD, b.load(b.param(0)), b.constF32(1)))));
         int arr = b.array(AddressSpace.GLOBAL, Types.F32);
         b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
         int l = b.declareLocal(Types.F32);
-        int p = b.declareLocal(b.ptr(AddressSpace.PRIVATE, Types.F32));
-        b.endFunction(b.block(b.localDecl(l, b.constF32(1f)), b.localDecl(p, b.localAddr(l))));
+        b.nameLocal(l, "x");
+        b.endFunction(b.block(b.localDecl(l, b.constF32(1f)), b.exprStmt(b.call(inc, b.localAddr(l))),
+                b.store(b.elemPtr(b.param(0), b.constI32(0)), b.load(b.localAddr(l)))));
+        Result<Artifact> r = OpenClEmitter.emit(b.build(), 1, Target.GENERIC, EmitOptions.DEBUG);
+        assertTrue(r.isOk(), r.diagnostics().toString());
+        String src = r.value().source();
+        assertTrue(src.contains("void inc(__private float* p)"), src);
+        assertTrue(src.contains("*p = *p + 1.0f;"), src);
+        assertTrue(src.contains("inc(&x);"), src);
+        assertTrue(src.contains("[0] = x;"), "load(local_addr(x)) печатается как x, без '*&': " + src);
+    }
+
+    @Test
+    void fieldPointerOfDereferencedPointerIsParenthesized() {
+        IrBuilder b = new IrBuilder();
+        int s = b.struct(new int[]{Types.F32, Types.I32}, 0);
+        b.nameStruct(s, "Cell", "w", "tag");
+        int ps = b.ptr(AddressSpace.GLOBAL, s);
+        int set = b.beginFunction(IrModule.DEVICE, Types.VOID, ps);
+        b.nameFunction("set");
+        b.nameParams("c");
+        b.endFunction(b.block(b.store(b.fieldPtr(b.param(0), 1), b.constI32(5))));
+        int arr = b.array(AddressSpace.GLOBAL, s);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        b.endFunction(b.block(b.exprStmt(b.call(set, b.elemPtr(b.param(0), b.constI32(2)))),
+                b.store(b.fieldPtr(b.elemPtr(b.param(0), b.constI32(1)), 0), b.constF32(2))));
+        Result<Artifact> r = OpenClEmitter.emit(b.build(), 1, Target.GENERIC, EmitOptions.DEBUG);
+        assertTrue(r.isOk(), r.diagnostics().toString());
+        String src = r.value().source();
+        assertTrue(src.contains("(*c).tag = 5;"), "*c.tag означало бы *(c.tag): " + src);
+        assertTrue(src.contains("[1].w = 2.0f;"), src);
+    }
+
+    @Test
+    void pointerInKernelParametersIsNotSupported() {
+        IrBuilder b = new IrBuilder();
+        b.beginFunction(IrModule.KERNEL, Types.VOID, b.ptr(AddressSpace.GLOBAL, Types.F32));
+        b.endFunction(b.block());
         Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
         assertEquals("CG-U01", code(r));
-        assertTrue(r.diagnostics().toString().contains("M9"), r.diagnostics().toString());
+        assertTrue(r.diagnostics().toString().contains("используйте массив"), r.diagnostics().toString());
     }
 
     @Test

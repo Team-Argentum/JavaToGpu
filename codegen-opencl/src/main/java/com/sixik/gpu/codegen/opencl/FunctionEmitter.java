@@ -504,6 +504,8 @@ final class FunctionEmitter {
                 return new Ex(lay.with(helpers, t, m.b(n)) + "(" + expr(m.a(n)).s() + ", " + expr(m.c(n)).s() + ")", P_ATOM);
             case Op.ELEM_PTR:
                 return pointer(n);
+            case Op.LOCAL_ADDR, Op.FIELD_PTR:
+                return new Ex("&" + lvalue(n), P_UNARY);
             case Op.LOAD:
                 return load(n);
             case Op.ARRAY_LEN:
@@ -830,12 +832,26 @@ final class FunctionEmitter {
         return new Ex(lvalue(m.a(n)), P_ATOM);
     }
 
-    /** Обращение по указателю как lvalue C: {@code a[i]} для {@code elem_ptr}, иначе {@code *p}. */
+    /**
+     * Обращение по указателю как lvalue C: {@code a[i]} для {@code elem_ptr}, имя локали для {@code local_addr},
+     * {@code s.f} для {@code field_ptr}, иначе {@code *p}. Так {@code &} и {@code *} не печатаются парой подряд:
+     * {@code load(local_addr(x))} это просто {@code x}.
+     */
     private String lvalue(int ptr) {
-        if (m.op(ptr) == Op.ELEM_PTR) {
-            return indexBase(m.a(ptr)) + "[" + expr(m.b(ptr)).s() + "]";
+        switch (m.op(ptr)) {
+            case Op.ELEM_PTR:
+                return indexBase(m.a(ptr)) + "[" + expr(m.b(ptr)).s() + "]";
+            case Op.LOCAL_ADDR:
+                return localNames[m.a(ptr)];
+            case Op.FIELD_PTR: {
+                String base = lvalue(m.a(ptr));
+                // у унарного '*' приоритет ниже, чем у '.', поэтому *p.f без скобок означало бы *(p.f)
+                String owner = base.startsWith("*") ? "(" + base + ")" : base;
+                return owner + "." + lay.field(Types.elem(m, m.type(m.a(ptr))), m.b(ptr));
+            }
+            default:
+                return "*" + wrap(expr(ptr), P_UNARY);
         }
-        return "*" + wrap(expr(ptr), P_UNARY);
     }
 
     // ---- вызовы ------------------------------------------------------------------------------

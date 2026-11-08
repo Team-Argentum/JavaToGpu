@@ -152,11 +152,47 @@ final class Aggregates {
         return vector(t) != null || isStruct(t);
     }
 
-    /** @param t тип Java @return {@code true} для ссылок {@code FloatPtr, IntPtr ...} (pointer-типы, веха M9) */
-    static boolean isPointer(TypeMirror t) {
+    private static final Pattern POINTER = Pattern.compile("(Global|Local|Constant)?(Float|Double|Int|Long)Ptr");
+
+    /**
+     * Описание pointer-типа (M9).
+     *
+     * @param elemKind вид Java скалярного pointee ({@code K_FLOAT, K_DOUBLE, K_INT, K_LONG})
+     * @param space    пространство адресов указателя: у {@code FloatPtr} и других ссылок - {@code private}
+     * @param ref      {@code true} для ссылки на скаляр ({@code FloatPtr ...}: поле {@code value}, создаётся через
+     *                 {@code new}); {@code false} для явного указателя ({@code GlobalFloatPtr ...}: {@code of/get/set/plus})
+     */
+    record Ptr(int elemKind, int space, boolean ref) {
+    }
+
+    /**
+     * @param t тип Java
+     * @return описание pointer-типа {@code api} либо {@code null}, если тип не указатель
+     */
+    static Ptr pointer(TypeMirror t) {
         TypeElement te = element(t);
-        return te != null && te.getQualifiedName().toString().startsWith(VECTOR_PACKAGE)
-                && te.getSimpleName().toString().endsWith("Ptr");
+        if (te == null || !te.getQualifiedName().toString().startsWith(VECTOR_PACKAGE)) {
+            return null;
+        }
+        Matcher m = POINTER.matcher(te.getSimpleName());
+        if (!m.matches()) {
+            return null;
+        }
+        int kind = switch (m.group(2)) {
+            case "Float" -> JavaTypes.K_FLOAT;
+            case "Double" -> JavaTypes.K_DOUBLE;
+            case "Int" -> JavaTypes.K_INT;
+            default -> JavaTypes.K_LONG;
+        };
+        if (m.group(1) == null) {
+            return new Ptr(kind, com.sixik.gpu.ir.AddressSpace.PRIVATE, true);
+        }
+        int space = switch (m.group(1)) {
+            case "Global" -> com.sixik.gpu.ir.AddressSpace.GLOBAL;
+            case "Local" -> com.sixik.gpu.ir.AddressSpace.LOCAL;
+            default -> com.sixik.gpu.ir.AddressSpace.CONSTANT;
+        };
+        return new Ptr(kind, space, false);
     }
 
     /**

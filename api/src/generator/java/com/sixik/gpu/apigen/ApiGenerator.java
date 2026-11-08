@@ -78,6 +78,10 @@ public final class ApiGenerator {
         }
         for (String s : sorted(def.pointerScalars())) {
             files.put(PKG_TYPES.replace('.', '/') + "/" + SCALARS.get(s).cls() + "Ptr.java", genPointer(s));
+            for (Space space : Space.values()) {
+                files.put(PKG_TYPES.replace('.', '/') + "/" + space.cls + SCALARS.get(s).cls() + "Ptr.java",
+                        genSpacePointer(s, space));
+            }
         }
         return new Output(files, List.copyOf(skipped));
     }
@@ -304,6 +308,69 @@ public final class ApiGenerator {
                 + "    /**\n     * Создаёт ссылку с начальным значением.\n     *\n     * @param value начальное значение\n     */\n"
                 + "    public " + name + "(" + sc.java() + " value) {\n        this.value = value;\n    }\n\n"
                 + "    @Override\n    public String toString() {\n        return \"" + name + "(\" + value + \")\";\n    }\n}\n";
+    }
+
+    /** Пространство адресов явного указателя: часть имени класса, слово OpenCL C и допустимость записи. */
+    private enum Space {
+        GLOBAL("Global", "global", true, "память устройства, к которой имеют доступ все work-item'ы"),
+        LOCAL("Local", "local", true, "локальная память work-group"),
+        CONSTANT("Constant", "constant", false, "константная память (только чтение)");
+
+        final String cls;
+        final String cl;
+        final boolean writable;
+        final String what;
+
+        Space(String cls, String cl, boolean writable, String what) {
+            this.cls = cls;
+            this.cl = cl;
+            this.writable = writable;
+            this.what = what;
+        }
+    }
+
+    /**
+     * Явный указатель с арифметикой: {@code GlobalFloatPtr}, {@code LocalIntPtr}, {@code ConstantDoublePtr} ... На
+     * устройстве это {@code __global float*} и т.п.; на JVM - массив и смещение, поэтому результат совпадает.
+     */
+    private static String genSpacePointer(String scalar, Space space) {
+        Scalar sc = SCALARS.get(scalar);
+        String name = space.cls + sc.cls() + "Ptr";
+        String t = sc.java();
+        StringBuilder sb = new StringBuilder(HEADER);
+        sb.append("package ").append(PKG_TYPES).append(";\n\n");
+        sb.append("/**\n * Указатель на {@code ").append(t).append("} в пространстве {@code ").append(space.cl)
+                .append("}: ").append(space.what).append(".\n *\n");
+        sb.append(" * <p>OpenCL: {@code __").append(space.cl).append(' ').append(t).append("*}. Указатель - значение (неизменяемое): ")
+                .append("{@link #plus} возвращает новый указатель, исходный не меняется. Длины у указателя нет, ")
+                .append("выход за границы массива на устройстве не определён, а на JVM даёт исключение массива ")
+                .append("(REWORK_ARCHITECTURE.md, 5.5, 5.21). Создаётся только из массива соответствующего пространства ")
+                .append("адресов внутри {@code @Kernel}/{@code @DeviceFunction}.</p>\n */\n");
+        sb.append("public final class ").append(name).append(" {\n\n");
+        sb.append("    private final ").append(t).append("[] array;\n");
+        sb.append("    private final int offset;\n\n");
+        sb.append("    private ").append(name).append('(').append(t).append("[] array, int offset) {\n")
+                .append("        this.array = array;\n        this.offset = offset;\n    }\n\n");
+        sb.append("    /**\n     * Указатель на элемент массива.\n     *\n     * @param array  массив пространства {@code ")
+                .append(space.cl).append("}\n     * @param offset индекс элемента, на который указывает результат\n")
+                .append("     * @return указатель {@code &array[offset]}\n     */\n");
+        sb.append("    public static ").append(name).append(" of(").append(t).append("[] array, int offset) {\n")
+                .append("        return new ").append(name).append("(array, offset);\n    }\n\n");
+        sb.append("    /**\n     * Читает элемент относительно указателя.\n     *\n     * @param i смещение в элементах\n")
+                .append("     * @return {@code p[i]}\n     */\n");
+        sb.append("    public ").append(t).append(" get(int i) {\n        return array[offset + i];\n    }\n\n");
+        if (space.writable) {
+            sb.append("    /**\n     * Записывает элемент относительно указателя.\n     *\n     * @param i     смещение в элементах\n")
+                    .append("     * @param value записываемое значение\n     */\n");
+            sb.append("    public void set(int i, ").append(t).append(" value) {\n        array[offset + i] = value;\n    }\n\n");
+        }
+        sb.append("    /**\n     * Сдвигает указатель.\n     *\n     * @param n число элементов\n")
+                .append("     * @return указатель {@code p + n}\n     */\n");
+        sb.append("    public ").append(name).append(" plus(int n) {\n        return new ").append(name)
+                .append("(array, offset + n);\n    }\n\n");
+        sb.append("    @Override\n    public String toString() {\n        return \"").append(name)
+                .append("(+\" + offset + \")\";\n    }\n}\n");
+        return sb.toString();
     }
 
     // ------------------------------------------------------------------------------------------------

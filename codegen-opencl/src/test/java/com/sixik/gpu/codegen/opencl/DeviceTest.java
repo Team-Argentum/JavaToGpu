@@ -326,6 +326,15 @@ class DeviceTest {
         }
     }
 
+    @Test
+    void pointersToLocalsGlobalsConstantsAndFields() {
+        for (float x : new float[]{1.5f, -3f, 0f}) {
+            check("pointers(" + x + ")", HandModules.pointers(), NdRange.of1D(1), () -> new Object[]{
+                    new float[]{x, 2f, 3f, 4f, 5f}, new float[]{10f, 20f, 30f, 40f},
+                    new float[HandModules.POINTERS_OUT]}, 0);
+        }
+    }
+
     // =============================================================================================
     // драйвер принимает любой сгенерированный текст
     // =============================================================================================

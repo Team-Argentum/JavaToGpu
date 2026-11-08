@@ -6,6 +6,7 @@ import com.sixik.gpu.codegen.opencl.KernelArg;
 import com.sixik.gpu.codegen.opencl.OpenClEmitter;
 import com.sixik.gpu.codegen.opencl.Target;
 import com.sixik.gpu.ir.AbiLayout;
+import com.sixik.gpu.ir.AddressSpace;
 import com.sixik.gpu.ir.Diagnostic;
 import com.sixik.gpu.ir.HostObjects;
 import com.sixik.gpu.ir.Features;
@@ -575,6 +576,9 @@ public final class GpuContext implements AutoCloseable {
         List<Diagnostic> problems = new ArrayList<>();
         long[] local = checkLaunch(kernel, config, problems);
         checkArguments(kernel, actual, problems);
+        if (problems.isEmpty()) {
+            checkConstantArguments(kernel, actual, problems);
+        }
         if (!problems.isEmpty()) {
             return Result.failed(problems);
         }
@@ -676,6 +680,43 @@ public final class GpuContext implements AutoCloseable {
                 out.add(error("RT-A02", "аргумент " + i + ": скалярному параметру t" + t + " не подходит "
                         + Marshal.describe(a)));
             }
+        }
+    }
+
+    /**
+     * Массивы в {@code __constant} (параметры {@code @Global(constant = true)}) ограничены устройством: каждый - не больше
+     * {@code CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE} (по спецификации не меньше 64 КиБ), а число таких аргументов - не
+     * больше {@code CL_DEVICE_MAX_CONSTANT_ARGS}. Драйвер при нарушении отвечает невнятным
+     * {@code CL_INVALID_KERNEL_ARGS}/{@code CL_OUT_OF_RESOURCES} уже при постановке в очередь, поэтому нарушение
+     * проверяется до загрузки данных. Вызывается после {@link #checkArguments}: типы аргументов уже подходят.
+     *
+     * @param k    ядро
+     * @param args проверенные аргументы
+     * @param out  сюда добавляется {@code RT-A04} на каждое нарушение
+     */
+    private void checkConstantArguments(CompiledKernel k, Object[] args, List<Diagnostic> out) {
+        IrModule m = k.module();
+        int f = k.function();
+        int count = 0;
+        for (int i = 0; i < m.fParamCount(f); i++) {
+            int t = m.fParamType(f, i);
+            if (m.typeKind(t) != Types.KIND_ARRAY || Types.space(m, t) != AddressSpace.CONSTANT) {
+                continue;
+            }
+            count++;
+            int elem = Types.elem(m, t);
+            long bytes = args[i] instanceof GpuBuffer b ? b.byteSize()
+                    : HostObjects.isAggregate(m, elem) ? Marshal.byteSize(m, elem, (Object[]) args[i])
+                    : Marshal.byteSize(args[i]);
+            if (bytes > device.maxConstantBuffer()) {
+                out.add(error("RT-A04", "аргумент " + i + ": массив @Global(constant = true) занимает " + bytes
+                        + " байт, а устройство допускает в __constant не более " + device.maxConstantBuffer()
+                        + " (CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE); передайте его как обычный @Global-массив"));
+            }
+        }
+        if (count > device.maxConstantArgs()) {
+            out.add(error("RT-A04", "ядро получает " + count + " аргументов __constant, а устройство допускает не более "
+                    + device.maxConstantArgs() + " (CL_DEVICE_MAX_CONSTANT_ARGS)"));
         }
     }
 

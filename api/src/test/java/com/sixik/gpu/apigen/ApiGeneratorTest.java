@@ -201,6 +201,22 @@ class ApiGeneratorTest {
     }
 
     @Test
+    void spacePointerSource() {
+        var files = ApiGenerator.generate(BuiltinsDef.parse(HEAD + "1 a pure i32 ()\ndoc d\njvm = 1\n")).files();
+        String g = files.get("com/sixik/gpu/api/types/GlobalFloatPtr.java");
+        assertTrue(g.contains("public final class GlobalFloatPtr {"), g);
+        assertTrue(g.contains("public static GlobalFloatPtr of(float[] array, int offset)"), g);
+        assertTrue(g.contains("public float get(int i)"), g);
+        assertTrue(g.contains("public void set(int i, float value)"), g);
+        assertTrue(g.contains("public GlobalFloatPtr plus(int n)"), g);
+        String c = files.get("com/sixik/gpu/api/types/ConstantFloatPtr.java");
+        assertTrue(c.contains("public float get(int i)"), c);
+        assertFalse(c.contains(" set("), "в constant писать нельзя: метода записи нет");
+        assertTrue(files.containsKey("com/sixik/gpu/api/types/LocalFloatPtr.java"));
+        assertFalse(files.containsKey("com/sixik/gpu/api/types/GlobalDoublePtr.java"), "pointers только f32");
+    }
+
+    @Test
     void generationIsDeterministic() {
         String text = generic("jvm f32 = a\njvm f64 = a\n");
         assertEquals(ApiGenerator.generate(BuiltinsDef.parse(text)).files(),
@@ -213,9 +229,9 @@ class ApiGeneratorTest {
     void realTableGeneratesFullApi() throws IOException {
         var def = BuiltinsDef.parse(Files.readString(Path.of(System.getProperty("builtins.def")), StandardCharsets.UTF_8));
         var out = ApiGenerator.generate(def);
-        assertEquals(List.of("atomicAdd"), out.skipped(), "до M9 Java-представления нет только у builtin с указателями");
-        // Gpu + 4 скаляра x 5 размеров векторов + 4 класса-ссылки
-        assertEquals(1 + 20 + 4, out.files().size());
+        assertEquals(List.of("atomicAdd"), out.skipped(), "до M10 Java-представления нет только у atomic-builtin");
+        // Gpu + 4 скаляра x 5 размеров векторов + 4 класса-ссылки + 4 скаляра x 3 пространства указателей
+        assertEquals(1 + 20 + 4 + 12, out.files().size());
         assertEquals(15, def.builtins().size());
         for (var e : out.files().entrySet()) {
             assertTrue(e.getValue().startsWith("// СГЕНЕРИРОВАНО"), e.getKey());

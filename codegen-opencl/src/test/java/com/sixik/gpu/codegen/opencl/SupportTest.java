@@ -12,6 +12,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Достижимость функций и проверка поддержанного подмножества. */
@@ -55,13 +56,30 @@ class SupportTest {
         IrModule m = Fixtures.rich();
         int kernel = m.functionCount() - 1;
         List<Diagnostic> d = Support.check(m, kernel, Support.reachable(m, kernel));
-        assertTrue(d.size() > 3);
+        assertFalse(d.isEmpty());
         for (Diagnostic x : d) {
             assertEquals("CG-U01", x.code());
             assertTrue(x.isError());
             assertTrue(x.function() >= 0);
         }
         assertTrue(d.stream().anyMatch(x -> x.node() >= 0), "есть привязка к узлу");
-        assertTrue(d.stream().anyMatch(x -> x.node() < 0), "и к сигнатуре функции (pointer-параметр)");
+    }
+
+    @Test
+    void checkReportsSignatureProblemsWithoutNode() {
+        IrBuilder b = new IrBuilder();
+        b.beginFunction(IrModule.KERNEL, Types.VOID, b.ptr(AddressSpace.GLOBAL, Types.I32));
+        b.endFunction(b.block());
+        IrModule m = b.build();
+        List<Diagnostic> d = Support.check(m, 0, Support.reachable(m, 0));
+        assertEquals(1, d.size(), d.toString());
+        assertEquals("CG-U01", d.get(0).code());
+        assertTrue(d.get(0).node() < 0, "привязка к сигнатуре функции (указатель-параметр ядра)");
+    }
+
+    @Test
+    void checkAcceptsPointersInDeviceFunctions() {
+        IrModule m = HandModules.pointers();
+        assertTrue(Support.check(m, m.functionCount() - 1, Support.reachable(m, m.functionCount() - 1)).isEmpty());
     }
 }

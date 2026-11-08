@@ -267,9 +267,7 @@ class GpuContextTest {
         IrBuilder b = new IrBuilder();
         int arr = b.array(AddressSpace.GLOBAL, Types.F32);
         b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
-        int l = b.declareLocal(Types.F32);
-        int p = b.declareLocal(b.ptr(AddressSpace.PRIVATE, Types.F32));
-        b.endFunction(b.block(b.localDecl(l, b.constF32(1f)), b.localDecl(p, b.localAddr(l))));
+        b.endFunction(b.block(b.barrier(1))); // barrier - веха M10: кодген отвечает CG-U01
         try (GpuContext ctx = open(FakeDeviceApi.withGpu())) {
             assertEquals("CG-U01", code(ctx.compile(b.build())));
         }

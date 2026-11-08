@@ -33,6 +33,10 @@ public interface DeviceApi extends AutoCloseable {
     int DEVICE_MAX_WORK_GROUP_SIZE = 0x1004;
     /** {@code CL_DEVICE_MAX_MEM_ALLOC_SIZE}. */
     int DEVICE_MAX_MEM_ALLOC_SIZE = 0x1010;
+    /** {@code CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE}. */
+    int DEVICE_MAX_CONSTANT_BUFFER_SIZE = 0x1020;
+    /** {@code CL_DEVICE_MAX_CONSTANT_ARGS}. */
+    int DEVICE_MAX_CONSTANT_ARGS = 0x1021;
     /** {@code CL_DEVICE_GLOBAL_MEM_SIZE}. */
     int DEVICE_GLOBAL_MEM_SIZE = 0x101F;
     /** {@code CL_DEVICE_LOCAL_MEM_SIZE}. */

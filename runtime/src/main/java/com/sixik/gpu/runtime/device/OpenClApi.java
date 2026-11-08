@@ -204,7 +204,7 @@ public final class OpenClApi implements DeviceApi {
     }
 
     private static boolean isFourByte(int param) {
-        return param == DEVICE_MAX_COMPUTE_UNITS;
+        return param == DEVICE_MAX_COMPUTE_UNITS || param == DEVICE_MAX_CONSTANT_ARGS;
     }
 
     // ---- контекст и очередь ----------------------------------------------------------------------

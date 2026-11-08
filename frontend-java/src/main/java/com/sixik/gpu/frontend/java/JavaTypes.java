@@ -40,6 +40,11 @@ final class JavaTypes {
     static final int K_OTHER = 10;
     /** Вид: значение-агрегат - вектор {@code api.types.*} либо класс {@code @Struct} ({@link Aggregates}). */
     static final int K_AGG = 11;
+    /**
+     * Вид: указатель {@code api.types.*Ptr} ({@link Aggregates#pointer}). Значение указателя в IR - {@code Ptr<space, T>};
+     * виды pointee и пространство хранятся рядом со значением ({@code elemKind, space}).
+     */
+    static final int K_PTR = 12;
 
     private JavaTypes() {
     }
@@ -60,7 +65,7 @@ final class JavaTypes {
             case FLOAT -> K_FLOAT;
             case DOUBLE -> K_DOUBLE;
             case ARRAY -> K_ARRAY;
-            case DECLARED -> Aggregates.isAggregate(t) ? K_AGG : K_OTHER;
+            case DECLARED -> Aggregates.isAggregate(t) ? K_AGG : Aggregates.pointer(t) != null ? K_PTR : K_OTHER;
             default -> K_OTHER;
         };
     }
@@ -165,6 +170,7 @@ final class JavaTypes {
             case K_FLOAT -> "float";
             case K_DOUBLE -> "double";
             case K_ARRAY -> "array";
+            case K_PTR -> "pointer";
             default -> "object";
         };
     }

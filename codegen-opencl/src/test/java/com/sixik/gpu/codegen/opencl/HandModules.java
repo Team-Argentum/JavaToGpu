@@ -53,6 +53,7 @@ final class HandModules {
         m.put("vectors_i32", vectorsI32());
         m.put("vectors_f64", vectorsF64());
         m.put("structs", structs());
+        m.put("pointers", pointers());
         return m;
     }
 
@@ -854,6 +855,123 @@ final class HandModules {
 
     /** Результатов {@link #structs()}. */
     static final int STRUCTS_OUT = 14;
+
+    /**
+     * Указатели (M9): {@code float*} на локаль, локальная переменная-указатель, указатель в {@code global} с циклом по
+     * смещениям, указатель на элемент {@code constant}-массива, указатели на поле struct (на локали и на элемент
+     * private-массива), указатель на вектор. Входы - {@code in} и {@code table}: не меньше четырёх чисел; результатов
+     * {@link #POINTERS_OUT}.
+     */
+    static IrModule pointers() {
+        IrBuilder b = new IrBuilder();
+        int v4 = b.vec(Types.F32, 4);
+        int cell = b.struct(new int[]{Types.F32, v4, Types.I32}, 0);
+        b.nameStruct(cell, "Cell", "w", "dir", "tag");
+        int pPriv = b.ptr(AddressSpace.PRIVATE, Types.F32);
+        int pGlob = b.ptr(AddressSpace.GLOBAL, Types.F32);
+        int pConst = b.ptr(AddressSpace.CONSTANT, Types.F32);
+        int pCell = b.ptr(AddressSpace.PRIVATE, cell);
+        int pVec = b.ptr(AddressSpace.PRIVATE, v4);
+        int af = b.array(AddressSpace.GLOBAL, Types.F32);
+        int ac = b.array(AddressSpace.CONSTANT, Types.F32);
+        int privCells = b.array(AddressSpace.PRIVATE, cell);
+
+        // void addTo(float* acc, float v) { *acc = *acc + v; }
+        int addTo = b.beginFunction(IrModule.DEVICE, Types.VOID, pPriv, Types.F32);
+        b.nameFunction("addTo");
+        b.nameParams("acc", "v");
+        b.endFunction(b.block(b.store(b.param(0), b.binary(Op.ADD, b.load(b.param(0)), b.param(1)))));
+
+        // void scale(__global float* p, int n, float k) { for (int i = 0; i < n; i++) p[i] = p[i] * k; }
+        int scale = b.beginFunction(IrModule.DEVICE, Types.VOID, pGlob, Types.I32, Types.F32);
+        b.nameFunction("scale");
+        b.nameParams("p", "n", "k");
+        int si = b.declareLocal(Types.I32);
+        b.nameLocal(si, "i");
+        int sInit = b.localDecl(si, b.constI32(0));
+        int sLoop = b.loop(b.binary(Op.LT, b.localGet(si), b.param(1)),
+                b.block(b.store(b.elemPtr(b.param(0), b.localGet(si)),
+                        b.binary(Op.MUL, b.load(b.elemPtr(b.param(0), b.localGet(si))), b.param(2)))),
+                b.localSet(si, b.binary(Op.ADD, b.localGet(si), b.constI32(1))));
+        b.endFunction(b.block(sInit, sLoop));
+
+        // float sumTable(__constant float* t, int n) { float s = 0; for (int i = 0; i < n; i++) s += t[i]; return s; }
+        int sumTable = b.beginFunction(IrModule.DEVICE, Types.F32, pConst, Types.I32);
+        b.nameFunction("sumTable");
+        b.nameParams("t", "n");
+        int ts = b.declareLocal(Types.F32);
+        int ti = b.declareLocal(Types.I32);
+        b.nameLocal(ts, "sum");
+        b.nameLocal(ti, "i");
+        int tInit = b.localDecl(ts, b.constF32(0));
+        int tInit2 = b.localDecl(ti, b.constI32(0));
+        int tLoop = b.loop(b.binary(Op.LT, b.localGet(ti), b.param(1)),
+                b.block(b.localSet(ts, b.binary(Op.ADD, b.localGet(ts), b.load(b.elemPtr(b.param(0), b.localGet(ti)))))),
+                b.localSet(ti, b.binary(Op.ADD, b.localGet(ti), b.constI32(1))));
+        b.endFunction(b.block(tInit, tInit2, tLoop, b.returnStmt(b.localGet(ts))));
+
+        // void setCell(Cell* c, float w, int tag) { c->w = w; c->tag = tag; }
+        int setCell = b.beginFunction(IrModule.DEVICE, Types.VOID, pCell, Types.F32, Types.I32);
+        b.nameFunction("setCell");
+        b.nameParams("c", "w", "tag");
+        b.endFunction(b.block(b.store(b.fieldPtr(b.param(0), 0), b.param(1)),
+                b.store(b.fieldPtr(b.param(0), 2), b.param(2))));
+
+        // void bumpDir(float4* d) { *d = *d + (float4)(1); }
+        int bumpDir = b.beginFunction(IrModule.DEVICE, Types.VOID, pVec);
+        b.nameFunction("bumpDir");
+        b.nameParams("d");
+        b.endFunction(b.block(b.store(b.param(0), b.binary(Op.ADD, b.load(b.param(0)), b.splat(v4, b.constF32(1))))));
+
+        b.beginFunction(IrModule.KERNEL, Types.VOID, af, ac, af);
+        b.nameFunction("pointers");
+        b.nameParams("in", "table", "out");
+        int acc = b.declareLocal(Types.F32);
+        int ptr = b.declareLocal(pPriv);
+        int c = b.declareLocal(cell);
+        int ps = b.declareLocal(privCells);
+        b.nameLocal(acc, "acc");
+        b.nameLocal(ptr, "ref");
+        b.nameLocal(c, "c");
+        b.nameLocal(ps, "ps");
+        java.util.List<Integer> st = new java.util.ArrayList<>();
+        int o = 0;
+        st.add(b.localDecl(acc, b.constF32(0)));
+        st.add(b.exprStmt(b.call(addTo, b.localAddr(acc), b.load(b.elemPtr(b.param(0), b.constI32(0))))));
+        st.add(b.exprStmt(b.call(addTo, b.localAddr(acc), b.constF32(2))));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)), b.localGet(acc)));
+        st.add(b.localDecl(ptr, b.localAddr(acc)));
+        st.add(b.store(b.localGet(ptr), b.binary(Op.MUL, b.load(b.localGet(ptr)), b.constF32(10))));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)), b.localGet(acc)));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)), b.load(b.localGet(ptr))));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)),
+                b.call(sumTable, b.elemPtr(b.param(1), b.constI32(1)), b.constI32(3))));
+        st.add(b.localDecl(c, b.structBuild(cell, b.constF32(1),
+                b.build(v4, b.constF32(1), b.constF32(2), b.constF32(3), b.constF32(4)), b.constI32(0))));
+        st.add(b.exprStmt(b.call(setCell, b.localAddr(c), b.load(b.elemPtr(b.param(0), b.constI32(3))), b.constI32(9))));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)), b.fieldGet(b.localGet(c), 0)));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)), b.convert(Types.F32, b.fieldGet(b.localGet(c), 2))));
+        st.add(b.exprStmt(b.call(bumpDir, b.fieldPtr(b.localAddr(c), 1))));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)), b.extract(b.fieldGet(b.localGet(c), 1), 2)));
+        st.add(b.store(b.fieldPtr(b.localAddr(c), 2), b.constI32(77)));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)), b.convert(Types.F32, b.fieldGet(b.localGet(c), 2))));
+        st.add(b.privateArrayDecl(ps, b.constI32(2)));
+        st.add(b.exprStmt(b.call(setCell, b.elemPtr(b.localGet(ps), b.constI32(1)), b.constF32(5), b.constI32(6))));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)),
+                b.fieldGet(b.load(b.elemPtr(b.localGet(ps), b.constI32(1))), 0)));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(o++)),
+                b.convert(Types.F32, b.fieldGet(b.load(b.elemPtr(b.localGet(ps), b.constI32(1))), 2))));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(10)), b.load(b.elemPtr(b.param(0), b.constI32(1)))));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(11)), b.load(b.elemPtr(b.param(0), b.constI32(2)))));
+        st.add(b.exprStmt(b.call(scale, b.elemPtr(b.param(2), b.constI32(10)), b.constI32(2), b.constF32(3))));
+        st.add(b.store(b.elemPtr(b.param(2), b.constI32(12)),
+                b.fieldGet(b.load(b.elemPtr(b.localGet(ps), b.constI32(0))), 0)));
+        b.endFunction(b.block(st.stream().mapToInt(Integer::intValue).toArray()));
+        return b.build();
+    }
+
+    /** Результатов {@link #pointers()}. */
+    static final int POINTERS_OUT = 13;
 
     /** Ядро с обязательным размером work-group и device-функцией с {@code fallback}-соседом. */
     static IrModule workGroupAttribute() {

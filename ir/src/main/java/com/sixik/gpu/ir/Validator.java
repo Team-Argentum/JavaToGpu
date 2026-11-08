@@ -1199,6 +1199,8 @@ public final class Validator {
                             reads = true;
                             markAccess(access, m.a(n), ACCESS_READ);
                         }
+                        case Op.LOCAL_DECL, Op.LOCAL_SET -> markEscapingPointer(access, m.b(n));
+                        case Op.RETURN -> markEscapingPointer(access, m.a(n));
                         case Op.BARRIER -> {
                             effects = true;
                             sync = true;
@@ -1251,6 +1253,24 @@ public final class Validator {
                 divergentInside[f] = divergent;
                 infos[f] = new Validator.FunctionInfo(features, sync, access, effects, reads);
             }
+        }
+
+        /**
+         * Указатель на элементы параметра, сохранённый в локали (или возвращённый), дальше читается и пишется по
+         * имени локали, а цепочка до параметра там уже не видна. Поэтому режим доступа отмечается в момент сохранения и
+         * <b>консервативно</b>: чтение и запись, а для {@code constant} - только чтение. Занижение режима опасно: рантайм
+         * не вернул бы записанные данные на хост.
+         *
+         * @param access режимы параметров текущей функции
+         * @param value  сохраняемое либо возвращаемое значение; не указатель (или {@code -1}) игнорируется
+         */
+        private void markEscapingPointer(int[] access, int value) {
+            if (value < 0 || value >= nodeCount || !typeInRange(m.type(value))
+                    || m.typeKind(m.type(value)) != Types.KIND_PTR) {
+                return;
+            }
+            int space = m.typeA(m.type(value));
+            markAccess(access, value, space == AddressSpace.CONSTANT ? ACCESS_READ : ACCESS_READ | ACCESS_WRITE);
         }
 
         /** Прослеживает цепочку {@code elem_ptr/field_ptr} до параметра и отмечает режим доступа. */

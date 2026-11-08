@@ -440,7 +440,7 @@ class InterpreterTest {
     }
 
     @Test
-    void barrierAndPointersToLocalsAreReportedAsNotSupportedYet() {
+    void barrierIsReportedAsNotSupportedYet() {
         IrBuilder b = new IrBuilder();
         b.beginFunction(IrModule.KERNEL, Types.VOID);
         int st = b.barrier(1);
@@ -448,17 +448,6 @@ class InterpreterTest {
         Result<?> r = run(b.build(), NdRange.of1D(1));
         assertCode(r, "IN-U01");
         assertTrue(r.diagnostics().get(0).message().contains("M10"), r.diagnostics().get(0).message());
-
-        IrBuilder v = new IrBuilder();
-        v.beginFunction(IrModule.KERNEL, Types.VOID);
-        int l = v.declareLocal(Types.F32);
-        int p = v.declareLocal(v.ptr(AddressSpace.PRIVATE, Types.F32));
-        int decl = v.localDecl(l, v.constF32(1f));
-        int ptr = v.localDecl(p, v.localAddr(l));
-        v.endFunction(v.block(decl, ptr));
-        Result<?> rv = run(v.build(), NdRange.of1D(1));
-        assertCode(rv, "IN-U01");
-        assertTrue(rv.diagnostics().stream().anyMatch(d -> d.message().contains("M9")), rv.diagnostics().toString());
     }
 
     @Test

@@ -117,8 +117,16 @@ final class FunctionLowerer {
     private record V(int node, int kind, int elemKind, int space, boolean open, int ir) {
     }
 
-    /** Переменная Java в функции IR: параметр или локаль. */
-    private record Var(boolean param, int index, int kind, int elemKind, int space, int ir) {
+    /**
+     * Переменная Java в функции IR: параметр или локаль.
+     *
+     * @param owned {@code true} для ссылки {@code FloatPtr ...}, созданной в этой функции через {@code new}: в IR это
+     *              скалярная локаль, а значение-указатель на неё даёт {@code local_addr}
+     */
+    private record Var(boolean param, int index, int kind, int elemKind, int space, int ir, boolean owned) {
+        Var(boolean param, int index, int kind, int elemKind, int space, int ir) {
+            this(param, index, kind, elemKind, space, ir, false);
+        }
     }
 
     private static final int MODE_STMT = 0;
@@ -193,6 +201,8 @@ final class FunctionLowerer {
                 int elem = sig.elemKinds()[i] == JavaTypes.K_AGG ? aggs.irType(sig.aggs()[i])
                         : JavaTypes.storageType(sig.elemKinds()[i]);
                 ptypes[i] = b.array(sig.spaces()[i], elem);
+            } else if (pk == JavaTypes.K_PTR) {
+                ptypes[i] = b.ptr(sig.spaces()[i], JavaTypes.storageType(sig.elemKinds()[i]));
             } else {
                 ptypes[i] = pk == JavaTypes.K_AGG ? aggs.irType(sig.aggs()[i]) : JavaTypes.irType(pk);
             }
@@ -214,13 +224,13 @@ final class FunctionLowerer {
         for (int i = 0; i < n; i++) {
             VariableElement pe = method.getParameters().get(i);
             int k = sig.paramKinds()[i];
-            int pir = sig.aggs()[i] == null ? -1 : aggs.irType(sig.aggs()[i]);
+            int pir = k == JavaTypes.K_PTR ? ptypes[i] : sig.aggs()[i] == null ? -1 : aggs.irType(sig.aggs()[i]);
             if (k != JavaTypes.K_ARRAY && assigned.contains(pe)) {
                 // параметры в IR неизменяемы: изменяемый параметр Java становится локалью с начальным значением
                 int l = b.declareLocal(ptypes[i]);
                 b.nameLocal(l, pnames[i]);
                 out.add(b.localDecl(l, b.param(i)));
-                vars.put(pe, new Var(false, l, k, -1, -1, pir));
+                vars.put(pe, new Var(false, l, k, sig.elemKinds()[i], sig.spaces()[i], pir));
             } else {
                 vars.put(pe, new Var(true, i, k, sig.elemKinds()[i], sig.spaces()[i], pir));
             }
@@ -342,7 +352,7 @@ final class FunctionLowerer {
 
     /** Тип IR локали или результата вида {@code kind}. */
     private int irOf(int kind, int ir) {
-        return kind == JavaTypes.K_AGG ? ir : JavaTypes.irType(kind);
+        return kind == JavaTypes.K_AGG || kind == JavaTypes.K_PTR ? ir : JavaTypes.irType(kind);
     }
 
     /** Нулевое значение агрегата: вектор из нулей либо struct из нулевых полей (рекурсивно). */
@@ -468,6 +478,10 @@ final class FunctionLowerer {
             localArray(p, vt, el);
             return;
         }
+        if (kind == JavaTypes.K_PTR) {
+            localPointer(p, vt, el);
+            return;
+        }
         int ir = kind == JavaTypes.K_AGG ? aggs.irType(el.asType()) : -1;
         int l = b.declareLocal(irOf(kind, ir));
         b.nameLocal(l, vt.getName().toString());
@@ -478,6 +492,34 @@ final class FunctionLowerer {
         } else {
             init = kind == JavaTypes.K_AGG ? zeroAgg(ir) : zero(kind);
         }
+        out.add(at(vt, b.localDecl(l, init)));
+    }
+
+    /**
+     * Локальная переменная-указатель (M9). Ссылка {@code FloatPtr r = new FloatPtr(x)} - обычная скалярная локаль
+     * (владелец значения); её адрес ({@code local_addr}) берётся при каждом использовании имени {@code r}, поэтому
+     * запись через указатель в вызываемой функции видна при следующем чтении {@code r.value}. Явный указатель
+     * {@code GlobalFloatPtr p = ...} - локаль типа {@code Ptr<space, T>}.
+     */
+    private void localPointer(TreePath p, VariableTree vt, VariableElement el) {
+        Aggregates.Ptr ptr = Aggregates.pointer(el.asType());
+        int ek = ptr.elemKind();
+        int pointee = JavaTypes.storageType(ek);
+        int ptrType = b.ptr(ptr.space(), pointee);
+        if (ptr.ref()) {
+            TreePath ip = unparen(child(p, vt.getInitializer()));
+            NewClassTree nt = (NewClassTree) ip.getLeaf();
+            int init = nt.getArguments().isEmpty() ? zero(ek) : coerce(expr(child(ip, nt.getArguments().get(0))), ek).node();
+            int l = b.declareLocal(pointee);
+            b.nameLocal(l, vt.getName().toString());
+            vars.put(el, new Var(false, l, JavaTypes.K_PTR, ek, ptr.space(), ptrType, true));
+            out.add(at(vt, b.localDecl(l, init)));
+            return;
+        }
+        int init = expr(child(p, vt.getInitializer())).node();
+        int l = b.declareLocal(ptrType);
+        b.nameLocal(l, vt.getName().toString());
+        vars.put(el, new Var(false, l, JavaTypes.K_PTR, ek, ptr.space(), ptrType, false));
         out.add(at(vt, b.localDecl(l, init)));
     }
 
@@ -765,6 +807,14 @@ final class FunctionLowerer {
             if (var.kind() == JavaTypes.K_AGG) {
                 return sva(var.param() ? b.param(var.index()) : b.localGet(var.index()), var.ir(), !var.param());
             }
+            if (var.kind() == JavaTypes.K_PTR) {
+                if (var.owned()) {
+                    // адрес локали не меняется, пока локаль жива: значение «закрытое», его можно не сохранять заранее
+                    return new V(b.localAddr(var.index()), JavaTypes.K_PTR, var.elemKind(), var.space(), false, var.ir());
+                }
+                return new V(var.param() ? b.param(var.index()) : b.localGet(var.index()), JavaTypes.K_PTR,
+                        var.elemKind(), var.space(), !var.param(), var.ir());
+            }
             return var.param() ? sv(b.param(var.index()), var.kind(), false)
                     : sv(b.localGet(var.index()), var.kind(), true);
         }
@@ -789,6 +839,11 @@ final class FunctionLowerer {
             TypeMirror qt = Aggregates.typeOf(trees, child(p, ms.getExpression()));
             if (qt != null && Aggregates.isAggregate(qt)) {
                 return fieldRead(p, ms, qt, fe);
+            }
+            if (qt != null && Aggregates.pointer(qt) != null) {
+                // r.value - чтение через указатель
+                V ptr = expr(child(p, ms.getExpression()));
+                return loadElem(ptr.node(), ptr.elemKind(), -1);
             }
         }
         if (el instanceof VariableElement ve && ve.getConstantValue() != null) {
@@ -833,6 +888,10 @@ final class FunctionLowerer {
         ExecutableElement callee = (ExecutableElement) trees.getElement(child(p, mit.getMethodSelect()));
         if (callee.getEnclosingElement() instanceof TypeElement owner && Aggregates.isAggregate(owner.asType())) {
             V r = aggregateCall(p, mit, callee, owner);
+            return asStatement ? null : r;
+        }
+        if (callee.getEnclosingElement() instanceof TypeElement owner && Aggregates.pointer(owner.asType()) != null) {
+            V r = pointerCall(p, mit, callee, owner, asStatement);
             return asStatement ? null : r;
         }
         FnSig csig = FnSig.of(callee);
@@ -894,6 +953,80 @@ final class FunctionLowerer {
         return mk(node, retKind, retIr, open);
     }
 
+
+    // ---- указатели -------------------------------------------------------------------------------
+
+    private boolean isPointerSelect(TreePath tp, MemberSelectTree ms) {
+        TypeMirror qt = Aggregates.typeOf(trees, child(tp, ms.getExpression()));
+        return qt != null && Aggregates.pointer(qt) != null;
+    }
+
+    /**
+     * Методы явного указателя (M9): {@code X.of(массив, i)} и {@code p.plus(n)} - {@code elem_ptr}; {@code p.get(i)} -
+     * {@code load(elem_ptr(p, i))}; {@code p.set(i, v)} - {@code store(elem_ptr(p, i), v)}. Адресное пространство массива
+     * обязано совпасть с пространством класса указателя (иначе {@code GPU0199}).
+     */
+    private V pointerCall(TreePath p, MethodInvocationTree mit, ExecutableElement callee, TypeElement owner,
+                          boolean asStatement) {
+        String name = callee.getSimpleName().toString();
+        Aggregates.Ptr ptr = Aggregates.pointer(owner.asType());
+        boolean isStatic = callee.getModifiers().contains(javax.lang.model.element.Modifier.STATIC);
+        List<TreePath> ps = new ArrayList<>();
+        if (!isStatic) {
+            ps.add(child(p, ((MemberSelectTree) mit.getMethodSelect()).getExpression()));
+        }
+        for (ExpressionTree a : mit.getArguments()) {
+            ps.add(child(p, a));
+        }
+        List<V> vs = operands(ps);
+        int ek = ptr.elemKind();
+        int ptrType = b.ptr(ptr.space(), JavaTypes.storageType(ek));
+        switch (name) {
+            case "of", "plus" -> {
+                V base = vs.get(0);
+                if (isStatic && base.space() != ptr.space()) {
+                    rep.report(ps.get(0), "GPU0199", owner.getSimpleName(), Ann.spaceName(ptr.space()),
+                            Ann.spaceName(base.space()));
+                }
+                int node = b.elemPtr(base.node(), indexNode(vs.get(1)));
+                if (asStatement) {
+                    out.add(at(mit, b.exprStmt(node)));
+                }
+                return new V(node, JavaTypes.K_PTR, ek, ptr.space(), base.open() || vs.get(1).open(), ptrType);
+            }
+            case "get" -> {
+                int addr = b.elemPtr(vs.get(0).node(), indexNode(vs.get(1)));
+                if (asStatement) {
+                    out.add(at(mit, b.exprStmt(b.load(addr))));
+                    return null;
+                }
+                return loadElem(addr, ek, -1);
+            }
+            default -> {
+                // set
+                int addr = b.elemPtr(vs.get(0).node(), indexNode(vs.get(1)));
+                out.add(at(mit, storeElem(addr, coerce(vs.get(2), ek), ek)));
+                return null;
+            }
+        }
+    }
+
+    /** Присваивание {@code r.value = x}: запись через указатель. */
+    private V assignThroughPointer(AssignmentTree at, TreePath target, TreePath rhsPath, boolean needValue) {
+        MemberSelectTree ms = (MemberSelectTree) target.getLeaf();
+        TreePath qp = child(target, ms.getExpression());
+        int ek = Aggregates.pointer(Aggregates.typeOf(trees, qp)).elemKind();
+        V value = coerce(expr(rhsPath), ek);
+        V ptr = expr(qp);
+        if (needValue) {
+            int tmp = b.declareLocal(JavaTypes.irType(ek));
+            out.add(b.localDecl(tmp, value.node()));
+            out.add(at(at, storeElem(ptr.node(), sv(b.localGet(tmp), ek, false), ek)));
+            return sv(b.localGet(tmp), ek, false);
+        }
+        out.add(at(at, storeElem(ptr.node(), value, ek)));
+        return null;
+    }
 
     // ---- векторы и struct ------------------------------------------------------------------------
 
@@ -1211,7 +1344,10 @@ final class FunctionLowerer {
             out.add(at(at, b.localSet(var.index(), rhs.node())));
             return needValue ? mk(b.localGet(var.index()), var.kind(), var.ir(), true) : null;
         }
-        if (target.getLeaf() instanceof MemberSelectTree) {
+        if (target.getLeaf() instanceof MemberSelectTree tms) {
+            if (isPointerSelect(target, tms)) {
+                return assignThroughPointer(at, target, rhsPath, needValue);
+            }
             return assignField(p, at, target, rhsPath, needValue);
         }
         ArrayAccessTree aa = (ArrayAccessTree) target.getLeaf();
@@ -1296,6 +1432,22 @@ final class FunctionLowerer {
                 @Override
                 public int write(V value) {
                     return b.localSet(l, value.node());
+                }
+            };
+        } else if (tp.getLeaf() instanceof MemberSelectTree pms && isPointerSelect(tp, pms)) {
+            // r.value op= y, r.value++: чтение и запись через указатель (имя ссылки вычисляется заново - оно чистое)
+            TreePath qp = child(tp, pms.getExpression());
+            int ek = Aggregates.pointer(Aggregates.typeOf(trees, qp)).elemKind();
+            tk = ek;
+            t = new Target() {
+                @Override
+                public V read() {
+                    return loadElem(expr(qp).node(), ek, -1);
+                }
+
+                @Override
+                public int write(V value) {
+                    return storeElem(expr(qp).node(), value, ek);
                 }
             };
         } else if (tp.getLeaf() instanceof MemberSelectTree) {

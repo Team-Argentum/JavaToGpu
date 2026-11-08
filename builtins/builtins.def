@@ -32,7 +32,8 @@
 #
 # Глобальные директивы (читает только генератор api):
 #   vectors <скаляры> : <lanes>  - векторные типы Float2..Float16 и т.п. (lanes из {2,3,4,8,16}, как в IR)
-#   pointers <скаляры>           - классы-ссылки на скаляр FloatPtr, IntPtr, ... (поле value)
+#   pointers <скаляры>           - классы-ссылки на скаляр FloatPtr, IntPtr, ... (поле value) и явные указатели
+#                                  GlobalFloatPtr, LocalFloatPtr, ConstantFloatPtr, ... (of/get/set/plus)
 #
 # builtin, у которого в сигнатуре есть тип без Java-представления (указатели ptr<...> до M9, u32/u64
 # и типы хранения), в Java-API пока не генерируется; генератор перечисляет такие builtins в Gpu.java.

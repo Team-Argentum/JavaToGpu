@@ -14,6 +14,7 @@ import com.sixik.gpu.ir.interpreter.samples.IndexKernels;
 import com.sixik.gpu.ir.interpreter.samples.IntKernels;
 import com.sixik.gpu.ir.interpreter.samples.LongKernels;
 import com.sixik.gpu.ir.interpreter.samples.MemoryKernels;
+import com.sixik.gpu.ir.interpreter.samples.PointerKernels;
 import com.sixik.gpu.ir.interpreter.samples.SmallTypeKernels;
 import org.junit.jupiter.api.Test;
 
@@ -255,6 +256,68 @@ class DifferentialTest {
         });
     }
 
+
+    // ---- указатели (M9) ---------------------------------------------------------------------------
+
+    @Test
+    void referencesAreSharedBetweenDeviceFunctions() {
+        int n = 24;
+        Differential.check(PointerKernels.class, "refs", NdRange.of1D(n), () -> {
+            float[] in = new float[n];
+            for (int i = 0; i < n; i++) {
+                in[i] = (i - 9) * 1.75f;
+            }
+            return new Object[]{in, new float[n * PointerKernels.REFS_WIDTH]};
+        });
+    }
+
+    @Test
+    void referenceValueIsReadInJavaOrder() {
+        int n = 24;
+        Differential.check(PointerKernels.class, "order", NdRange.of1D(n), () -> {
+            int[] in = new int[n];
+            for (int i = 0; i < n; i++) {
+                in[i] = i == 3 ? Integer.MAX_VALUE : (i - 7) * 19_000_001; // и переполнение int
+            }
+            return new Object[]{in, new int[n * PointerKernels.ORDER_WIDTH]};
+        });
+    }
+
+    @Test
+    void longReferenceAndCompoundShift() {
+        int n = 10;
+        Differential.check(PointerKernels.class, "longs", NdRange.of1D(n), () -> {
+            long[] in = new long[n];
+            for (int i = 0; i < n; i++) {
+                in[i] = i == 2 ? Long.MAX_VALUE - 3 : (i - 4) * 0x1234567890L;
+            }
+            return new Object[]{in, new long[n * PointerKernels.LONGS_WIDTH]};
+        });
+    }
+
+    @Test
+    void explicitPointersWithOffsetsAndConstantTable() {
+        int n = 16;
+        Differential.check(PointerKernels.class, "spaces", NdRange.of1D(n), () -> {
+            float[] data = new float[n * PointerKernels.ROW];
+            for (int i = 0; i < data.length; i++) {
+                data[i] = i * 0.5f - 7;
+            }
+            return new Object[]{data, new float[]{1.5f, -2f, 4.25f, 8f, 100f}, new float[n]};
+        });
+    }
+
+    @Test
+    void pointerAdvancedInALoop() {
+        int n = 16;
+        Differential.check(PointerKernels.class, "walk", NdRange.of1D(n), () -> {
+            int[] in = new int[n * PointerKernels.ROW];
+            for (int i = 0; i < in.length; i++) {
+                in[i] = i * 7 - 40;
+            }
+            return new Object[]{in, new int[n]};
+        });
+    }
 
     // ---- векторы и struct (M8) --------------------------------------------------------------------
 

@@ -23,13 +23,15 @@ import java.util.List;
  * @param computeUnits    число вычислительных блоков
  * @param maxWorkGroupSize наибольший размер work-group
  * @param localMemory     объём локальной памяти на work-group, байт
+ * @param maxConstantBuffer наибольший размер одного буфера {@code __constant}, байт ({@code CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE})
+ * @param maxConstantArgs число аргументов ядра в {@code __constant} ({@code CL_DEVICE_MAX_CONSTANT_ARGS})
  * @param extensions      строка расширений, разделённых пробелами
  * @param features        маска {@link Features}, которую устройство поддерживает (по расширениям)
  */
 public record DeviceInfo(int index, long platform, long handle, String platformName, String name, String vendor,
                          long type, String openClVersion, String driverVersion, long globalMemory,
                          long maxAllocation, int computeUnits, long maxWorkGroupSize, long localMemory,
-                         String extensions, int features) {
+                         long maxConstantBuffer, int maxConstantArgs, String extensions, int features) {
 
     /**
      * Перечисляет все устройства всех платформ.
@@ -61,6 +63,8 @@ public record DeviceInfo(int index, long platform, long handle, String platformN
                 (int) api.deviceLong(device, DeviceApi.DEVICE_MAX_COMPUTE_UNITS),
                 api.deviceLong(device, DeviceApi.DEVICE_MAX_WORK_GROUP_SIZE),
                 api.deviceLong(device, DeviceApi.DEVICE_LOCAL_MEM_SIZE),
+                api.deviceLong(device, DeviceApi.DEVICE_MAX_CONSTANT_BUFFER_SIZE),
+                (int) api.deviceLong(device, DeviceApi.DEVICE_MAX_CONSTANT_ARGS),
                 extensions, featuresOf(extensions));
     }
 

@@ -55,12 +55,15 @@ final class Layouts {
     }
 
     /**
-     * @param t тип: скаляр, вектор или struct
-     * @return имя типа в тексте C
+     * @param t тип: скаляр, вектор, struct или указатель на них
+     * @return имя типа в тексте C; указатель - {@code __global float*}, пространство адресов обязательно
      */
     String type(int t) {
         if (Types.isScalar(t)) {
             return CTypes.scalar(t);
+        }
+        if (m.typeKind(t) == Types.KIND_PTR) {
+            return CTypes.space(Types.space(m, t)) + " " + type(Types.elem(m, t)) + "*";
         }
         if (m.typeKind(t) == Types.KIND_VEC) {
             return CTypes.scalar(m.typeA(t)) + m.typeB(t);

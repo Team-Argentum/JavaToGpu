@@ -259,11 +259,6 @@ class AggregateLoweringTest {
     }
 
     @Test
-    void pointerTypesStayForMilestoneM9() {
-        rejects("GPU0190", "@Kernel public static void k(FloatPtr p) { }");
-    }
-
-    @Test
     void kernelsAreIndexedWithObjectDescriptors() {
         FrontendHarness.Outcome r = compile("@Kernel public static void k(@Global P[] ps, Float4 d, int n) { }");
         assertTrue(r.success(), r.describe());

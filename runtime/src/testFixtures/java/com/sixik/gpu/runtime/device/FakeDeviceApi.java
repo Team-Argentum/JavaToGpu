@@ -30,33 +30,39 @@ public final class FakeDeviceApi implements DeviceApi {
      * @param memory     объём глобальной памяти
      * @param extensions строка расширений
      * @param maxGroup   наибольший размер work-group
+     * @param maxConstant наибольший размер буфера {@code __constant}, байт
      */
     public record Spec(String platform, String name, String vendor, long type, long memory, String extensions,
-                       long maxGroup) {
+                       long maxGroup, long maxConstant) {
         /** @return GPU с fp64 и 64-битными атомиками, 8 ГиБ, группа до 1024 */
         public static Spec gpu() {
             return new Spec("Fake Platform", "Fake GPU", "Fake Vendor", TYPE_GPU, 8L << 30,
-                    "cl_khr_fp64 cl_khr_int64_base_atomics cl_khr_byte_addressable_store", 1024);
+                    "cl_khr_fp64 cl_khr_int64_base_atomics cl_khr_byte_addressable_store", 1024, 64 * 1024);
         }
 
         /** @return CPU без fp64, 4 ГиБ, группа до 256 */
         public static Spec cpu() {
-            return new Spec("Fake Platform", "Fake CPU", "Other Vendor", TYPE_CPU, 4L << 30, "", 256);
+            return new Spec("Fake Platform", "Fake CPU", "Other Vendor", TYPE_CPU, 4L << 30, "", 256, 64 * 1024);
         }
 
         /** @param ext расширения @return копия с другими расширениями */
         public Spec withExtensions(String ext) {
-            return new Spec(platform, name, vendor, type, memory, ext, maxGroup);
+            return new Spec(platform, name, vendor, type, memory, ext, maxGroup, maxConstant);
         }
 
         /** @param n имя @return копия с другим именем */
         public Spec withName(String n) {
-            return new Spec(platform, n, vendor, type, memory, extensions, maxGroup);
+            return new Spec(platform, n, vendor, type, memory, extensions, maxGroup, maxConstant);
+        }
+
+        /** @param bytes размер @return копия с другим пределом буфера {@code __constant} */
+        public Spec withMaxConstant(long bytes) {
+            return new Spec(platform, name, vendor, type, memory, extensions, maxGroup, bytes);
         }
 
         /** @param v производитель @return копия с другим производителем */
         public Spec withVendor(String v) {
-            return new Spec(platform, name, v, type, memory, extensions, maxGroup);
+            return new Spec(platform, name, v, type, memory, extensions, maxGroup, maxConstant);
         }
     }
 
@@ -351,6 +357,8 @@ public final class FakeDeviceApi implements DeviceApi {
             case DEVICE_MAX_COMPUTE_UNITS -> 8;
             case DEVICE_MAX_WORK_GROUP_SIZE -> s.maxGroup();
             case DEVICE_LOCAL_MEM_SIZE -> 48 * 1024;
+            case DEVICE_MAX_CONSTANT_BUFFER_SIZE -> s.maxConstant();
+            case DEVICE_MAX_CONSTANT_ARGS -> 8;
             default -> 0;
         };
     }

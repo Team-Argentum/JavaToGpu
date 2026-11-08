@@ -198,8 +198,10 @@ class DiagnosticsTest {
                         f(t); // <-
                     }
                     """),
-            new Case("GPU0190", """
-                    @Kernel public static void k(FloatPtr p) { } // <-
+            new Case("GPU0122", """
+                    @Kernel public static void k(@Global(constant = true) float[] c) {
+                        c[0] = 1f; // <-
+                    }
                     """),
             new Case("GPU0191", """
                     @Struct public static final class Bad { public final int x = 1; public Bad() { } }
@@ -234,6 +236,19 @@ class DiagnosticsTest {
                     @Kernel public static void k(@Global int[] a) {
                         Float4 v = new Float4(1, 2, 3, 4);
                         boolean same = v == v; // <-
+                    }
+                    """),
+            new Case("GPU0197", """
+                    @Kernel public static void k(FloatPtr p) { } // <-
+                    """),
+            new Case("GPU0198", """
+                    @DeviceFunction static void f(FloatPtr p) {
+                        p = new FloatPtr(); // <-
+                    }
+                    """),
+            new Case("GPU0199", """
+                    @Kernel public static void k(@Global int[] a) {
+                        ConstantIntPtr p = ConstantIntPtr.of(a, 0); // <-
                     }
                     """)
     );

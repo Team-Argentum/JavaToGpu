@@ -13,11 +13,12 @@ import java.util.List;
 /**
  * Проверка «этот модуль кодген умеет» до генерации текста и обход достижимых из ядра функций.
  *
- * <p>Эмиттер покрывает скаляры, векторы и struct (M8), массивы {@code global/constant/private}, управление потоком,
- * вызовы функций, builtins. Всё, что относится к следующим вехам, отвергается диагностикой {@code CG-U01} - так же, как
- * интерпретатор отвечает {@code IN-U01}: {@code local_addr}, {@code field_ptr} и pointer-параметры (M9),
- * {@code barrier}, {@code local_array_decl} и {@code __local}-параметры (M10),
- * {@code spec_const} и нативные тела. Обход итеративный, каждый узел проверяется один раз.</p>
+ * <p>Эмиттер покрывает скаляры, векторы и struct (M8), указатели на них в любом пространстве адресов (M9: параметры и
+ * локали device-функций, {@code local_addr}, {@code field_ptr}), массивы {@code global/constant/private}, управление
+ * потоком, вызовы функций, builtins. Всё, что относится к следующим вехам, отвергается диагностикой {@code CG-U01} - так
+ * же, как интерпретатор отвечает {@code IN-U01}: {@code barrier}, {@code local_array_decl} и {@code __local}-параметры
+ * (M10), {@code spec_const}, нативные тела и указатель в параметре ядра (у ядра параметр-массив несёт длину, у
+ * указателя её нет). Обход итеративный, каждый узел проверяется один раз.</p>
  */
 final class Support {
 
@@ -176,6 +177,8 @@ final class Support {
             int t = m.fParamType(f, i);
             if (!storageOk(m, t, true)) {
                 out.add(unsupported(f, -1, "параметр " + i + " типа t" + t + " не поддержан"));
+            } else if (kernel && m.typeKind(t) == Types.KIND_PTR) {
+                out.add(unsupported(f, -1, "параметр " + i + ": указатель в параметрах ядра не поддержан, используйте массив"));
             } else if (kernel && m.typeKind(t) == Types.KIND_ARRAY && Types.space(m, t) == AddressSpace.LOCAL) {
                 out.add(unsupported(f, -1, "параметр " + i + ": __local-массив в параметрах ядра - веха M10"));
             }
@@ -202,6 +205,11 @@ final class Support {
         return aggregateOk(m, t);
     }
 
+    /** Указатель на скаляр (не {@code BOOL}), вектор или struct в любом пространстве адресов. */
+    private static boolean pointerOk(IrModule m, int t) {
+        return t >= 0 && t < m.typeCount() && m.typeKind(t) == Types.KIND_PTR && valueOk(m, Types.elem(m, t));
+    }
+
     private static boolean aggregateOk(IrModule m, int t) {
         if (t < 0 || t >= m.typeCount()) {
             return false;
@@ -226,9 +234,9 @@ final class Support {
         }
     }
 
-    /** Допустимый тип параметра/локали: значение либо одномерный массив в global/constant/private. */
+    /** Допустимый тип параметра/локали: значение, указатель либо одномерный массив в global/constant/private. */
     private static boolean storageOk(IrModule m, int t, boolean param) {
-        if (valueOk(m, t)) {
+        if (valueOk(m, t) || pointerOk(m, t)) {
             return true;
         }
         if (m.typeKind(t) == Types.KIND_ARRAY) {
@@ -245,13 +253,12 @@ final class Support {
         String why = null;
         switch (op) {
             case Op.SPEC_CONST -> why = "spec_const не поддержана";
-            case Op.LOCAL_ADDR, Op.FIELD_PTR -> why = Op.nameOf(op) + " - pointer-типы, веха M9";
             case Op.BARRIER, Op.LOCAL_ARRAY_DECL -> why = Op.nameOf(op) + " - local memory и barrier, веха M10";
             default -> {
                 int t = m.type(n);
                 boolean ok = t == Types.VOID || valueOk(m, t)
                         || (m.typeKind(t) == Types.KIND_ARRAY && storageOk(m, t, true))
-                        || (op == Op.ELEM_PTR && m.typeKind(t) == Types.KIND_PTR && valueOk(m, Types.elem(m, t)));
+                        || pointerOk(m, t);
                 if (!ok) {
                     why = "значение типа t" + t + " не поддержано";
                 }

@@ -19,8 +19,15 @@ import java.util.Arrays;
  *   <li>{@code bufs} - таблица буферов памяти, буфер = {@code long[]} канонических значений элементов. Хостовые
  *       массивы занимают первые {@code hostCount} строк, private-массивы work-item'а - следующие (освобождаются на
  *       выходе из функции). Значение типа {@code Array} = номер буфера, значение типа {@code Ptr} =
- *       {@code (буфер << 32) | индекс элемента}.</li>
+ *       {@code (буфер << 32) | номер ячейки}.</li>
  * </ul>
+ *
+ * <p><b>Указатели (M9).</b> Адрес - номер <i>ячейки</i> {@code long[]}, а не элемента: агрегат (вектор, struct) занимает
+ * несколько ячеек подряд, поэтому {@code elem_ptr} сдвигает адрес на {@code индекс * ширина элемента}, а
+ * {@code field_ptr} - на смещение поля внутри элемента. Особый «буфер» {@link #STACK} - сам стек значений: так
+ * {@code local_addr} получает адрес локали без копирования и упаковки («локаль в памяти»), а запись через указатель
+ * видна при следующем {@code local_get} той же локали. Адрес обязан лежать внутри буфера целиком (ширина доступа
+ * учитывается), иначе {@code IN-R01}.</p>
  *
  * <p><b>Ошибки.</b> Нарушение времени выполнения (выход за границы, деление на ноль, исчерпание бюджета шагов) -
  * не исключение: первое нарушение запоминается, исполнение немедленно прекращается через код возврата
@@ -38,6 +45,9 @@ final class Machine {
     private static final int CONTINUE = 2;
     private static final int RETURN = 3;
     private static final int FAULT = 4;
+
+    /** Номер «буфера», означающий стек значений: так адресуются локали ({@code local_addr}). */
+    private static final int STACK = Integer.MAX_VALUE;
 
     /** Максимум элементов private-массива: защита от «мусорной» длины. */
     private static final int MAX_PRIVATE_ARRAY = 1 << 22;
@@ -538,48 +548,73 @@ final class Machine {
     // память
     // =============================================================================================
 
-    private boolean store(int n, long p, long v) {
+    /** Ячейки буфера: массив значений либо стек. */
+    private long[] memory(int buf) {
+        return buf == STACK ? stack : bufs[buf];
+    }
+
+    /** Число ячеек, доступных по номеру буфера; -1, если такого буфера нет. Стек доступен до верхушки кадра. */
+    private int cells(int buf) {
+        if (buf == STACK) {
+            return top;
+        }
+        return buf >= 0 && buf < bufCount ? bufs[buf].length : -1;
+    }
+
+    /** Ячеек на элемент буфера: для стека 1 (адрес в нём - просто номер ячейки). */
+    private int elemWidth(int buf) {
+        return buf == STACK ? 1 : bufElem[buf];
+    }
+
+    /**
+     * Проверка доступа шириной {@code width} ячеек по адресу {@code p}; нарушение - {@code IN-R01}.
+     *
+     * @return {@code true}, если вся область внутри буфера
+     */
+    private boolean inside(int n, long p, int width, String what) {
         int buf = (int) (p >>> 32);
-        int idx = (int) p;
-        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= lengthOf(buf)) {
-            fault("IN-R01", n, "запись за границами: индекс " + idx + ", длина " + lengthOf(buf));
+        int cell = (int) p;
+        int len = cells(buf);
+        if (len >= 0 && cell >= 0 && cell <= len - width) {
+            return true;
+        }
+        int w = buf >= 0 && (buf == STACK || buf < bufCount) ? elemWidth(buf) : 1;
+        fault("IN-R01", n, what + " за границами: индекс " + Math.floorDiv(cell, w) + ", длина " + (len < 0 ? -1 : len / w));
+        return false;
+    }
+
+    private boolean store(int n, long p, long v) {
+        if (!inside(n, p, 1, "запись")) {
             return false;
         }
-        bufs[buf][idx * bufElem[buf]] = v;
+        memory((int) (p >>> 32))[(int) p] = v;
         return true;
     }
 
     private long load(int n, long p) {
-        int buf = (int) (p >>> 32);
-        int idx = (int) p;
-        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= lengthOf(buf)) {
-            return fault("IN-R01", n, "чтение за границами: индекс " + idx + ", длина " + lengthOf(buf));
+        if (!inside(n, p, 1, "чтение")) {
+            return 0;
         }
-        return bufs[buf][idx * bufElem[buf]];
+        return memory((int) (p >>> 32))[(int) p];
     }
 
     private boolean storeAgg(int n, long p, long[] v) {
-        int buf = (int) (p >>> 32);
-        int idx = (int) p;
-        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= lengthOf(buf)) {
-            fault("IN-R01", n, "запись за границами: индекс " + idx + ", длина " + lengthOf(buf));
+        if (!inside(n, p, v.length, "запись")) {
             return false;
         }
-        System.arraycopy(v, 0, bufs[buf], idx * bufElem[buf], v.length);
+        System.arraycopy(v, 0, memory((int) (p >>> 32)), (int) p, v.length);
         return true;
     }
 
     private long[] loadAgg(int n, long p, int slots) {
-        int buf = (int) (p >>> 32);
-        int idx = (int) p;
-        if (buf < 0 || buf >= bufCount || idx < 0 || idx >= lengthOf(buf)) {
-            fault("IN-R01", n, "чтение за границами: индекс " + idx + ", длина " + lengthOf(buf));
+        if (!inside(n, p, slots, "чтение")) {
             return new long[slots];
         }
-        return Arrays.copyOfRange(bufs[buf], idx * bufElem[buf], idx * bufElem[buf] + slots);
+        int cell = (int) p;
+        return Arrays.copyOfRange(memory((int) (p >>> 32)), cell, cell + slots);
     }
 
-    /** Длина буфера в элементах (а не в ячейках). */
+    /** Длина массива-буфера в элементах (а не в ячейках). */
     private int lengthOf(int buf) {
         return buf >= 0 && buf < bufCount ? bufs[buf].length / bufElem[buf] : -1;
     }
@@ -657,8 +692,16 @@ final class Machine {
                 long b = eval(baseNode);
                 long idx = eval(m.b(n));
                 long p = m.typeKind(m.type(baseNode)) == Types.KIND_ARRAY ? b << 32 : b;
+                int width = Math.max(1, typeSlots[m.typeB(m.type(n))]);
                 // индекс - I32: складываем как int, чтобы переполнение/отрицательные значения ловились при обращении
-                return (p & 0xFFFFFFFF00000000L) | ((int) p + (int) idx) & 0xFFFFFFFFL;
+                return (p & 0xFFFFFFFF00000000L) | ((int) p + (int) idx * width) & 0xFFFFFFFFL;
+            }
+            case Op.LOCAL_ADDR:
+                return ((long) STACK << 32) | slot(m.a(n));
+            case Op.FIELD_PTR: {
+                long p = eval(m.a(n));
+                int shift = fieldSlot[m.typeB(m.type(m.a(n)))][m.b(n)];
+                return (p & 0xFFFFFFFF00000000L) | ((int) p + shift) & 0xFFFFFFFFL;
             }
             case Op.LOAD:
                 return load(n, eval(m.a(n)));

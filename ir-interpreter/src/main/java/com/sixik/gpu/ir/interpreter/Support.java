@@ -94,8 +94,6 @@ final class Support {
                     out.add(unsupported(f, n, "spec_const зарезервирован под AutoTune (post-v1)"));
             case Op.BARRIER, Op.LOCAL_ARRAY_DECL ->
                     out.add(unsupported(f, n, "узел " + Op.nameOf(op) + ": local memory и barrier - веха M10"));
-            case Op.LOCAL_ADDR, Op.FIELD_PTR ->
-                    out.add(unsupported(f, n, "узел " + Op.nameOf(op) + ": указатели на локали и поля - веха M9"));
             case Op.INTRINSIC -> {
                 if (!Machine.supportsBuiltin(m.a(n))) {
                     out.add(unsupported(f, n, "builtin #" + m.a(n) + " не поддерживается интерпретатором"));

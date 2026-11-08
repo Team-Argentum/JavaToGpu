@@ -1,7 +1,13 @@
 package com.sixik.gpu.api;
 
+import com.sixik.gpu.api.types.ConstantDoublePtr;
+import com.sixik.gpu.api.types.ConstantFloatPtr;
 import com.sixik.gpu.api.types.Double2;
 import com.sixik.gpu.api.types.DoublePtr;
+import com.sixik.gpu.api.types.GlobalFloatPtr;
+import com.sixik.gpu.api.types.GlobalIntPtr;
+import com.sixik.gpu.api.types.LocalIntPtr;
+import com.sixik.gpu.api.types.LocalLongPtr;
 import com.sixik.gpu.api.types.Float16;
 import com.sixik.gpu.api.types.Float2;
 import com.sixik.gpu.api.types.Float3;
@@ -18,7 +24,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Сгенерированные типы: векторы (значения, неизменяемость, имена компонент) и классы-ссылки. */
@@ -80,6 +88,39 @@ class TypesTest {
         assertEquals(1.0, new DoublePtr(1.0).value);
         assertEquals("FloatPtr(2.5)", p.toString());
         assertNotEquals(new FloatPtr(1f), new FloatPtr(1f), "сравнение по ссылке");
+    }
+
+    @Test
+    void spacePointersAreArraysWithOffsetsAndArithmetic() {
+        float[] a = {0, 1, 2, 3, 4};
+        GlobalFloatPtr p = GlobalFloatPtr.of(a, 1);
+        assertEquals(1f, p.get(0));
+        assertEquals(3f, p.get(2));
+        p.set(2, 30f);
+        assertEquals(30f, a[3], "запись видна в исходном массиве");
+        GlobalFloatPtr q = p.plus(3);
+        assertEquals(4f, q.get(0));
+        assertEquals(1f, p.get(0), "plus не меняет исходный указатель");
+        assertEquals(30f, q.plus(-1).get(0));
+        assertEquals("GlobalFloatPtr(+1)", p.toString());
+        assertThrows(ArrayIndexOutOfBoundsException.class, () -> p.get(4), "на JVM выход за массив - исключение");
+    }
+
+    @Test
+    void spacePointersExistForEveryScalarAndSpace() {
+        assertEquals(7, GlobalIntPtr.of(new int[]{7}, 0).get(0));
+        assertEquals(8L, LocalLongPtr.of(new long[]{8L}, 0).get(0));
+        assertEquals(9.5, ConstantDoublePtr.of(new double[]{9.5}, 0).get(0));
+        LocalIntPtr l = LocalIntPtr.of(new int[2], 0);
+        l.set(1, 5);
+        assertEquals(5, l.get(1));
+    }
+
+    @Test
+    void constantPointerHasNoWriteMethod() {
+        for (java.lang.reflect.Method m : ConstantFloatPtr.class.getDeclaredMethods()) {
+            assertFalse(m.getName().startsWith("set"), "в constant нельзя писать: " + m);
+        }
     }
 
     @Test
