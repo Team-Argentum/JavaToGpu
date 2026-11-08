@@ -175,6 +175,27 @@ public interface DeviceApi extends AutoCloseable {
     long createProgram(long context, String source);
 
     /**
+     * Создаёт программу из бинарного образа, полученного ранее от {@link #programBinary} <b>для того же устройства и
+     * драйвера</b> (ключ дискового кэша это гарантирует). Как и программу из исходника, её нужно собрать {@link #build}.
+     * Образ, который драйвер не принимает (повреждён, от другой версии), - {@link DeviceApiException}: вызывающий
+     * обязан тогда собрать программу из исходника.
+     *
+     * @param context контекст
+     * @param device  устройство
+     * @param binary  образ
+     * @return программа (ещё не собранная)
+     */
+    long createProgramWithBinary(long context, long device, byte[] binary);
+
+    /**
+     * Бинарный образ собранной программы для дискового кэша.
+     *
+     * @param program собранная программа контекста с одним устройством
+     * @return образ либо {@code null}, если драйвер образы не отдаёт
+     */
+    byte[] programBinary(long program);
+
+    /**
      * Собирает программу. Неудачная сборка - не исключение, а {@link BuildOutcome} с логом: ошибка исходника -
      * обычное, ожидаемое событие.
      *

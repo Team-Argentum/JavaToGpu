@@ -23,6 +23,7 @@ import com.sixik.gpu.runtime.device.OpenClApi;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -83,10 +84,19 @@ public final class GpuContext implements AutoCloseable {
     private final Set<PreparedLauncher> launchers = ConcurrentHashMap.newKeySet();
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
+    private final AtomicLong diskHits = new AtomicLong();
+    private final AtomicLong diskMisses = new AtomicLong();
+    private final AtomicLong diskWrites = new AtomicLong();
+    private final Map<IrModule, String> kernelIds = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+    private final DiskCache disk;
+    private final String codegenVersion;
     volatile boolean closed;
 
     private GpuContext(DeviceApi api, boolean ownsApi, DeviceInfo device, long contextHandle, long queue,
-                       EventListener listener, EmitOptions emitOptions, Fallback fallback) {
+                       EventListener listener, EmitOptions emitOptions, Fallback fallback, DiskCache disk,
+                       String codegenVersion) {
+        this.disk = disk;
+        this.codegenVersion = codegenVersion;
         this.api = api;
         this.ownsApi = ownsApi;
         this.device = device;
@@ -119,6 +129,11 @@ public final class GpuContext implements AutoCloseable {
         NEVER
     }
 
+    /** Системное свойство с каталогом дискового кэша либо {@code off}. */
+    public static final String CACHE_PROPERTY = "javatogpu.cache";
+    /** Переменная окружения с каталогом дискового кэша либо {@code off}. */
+    public static final String CACHE_ENVIRONMENT = "JAVATOGPU_CACHE";
+
     /** Построитель {@link GpuContext}. */
     public static final class Builder {
         private DeviceApi api;
@@ -127,6 +142,10 @@ public final class GpuContext implements AutoCloseable {
         private EventListener listener = EventListener.NONE;
         private EmitOptions emitOptions = EmitOptions.RELEASE;
         private Fallback fallback = Fallback.ALLOWED;
+        private Path diskCachePath;
+        private boolean diskCacheOff;
+        private long diskCacheMaxBytes = DiskCache.DEFAULT_MAX_BYTES;
+        private String codegenVersion = OpenClEmitter.VERSION;
 
         private Builder() {
         }
@@ -149,6 +168,64 @@ public final class GpuContext implements AutoCloseable {
          */
         public Builder policy(DevicePolicy policy) {
             this.policy = policy;
+            return this;
+        }
+
+        /**
+         * Явный выбор устройства (то же, что {@code policy.withOverride}): номер, подстрока имени либо {@code подстрока:номер}.
+         * Побеждает фильтры политики; переопределяет и переменную окружения.
+         *
+         * @param override описание устройства
+         * @return этот построитель
+         */
+        public Builder device(String override) {
+            this.policy = policy.withOverride(override);
+            return this;
+        }
+
+        /**
+         * Каталог дискового кэша бинарей драйвера (REWORK_ARCHITECTURE.md, 9.3, 5.24). По умолчанию кэш включён в каталоге
+         * кэша пользователя ОС, если слой доступа не подменён через {@link #api}; для подменённого слоя (тесты) он выключен,
+         * пока не задан явно. Переопределяется также свойством {@code javatogpu.cache} и переменной {@code JAVATOGPU_CACHE}
+         * (путь либо {@code off}), если не вызван {@link #ignoreEnvironment()}.
+         *
+         * @param directory каталог (создаётся при первой записи)
+         * @return этот построитель
+         */
+        public Builder diskCache(Path directory) {
+            this.diskCachePath = directory;
+            this.diskCacheOff = false;
+            return this;
+        }
+
+        /**
+         * Выключает дисковый кэш.
+         *
+         * @return этот построитель
+         */
+        public Builder noDiskCache() {
+            this.diskCacheOff = true;
+            this.diskCachePath = null;
+            return this;
+        }
+
+        /**
+         * @param bytes предел суммарного размера файлов кэша (по умолчанию 512 МиБ); старые вытесняются
+         * @return этот построитель
+         */
+        public Builder diskCacheLimit(long bytes) {
+            this.diskCacheMaxBytes = bytes;
+            return this;
+        }
+
+        /**
+         * Версия кодогенератора для ключа дискового кэша; нужна тестам инвалидации, обычно не вызывается.
+         *
+         * @param version версия
+         * @return этот построитель
+         */
+        Builder codegenVersion(String version) {
+            this.codegenVersion = version;
             return this;
         }
 
@@ -225,7 +302,7 @@ public final class GpuContext implements AutoCloseable {
                     throw e;
                 }
                 GpuContext gc = new GpuContext(a, owns, d, ctx, q, listener == null ? EventListener.NONE : listener,
-                        emitOptions, fallback == null ? Fallback.ALLOWED : fallback);
+                        emitOptions, fallback == null ? Fallback.ALLOWED : fallback, openDiskCache(owns), codegenVersion);
                 gc.emit(GpuEvent.Kind.DEVICE_SELECTED, d.describe(), 0, 0, d.platformName() + ", драйвер " + d.driverVersion());
                 return Result.ok(gc);
             } catch (DeviceApiException e) {
@@ -246,6 +323,26 @@ public final class GpuContext implements AutoCloseable {
                 throw new GpuException(r.diagnostics());
             }
             return r.value();
+        }
+
+        /** Дисковый кэш по настройкам построителя и окружения; {@code null} - выключен. */
+        private DiskCache openDiskCache(boolean realDriver) {
+            if (diskCacheOff) {
+                return null;
+            }
+            if (diskCachePath != null) {
+                return new DiskCache(diskCachePath, diskCacheMaxBytes);
+            }
+            if (environment) {
+                String setting = System.getProperty(CACHE_PROPERTY, System.getenv(CACHE_ENVIRONMENT));
+                if (setting != null && !setting.isBlank()) {
+                    return switch (setting.strip().toLowerCase(java.util.Locale.ROOT)) {
+                        case "off", "false", "0", "no" -> null;
+                        default -> new DiskCache(Path.of(setting.strip()), diskCacheMaxBytes);
+                    };
+                }
+            }
+            return realDriver ? new DiskCache(DiskCache.defaultDirectory(), diskCacheMaxBytes) : null;
         }
 
         private static String describeAll(List<DeviceInfo> all) {
@@ -300,7 +397,7 @@ public final class GpuContext implements AutoCloseable {
 
     /** @return счётчики кэша скомпилированных ядер */
     public CacheStats cacheStats() {
-        return new CacheStats(hits.get(), misses.get(), cache.size());
+        return new CacheStats(hits.get(), misses.get(), cache.size(), diskHits.get(), diskMisses.get(), diskWrites.get());
     }
 
     // =============================================================================================
@@ -334,26 +431,87 @@ public final class GpuContext implements AutoCloseable {
         if (closed) {
             return failure("RT-X02", "контекст закрыт");
         }
-        String key = cacheKey(module, kernel, options);
+        StringBuilder variant = new StringBuilder();
+        int actual = variantFor(module, kernel, variant);
+        String key = cacheKey(module, actual, options);
         Entry entry = cache.computeIfAbsent(key, k -> new Entry());
         synchronized (entry) {
             if (entry.result != null) {
                 hits.incrementAndGet();
-                emit(GpuEvent.Kind.COMPILE, key.substring(0, Math.min(16, key.length())), 0, 0, "cache-hit");
+                emit(GpuEvent.Kind.COMPILE, key.substring(0, Math.min(16, key.length())), 0, 0, "cache-hit" + variant);
                 return entry.result;
             }
             misses.incrementAndGet();
             long t0 = System.nanoTime();
-            Result<CompiledKernel> r = build(module, kernel, options);
+            String[] how = {"built"};
+            Result<CompiledKernel> r = build(module, actual, options, how);
             entry.result = r;
             emit(GpuEvent.Kind.COMPILE, r.isOk() ? r.value().artifact().entry() : "-", System.nanoTime() - t0, 0,
-                    r.isOk() ? "built" : "failed");
+                    (r.isOk() ? how[0] : "failed") + variant);
             return r;
         }
     }
 
+    /**
+     * Выбирает вариант ядра по {@code required} (REWORK_ARCHITECTURE.md, 3.B, 5.24): если устройство не поддерживает
+     * возможности, нужные ядру (заявленные в {@code required} и вычисленные валидатором по телу), берётся его
+     * {@code fallback}-вариант - другая Java-реализация с той же сигнатурой, а если не подходит и он - следующий по цепочке.
+     * Измерений нет: выбор целиком определяется возможностями устройства и потому детерминирован. Если подходящего
+     * варианта нет, возвращается исходное ядро, и {@link #build} сообщит {@code RT-D02} именно о нём.
+     *
+     * @param m      модуль
+     * @param kernel запрошенное ядро
+     * @param note   сюда дописывается пояснение для события {@code COMPILE}, если выбран другой вариант
+     * @return индекс функции, которую надо компилировать
+     */
+    int variantFor(IrModule m, int kernel, StringBuilder note) {
+        if (kernel < 0 || kernel >= m.functionCount() || m.fFallback(kernel) < 0) {
+            return kernel;
+        }
+        Validator.FunctionInfo[] infos = Validator.validate(m).functions();
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        int f = kernel;
+        while (f >= 0 && f < m.functionCount() && seen.add(f)) {
+            int need = requiredMask(m, f) | (f < infos.length && infos[f] != null ? infos[f].requiredFeatures() : 0);
+            if ((need & ~device.features()) == 0) {
+                if (f != kernel) {
+                    int lacking = (requiredMask(m, kernel) | infos[kernel].requiredFeatures()) & ~device.features();
+                    note.append("; вариант f").append(f).append(" вместо f").append(kernel)
+                            .append(": устройство не поддерживает ").append(Features.describe(lacking));
+                }
+                return f;
+            }
+            f = m.fFallback(f);
+        }
+        return kernel;
+    }
+
+    /** @return маска возможностей, заявленных в {@code required} функции */
+    static int requiredMask(IrModule m, int f) {
+        int mask = 0;
+        for (int i = 0; i < m.fRequiredCount(f); i++) {
+            mask |= Features.fromName(m.string(m.fRequiredName(f, i)));
+        }
+        return mask;
+    }
+
+    /**
+     * Идентификатор ядра с запоминанием по экземпляру модуля. {@code IrBinary.kernelId} сериализует модуль и считает
+     * SHA-256, а ключ кэша нужен при каждом обращении к ядру (каждый вызов {@code @Kernel}-метода): без запоминания
+     * попадание в кэш стоило бы порядка микросекунды. Фасад держит один экземпляр модуля на ядро, поэтому запоминание
+     * срабатывает; слабые ключи не удерживают модули в памяти.
+     */
+    private String kernelIdOf(IrModule m) {
+        String id = kernelIds.get(m);
+        if (id == null) {
+            id = IrBinary.kernelId(m);
+            kernelIds.put(m, id);
+        }
+        return id;
+    }
+
     private String cacheKey(IrModule m, int kernel, EmitOptions o) {
-        return IrBinary.kernelId(m) + "#" + kernel + "|" + o.debug() + "," + o.fastMath() + "|" + target.id() + "|"
+        return kernelIdOf(m) + "#" + kernel + "|" + o.debug() + "," + o.fastMath() + "|" + target.id() + "|"
                 + device.name() + "|" + device.driverVersion();
     }
 
@@ -381,16 +539,17 @@ public final class GpuContext implements AutoCloseable {
         return bytes;
     }
 
-    private Result<CompiledKernel> build(IrModule m, int kernel, EmitOptions options) {
+    private Result<CompiledKernel> build(IrModule m, int kernel, EmitOptions options, String[] how) {
         Result<Artifact> emitted = OpenClEmitter.emit(m, kernel, target, options);
         if (!emitted.isOk()) {
             return Result.failed(emitted.diagnostics());
         }
         Artifact art = emitted.value();
-        int missing = art.requiredFeatures() & ~device.features();
+        int missing = (art.requiredFeatures() | requiredMask(m, kernel)) & ~device.features();
         if (missing != 0) {
             return failure("RT-D02", "устройство " + device.describe() + " не поддерживает " + Features.describe(missing)
-                    + ", а ядро " + art.entry() + " их использует");
+                    + ", а ядро " + art.entry() + " их требует"
+                    + (m.fFallback(kernel) >= 0 ? " (вариант fallback тоже не подошёл)" : ""));
         }
         long localBytes = localMemoryBytes(m, kernel);
         if (localBytes > device.localMemory()) {
@@ -402,16 +561,29 @@ public final class GpuContext implements AutoCloseable {
         long program = 0;
         lock.lock();
         try {
-            program = api.createProgram(contextHandle, art.source());
-            DeviceApi.BuildOutcome outcome = api.build(program, device.handle(), art.buildOptions());
-            List<Diagnostic> log = BuildLog.parse(outcome.log(), kernel, !outcome.ok());
-            if (!outcome.ok()) {
-                api.release(DeviceApi.HandleKind.PROGRAM, program);
-                return Result.failed(log);
+            String diskKey = disk == null ? null : diskKey(m, kernel, options, art);
+            long[] cached = diskKey == null ? null : loadFromDisk(diskKey, art);
+            long kernelHandle;
+            List<Diagnostic> log = List.of();
+            if (cached != null) {
+                program = cached[0];
+                kernelHandle = cached[1];
+                how[0] = "disk-hit";
+            } else {
+                program = api.createProgram(contextHandle, art.source());
+                DeviceApi.BuildOutcome outcome = api.build(program, device.handle(), art.buildOptions());
+                log = BuildLog.parse(outcome.log(), kernel, !outcome.ok());
+                if (!outcome.ok()) {
+                    api.release(DeviceApi.HandleKind.PROGRAM, program);
+                    return Result.failed(log);
+                }
+                kernelHandle = api.createKernel(program, art.entry());
+                if (diskKey != null) {
+                    saveToDisk(diskKey, program);
+                }
             }
-            long k = api.createKernel(program, art.entry());
-            long maxWg = api.kernelMaxWorkGroupSize(k, device.handle());
-            CompiledKernel ck = new CompiledKernel(this, m, kernel, art, IrBinary.kernelId(m), access, program, k, maxWg);
+            long maxWg = api.kernelMaxWorkGroupSize(kernelHandle, device.handle());
+            CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(m), access, program, kernelHandle, maxWg);
             compiled.add(ck);
             for (Diagnostic d : log) {
                 emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, d.message());
@@ -424,6 +596,65 @@ public final class GpuContext implements AutoCloseable {
             return failure("RT-X01", "ошибка драйвера при компиляции: " + e.getMessage());
         } finally {
             lock.unlock();
+        }
+    }
+
+    /**
+     * Ключ дискового кэша: всё, от чего зависит бинарь. Версия кодгена и хэш IR без отладочной секции - явные причины
+     * инвалидации; хэш самого исходника страхует от забытого увеличения версии; устройство и драйвер - потому что
+     * образ годится только для того же драйвера; опции - потому что от них зависят и текст, и сборка.
+     */
+    private String diskKey(IrModule m, int kernel, EmitOptions o, Artifact art) {
+        return "gbc1|codegen=" + codegenVersion + "|ir=" + kernelIdOf(m) + "#" + kernel
+                + "|emit=" + o.debug() + "," + o.fastMath() + "|build=" + art.buildOptions()
+                + "|device=" + device.vendor() + "/" + device.name() + "|driver=" + device.driverVersion()
+                + "|opencl=" + device.openClVersion()
+                + "|src=" + java.util.HexFormat.of().formatHex(DiskCache.sha256(
+                art.source().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
+    /**
+     * Пробует собрать ядро из образа с диска. Любая неудача (нет образа, драйвер образ не принял, сборка не прошла) -
+     * промах: образ удаляется, вызывающий собирает из исходника. Вызывается под замком.
+     *
+     * @return {@code {программа, ядро}} либо {@code null}
+     */
+    private long[] loadFromDisk(String key, Artifact art) {
+        byte[] image = disk.get(key);
+        if (image == null) {
+            diskMisses.incrementAndGet();
+            return null;
+        }
+        long program = 0;
+        try {
+            program = api.createProgramWithBinary(contextHandle, device.handle(), image);
+            DeviceApi.BuildOutcome outcome = api.build(program, device.handle(), art.buildOptions());
+            if (outcome.ok()) {
+                long k = api.createKernel(program, art.entry());
+                diskHits.incrementAndGet();
+                return new long[]{program, k};
+            }
+        } catch (DeviceApiException ignored) {
+            // образ от другого драйвера или повреждён: ниже он удаляется
+        }
+        if (program != 0) {
+            api.release(DeviceApi.HandleKind.PROGRAM, program);
+        }
+        disk.remove(key);
+        diskMisses.incrementAndGet();
+        return null;
+    }
+
+    /** Кладёт образ собранной программы на диск, если драйвер его отдаёт. Вызывается под замком. */
+    private void saveToDisk(String key, long program) {
+        byte[] image;
+        try {
+            image = api.programBinary(program);
+        } catch (DeviceApiException e) {
+            return;
+        }
+        if (image != null && disk.put(key, image)) {
+            diskWrites.incrementAndGet();
         }
     }
 
@@ -983,7 +1214,7 @@ public final class GpuContext implements AutoCloseable {
 
     void emit(GpuEvent.Kind kind, String subject, long nanos, long bytes, String detail) {
         try {
-            listener.onEvent(new GpuEvent(kind, subject, nanos, bytes, detail));
+            listener.onEvent(new GpuEvent(kind, subject, nanos, bytes, detail, device.index()));
         } catch (RuntimeException ignored) {
             // наблюдатель не должен ломать вычисление
         }

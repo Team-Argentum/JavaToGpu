@@ -23,6 +23,23 @@ public final class Features {
     public static final int IMAGES = 1 << 3;
 
     /**
+     * Возможность по имени из {@code required} ядра.
+     *
+     * @param name имя вида {@code "FP64"}, {@code "INT64_ATOMICS"}
+     * @return бит возможности либо {@code 0} для неизвестного имени
+     */
+    public static int fromName(String name) {
+        return switch (name) {
+            case "FP64" -> FP64;
+            case "INT64_ATOMICS" -> INT64_ATOMICS;
+            case "INT64_EXT_ATOMICS" -> INT64_EXT_ATOMICS;
+            case "FP16" -> FP16;
+            case "IMAGES" -> IMAGES;
+            default -> 0;
+        };
+    }
+
+    /**
      * @param mask маска возможностей
      * @return читаемое перечисление, например {@code "FP64|INT64_ATOMICS"}, либо {@code "-"} для нуля
      */

@@ -47,6 +47,8 @@ public final class OpenClApi implements DeviceApi {
     private final MethodHandle readBuffer;
     private final MethodHandle createProgram;
     private final MethodHandle buildProgram;
+    private final MethodHandle createProgramWithBinary;
+    private final MethodHandle getProgramInfo;
     private final MethodHandle getBuildInfo;
     private final MethodHandle createKernel;
     private final MethodHandle getKernelWorkGroupInfo;
@@ -72,6 +74,8 @@ public final class OpenClApi implements DeviceApi {
         readBuffer = fn("clEnqueueReadBuffer", FunctionDescriptor.of(INT, PTR, PTR, INT, LONG, LONG, PTR, INT, PTR, PTR));
         createProgram = fn("clCreateProgramWithSource", FunctionDescriptor.of(PTR, PTR, INT, PTR, PTR, PTR));
         buildProgram = fn("clBuildProgram", FunctionDescriptor.of(INT, PTR, INT, PTR, PTR, PTR, PTR));
+        createProgramWithBinary = fn("clCreateProgramWithBinary", FunctionDescriptor.of(PTR, PTR, INT, PTR, PTR, PTR, PTR, PTR));
+        getProgramInfo = fn("clGetProgramInfo", FunctionDescriptor.of(INT, PTR, INT, LONG, PTR, PTR));
         getBuildInfo = fn("clGetProgramBuildInfo", FunctionDescriptor.of(INT, PTR, PTR, INT, LONG, PTR, PTR));
         createKernel = fn("clCreateKernel", FunctionDescriptor.of(PTR, PTR, PTR, PTR));
         getKernelWorkGroupInfo = fn("clGetKernelWorkGroupInfo", FunctionDescriptor.of(INT, PTR, PTR, INT, LONG, PTR, PTR));
@@ -289,6 +293,57 @@ public final class OpenClApi implements DeviceApi {
             return p.address();
         } catch (Throwable t) {
             throw unexpected("clCreateProgramWithSource", t);
+        }
+    }
+
+    @Override
+    public long createProgramWithBinary(long context, long device, byte[] binary) {
+        try (Arena a = Arena.ofConfined()) {
+            MemorySegment devices = a.allocate(8);
+            devices.set(PTR, 0, handle(device));
+            MemorySegment image = a.allocate(Math.max(binary.length, 1));
+            MemorySegment.copy(binary, 0, image, ValueLayout.JAVA_BYTE, 0, binary.length);
+            MemorySegment images = a.allocate(8);
+            images.set(PTR, 0, image);
+            MemorySegment lengths = a.allocate(8);
+            lengths.set(LONG, 0, binary.length);
+            MemorySegment status = a.allocate(4);
+            MemorySegment err = a.allocate(4);
+            MemorySegment p = (MemorySegment) createProgramWithBinary.invoke(handle(context), 1, devices, lengths, images,
+                    status, err);
+            check(err.get(INT, 0), "clCreateProgramWithBinary");
+            check(status.get(INT, 0), "clCreateProgramWithBinary(status)");
+            return p.address();
+        } catch (DeviceApiException e) {
+            throw e;
+        } catch (Throwable t) {
+            throw unexpected("clCreateProgramWithBinary", t);
+        }
+    }
+
+    @Override
+    public byte[] programBinary(long program) {
+        try (Arena a = Arena.ofConfined()) {
+            MemorySegment size = a.allocate(8);
+            // CL_PROGRAM_BINARY_SIZES (0x1165): по size_t на устройство; контекст у нас с одним устройством
+            int st = (int) getProgramInfo.invoke(handle(program), 0x1165, 8L, size, MemorySegment.NULL);
+            long n = size.get(LONG, 0);
+            if (st != 0 || n <= 0 || n > Integer.MAX_VALUE) {
+                return null;
+            }
+            MemorySegment image = a.allocate(n);
+            MemorySegment images = a.allocate(8);
+            images.set(PTR, 0, image);
+            // CL_PROGRAM_BINARIES (0x1166): массив указателей на буферы, по одному на устройство
+            st = (int) getProgramInfo.invoke(handle(program), 0x1166, 8L, images, MemorySegment.NULL);
+            if (st != 0) {
+                return null;
+            }
+            byte[] out = new byte[(int) n];
+            MemorySegment.copy(image, ValueLayout.JAVA_BYTE, 0, out, 0, out.length);
+            return out;
+        } catch (Throwable t) {
+            throw unexpected("clGetProgramInfo", t);
         }
     }
 

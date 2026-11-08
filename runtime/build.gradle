@@ -28,6 +28,7 @@ apply from: rootProject.file('gradle/jmh.gradle')
 
 dependencies {
     jmhImplementation sourceSets.testFixtures.output
+    jmhImplementation testFixtures(project(':ir'))
 }
 
 tasks.named('test') {

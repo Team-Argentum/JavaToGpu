@@ -163,6 +163,50 @@ class DevicePolicyTest {
     }
 
     @Test
+    void builderChoosesAmongHeterogeneousDevicesByPolicyAndOverride() {
+        // как у автора: NVIDIA и AMD рядом с процессорным устройством, порядок перечисления драйвера задан
+        FakeDeviceApi fake = new FakeDeviceApi(CPU, AMD, NVIDIA);
+        try (var ctx = com.sixik.gpu.runtime.GpuContext.builder().api(fake).ignoreEnvironment().build()) {
+            assertEquals("Radeon RX 9070", ctx.device().name(), "GPU раньше CPU; среди GPU - порядок перечисления");
+        }
+        try (var ctx = com.sixik.gpu.runtime.GpuContext.builder().api(fake).ignoreEnvironment()
+                .policy(DevicePolicy.DEFAULT.withVendor("nvidia")).build()) {
+            assertEquals("GeForce RTX 5070", ctx.device().name());
+        }
+        try (var ctx = com.sixik.gpu.runtime.GpuContext.builder().api(fake).ignoreEnvironment().device("intel").build()) {
+            assertEquals("Intel i9", ctx.device().name(), "явный выбор побеждает предпочтение GPU");
+        }
+        try (var ctx = com.sixik.gpu.runtime.GpuContext.builder().api(fake).ignoreEnvironment().device("2").build()) {
+            assertEquals("GeForce RTX 5070", ctx.device().name(), "по порядковому номеру");
+        }
+        // builder побеждает окружение
+        String old = System.getProperty(DevicePolicy.PROPERTY);
+        try {
+            System.setProperty(DevicePolicy.PROPERTY, "intel");
+            try (var ctx = com.sixik.gpu.runtime.GpuContext.builder().api(fake).device("radeon").build()) {
+                assertEquals("Radeon RX 9070", ctx.device().name());
+            }
+        } finally {
+            if (old == null) {
+                System.clearProperty(DevicePolicy.PROPERTY);
+            } else {
+                System.setProperty(DevicePolicy.PROPERTY, old);
+            }
+        }
+    }
+
+    @Test
+    void orderIsTheSameOnEveryRun() {
+        FakeDeviceApi fake = new FakeDeviceApi(AMD, NVIDIA, CPU);
+        List<DeviceInfo> all = DeviceInfo.enumerate(fake);
+        List<String> first = DevicePolicy.DEFAULT.candidates(all).stream().map(DeviceInfo::name).toList();
+        for (int i = 0; i < 5; i++) {
+            assertEquals(first, DevicePolicy.DEFAULT.candidates(DeviceInfo.enumerate(fake)).stream().map(DeviceInfo::name).toList());
+        }
+        assertEquals(List.of("Radeon RX 9070", "GeForce RTX 5070", "Intel i9"), first);
+    }
+
+    @Test
     void contextHonoursTheEnvironmentOverrideUnlessTold() {
         FakeDeviceApi fake = new FakeDeviceApi(NVIDIA, CPU);
         String old = System.getProperty(DevicePolicy.PROPERTY);

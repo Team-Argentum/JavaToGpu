@@ -626,4 +626,39 @@ class EmitterTest {
         }
         assertTrue(Builtins.count() >= 15);
     }
+
+    @Test
+    void inlineAndOptLevelAreInformativeAttributesOnly() {
+        // оптимизатора нет: политика inline и уровень оптимизации хранятся в IR (и меняют хэш), но не влияют на текст OpenCL C
+        java.util.function.IntFunction<IrModule> build = variant -> {
+            IrBuilder b = new IrBuilder();
+            int arr = b.array(AddressSpace.GLOBAL, Types.I32);
+            int helper = b.beginFunction(IrModule.DEVICE, Types.I32, Types.I32);
+            if (variant == 1) {
+                b.inlinePolicy(IrModule.INLINE_ALWAYS);
+                b.optLevel(3);
+            }
+            b.endFunction(b.block(b.returnStmt(b.binary(Op.ADD, b.param(0), b.constI32(1)))));
+            b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+            if (variant == 1) {
+                b.inlinePolicy(IrModule.INLINE_NEVER);
+                b.optLevel(2);
+            }
+            b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), b.call(helper, b.constI32(1)))));
+            return b.build();
+        };
+        IrModule plain = build.apply(0);
+        IrModule tuned = build.apply(1);
+        assertEquals(OpenClEmitter.emit(plain, Target.GENERIC).value().source(),
+                OpenClEmitter.emit(tuned, Target.GENERIC).value().source());
+        assertFalse(java.util.Arrays.equals(com.sixik.gpu.ir.IrBinary.write(plain), com.sixik.gpu.ir.IrBinary.write(tuned)),
+                "атрибуты остаются в IR и входят в хэш");
+        assertEquals(IrModule.INLINE_ALWAYS, tuned.fInline(0));
+        assertEquals(3, tuned.fOpt(0));
+    }
+
+    @Test
+    void codegenVersionIsPartOfThePublicContract() {
+        assertFalse(OpenClEmitter.VERSION.isBlank());
+    }
 }

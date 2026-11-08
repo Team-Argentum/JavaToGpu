@@ -8,9 +8,16 @@ package com.sixik.gpu.runtime;
  * @param subject о чём событие: имя устройства, точка входа ядра, описание буфера
  * @param nanos   длительность в наносекундах (0 для мгновенных событий)
  * @param bytes   перенесённые байты (для {@link Kind#UPLOAD} и {@link Kind#READBACK}), иначе 0
- * @param detail  подробности: {@code "cache-hit"} / {@code "built"}, текст предупреждения и т.п.
+ * @param detail  подробности: {@code "cache-hit"} / {@code "disk-hit"} / {@code "built"}, текст предупреждения и т.п.
+ * @param device  порядковый номер устройства контекста ({@code DeviceInfo.index}), чтобы потребитель событий с
+ *                несколькими контекстами различал источники; {@code -1} - событие не относится к устройству
  */
-public record GpuEvent(Kind kind, String subject, long nanos, long bytes, String detail) {
+public record GpuEvent(Kind kind, String subject, long nanos, long bytes, String detail, int device) {
+
+    /** Событие без устройства ({@code device = -1}). */
+    public GpuEvent(Kind kind, String subject, long nanos, long bytes, String detail) {
+        this(kind, subject, nanos, bytes, detail, -1);
+    }
 
     /** Виды событий. */
     public enum Kind {

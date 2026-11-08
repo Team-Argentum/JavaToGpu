@@ -155,6 +155,9 @@ public final class FakeDeviceApi implements DeviceApi {
     private int liveKernels;
     private boolean closed;
     private boolean journaling = true;
+    private boolean binariesSupported = true;
+    private boolean rejectBinaries;
+    private int binaryLoads;
     private int builds;
     private int enqueues;
     private int writes;
@@ -226,7 +229,32 @@ public final class FakeDeviceApi implements DeviceApi {
         return this;
     }
 
+    /**
+     * Драйвер не отдаёт бинарные образы программ (так ведёт себя часть реальных драйверов).
+     *
+     * @return этот фейк
+     */
+    public FakeDeviceApi withoutBinaries() {
+        binariesSupported = false;
+        return this;
+    }
+
+    /**
+     * Драйвер отвергает любой бинарный образ (устаревший или повреждённый кэш).
+     *
+     * @return этот фейк
+     */
+    public FakeDeviceApi rejectingBinaries() {
+        rejectBinaries = true;
+        return this;
+    }
+
     // ---- наблюдение ---------------------------------------------------------------------------
+
+    /** @return число попыток создать программу из образа */
+    public int binaryLoads() {
+        return binaryLoads;
+    }
 
     /** @return журнал вызовов в порядке выполнения: имя функции */
     public List<String> journal() {
@@ -420,6 +448,36 @@ public final class FakeDeviceApi implements DeviceApi {
         sources.add(source);
         livePrograms++;
         return h;
+    }
+
+    /** Образ фейка: заголовок и исходник программы. */
+    private static final byte[] BINARY_MAGIC = "FAKEBIN\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+    @Override
+    public long createProgramWithBinary(long context, long device, byte[] binary) {
+        call("createProgramWithBinary");
+        binaryLoads++;
+        if (rejectBinaries || binary.length < BINARY_MAGIC.length
+                || !java.util.Arrays.equals(java.util.Arrays.copyOf(binary, BINARY_MAGIC.length), BINARY_MAGIC)) {
+            throw new DeviceApiException(-42, "clCreateProgramWithBinary", "образ не принят");
+        }
+        long h = fresh();
+        programs.put(h, new String(binary, BINARY_MAGIC.length, binary.length - BINARY_MAGIC.length,
+                java.nio.charset.StandardCharsets.UTF_8));
+        livePrograms++;
+        return h;
+    }
+
+    @Override
+    public byte[] programBinary(long program) {
+        call("programBinary");
+        if (!binariesSupported) {
+            return null;
+        }
+        byte[] src = programs.get(program).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] out = java.util.Arrays.copyOf(BINARY_MAGIC, BINARY_MAGIC.length + src.length);
+        System.arraycopy(src, 0, out, BINARY_MAGIC.length, src.length);
+        return out;
     }
 
     @Override
