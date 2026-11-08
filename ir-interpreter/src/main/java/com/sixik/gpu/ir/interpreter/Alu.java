@@ -324,8 +324,9 @@ final class Alu {
      *   <li>{@code BOOL} &harr; целое: {@code 0/1} и {@code != 0};</li>
      *   <li>целое &rarr; вещественное: округление к ближайшему (беззнаковые трактуются как беззнаковые);</li>
      *   <li>вещественное &rarr; целое: <b>насыщение</b> к {@code MIN/MAX} целевого типа, {@code NaN -> 0}
-     *       (контракт IR V2 = Java {@code (int) float}); для {@code I8, U8, I16, U16} насыщение идёт к диапазону
-     *       самого типа хранения;</li>
+     *       (контракт IR V2 = Java {@code (int) float}); для {@code I8, U8, I16, U16} - как Java
+     *       {@code (byte) f}: сначала насыщение к {@code int}, затем усечение до ширины типа хранения
+     *       ({@code (char) -1.0f == 65535}), а не насыщение к диапазону узкого типа;</li>
      *   <li>вещественное &harr; вещественное: Java {@code (float) double} и {@code (double) float}.</li>
      * </ul>
      *
@@ -417,20 +418,15 @@ final class Alu {
                 return ((long) (d - TWO_POW_63)) | Long.MIN_VALUE;
             case Types.I64:
                 return (long) d;
-            default: {
+            case Types.U32: {
                 long t = (long) d;
-                long lo;
-                long hi;
-                switch (to) {
-                    case Types.I8 -> { lo = Byte.MIN_VALUE; hi = Byte.MAX_VALUE; }
-                    case Types.U8 -> { lo = 0; hi = 0xFF; }
-                    case Types.I16 -> { lo = Short.MIN_VALUE; hi = Short.MAX_VALUE; }
-                    case Types.U16 -> { lo = 0; hi = 0xFFFF; }
-                    case Types.I32 -> { lo = Integer.MIN_VALUE; hi = Integer.MAX_VALUE; }
-                    default -> { lo = 0; hi = MASK32; }
-                }
-                long c = Math.max(lo, Math.min(hi, t));
-                return canon(to, c);
+                return canon(to, Math.max(0, Math.min(MASK32, t)));
+            }
+            default: {
+                // I32 насыщается к своему диапазону; I8/U8/I16/U16 - как Java (byte) f: сначала float -> int
+                // с насыщением, затем усечение до ширины типа хранения (JLS 5.1.3)
+                long t = (long) d;
+                return canon(to, Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, t)));
             }
         }
     }

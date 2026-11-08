@@ -2,4 +2,18 @@ description = 'Эталонный CPU-интерпретатор IR для ди�
 
 dependencies {
     api project(':ir')
+
+    // Только тесты (production-граф проверяет verifyModuleBoundaries и этих связей не видит):
+    //  * api - JVM-реализации Gpu.* и WorkItem для прямого вызова оригинального Java-метода;
+    //  * frontend-java как annotation processor образцов: образцы собираются в IR точно так же, как у пользователя,
+    //    и тест берёт IR из ресурсов META-INF/gpu (это заодно проверяет весь путь «исходник -> ресурс -> исполнение»);
+    //  * фикстуры ir - модули, собранные вручную.
+    testImplementation project(':api')
+    testAnnotationProcessor project(':frontend-java')
+    testImplementation testFixtures(project(':ir'))
+}
+
+// Процессор объявляет только @Kernel/@DeviceFunction; остальные аннотации образцов и тестов он «не заявляет» - это норма.
+tasks.named('compileTestJava') {
+    options.compilerArgs += ['-Xlint:-processing']
 }
