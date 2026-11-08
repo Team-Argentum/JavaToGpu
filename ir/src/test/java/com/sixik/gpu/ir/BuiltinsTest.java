@@ -48,6 +48,15 @@ class BuiltinsTest {
         assertTrue(Builtins.has(atomic, Builtins.READS));
         assertTrue(Builtins.has(atomic, Builtins.ATOMIC));
         assertFalse(Builtins.has(atomic, Builtins.PURE));
+        assertTrue(Builtins.has(Builtins.idOf("barrier"), Builtins.SYNC));
+        assertTrue(Builtins.has(Builtins.idOf("barrierGlobal"), Builtins.SYNC));
+        assertFalse(Builtins.has(atomic, Builtins.SYNC));
+        assertFalse(Builtins.has(atomic, Builtins.EXT), "add и sub есть в базовом наборе 64-битных атомиков");
+        for (String ext : new String[]{"atomicMin", "atomicMax", "atomicAnd", "atomicOr", "atomicXor"}) {
+            assertTrue(Builtins.has(Builtins.idOf(ext), Builtins.EXT), ext);
+            assertTrue(Builtins.has(Builtins.idOf(ext), Builtins.ATOMIC), ext);
+        }
+        assertFalse(Builtins.has(Builtins.idOf("atomicXchg"), Builtins.EXT));
     }
 
     @Test
@@ -76,8 +85,8 @@ class BuiltinsTest {
                 occupied++;
             }
         }
-        assertEquals(15, occupied);
-        assertEquals(15, Builtins.count());
+        assertEquals(24, occupied);
+        assertEquals(24, Builtins.count());
     }
 
     @Test

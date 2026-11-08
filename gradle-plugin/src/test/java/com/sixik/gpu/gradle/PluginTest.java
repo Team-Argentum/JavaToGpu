@@ -155,6 +155,36 @@ class PluginTest {
     }
 
     @Test
+    void strictBarriersMakeDivergentBarrierACompileError(@TempDir Path dir) throws IOException {
+        String divergent = """
+                package demo;
+
+                import com.sixik.gpu.api.Gpu;
+                import com.sixik.gpu.api.annotations.*;
+
+                public class Sync {
+                    @Kernel
+                    @WorkGroup(x = 4)
+                    public static void bad(@Global int[] a) {
+                        if (Gpu.getLocalId(0) == 0) {
+                            Gpu.barrier();
+                        }
+                        a[0] = 1;
+                    }
+                }
+                """;
+        project(dir, "");
+        write(dir.resolve("src/main/java/demo/Sync.java"), divergent);
+        BuildResult lenient = runner(dir, "classes").build();
+        assertTrue(lenient.getOutput().contains("GPU0130"), "по умолчанию - предупреждение: " + lenient.getOutput());
+
+        project(dir, "strictBarriers = true");
+        write(dir.resolve("src/main/java/demo/Sync.java"), divergent);
+        BuildResult strict = runner(dir, "clean", "classes").buildAndFail();
+        assertTrue(strict.getOutput().contains("GPU0131"), strict.getOutput());
+    }
+
+    @Test
     void weavingCanBeSwitchedOff(@TempDir Path dir) throws IOException {
         project(dir, "weave = false");
         runner(dir, "classes").build();

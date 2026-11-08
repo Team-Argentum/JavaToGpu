@@ -15,6 +15,8 @@ public final class Features {
     public static final int FP64 = 1;
     /** Атомарные операции над 64-битными целыми. */
     public static final int INT64_ATOMICS = 1 << 1;
+    /** Расширенные атомики над 64-битными целыми: min, max, and, or, xor ({@code cl_khr_int64_extended_atomics}). */
+    public static final int INT64_EXT_ATOMICS = 1 << 4;
     /** Зарезервировано под {@code half}. */
     public static final int FP16 = 1 << 2;
     /** Зарезервировано под images. */
@@ -31,6 +33,7 @@ public final class Features {
         StringBuilder sb = new StringBuilder();
         append(sb, mask, FP64, "FP64");
         append(sb, mask, INT64_ATOMICS, "INT64_ATOMICS");
+        append(sb, mask, INT64_EXT_ATOMICS, "INT64_EXT_ATOMICS");
         append(sb, mask, FP16, "FP16");
         append(sb, mask, IMAGES, "IMAGES");
         return sb.toString();

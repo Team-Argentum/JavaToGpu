@@ -8,13 +8,15 @@
 # Формат строки builtin:   <id> <name> <flags> <ret> (<args>)
 #   id     - стабильное число; НЕ переиспользуется и не меняется (на него ссылается бинарный IR)
 #   name   - имя в Java-API (camelCase)
-#   flags  - через запятую: pure | effect | reads | div | uniform | atomic | ulp=<N> | ulp64=<N>
+#   flags  - через запятую: pure | effect | reads | div | uniform | atomic | ext | sync | ulp=<N> | ulp64=<N>
 #              pure    - без побочных эффектов, результат зависит только от аргументов и work-item
 #              effect  - имеет побочный эффект (разрешён только в позиции значения стейтмента, IR-E01)
 #              reads   - читает память (узел «открытый», IR-E02)
 #              div     - результат различается у work-item'ов группы (источник для IR-B01)
 #              uniform - результат считается одинаковым внутри группы (снимает taint, IR-B01)
 #              atomic  - атомарная операция (INT64_ATOMICS для 64-битных)
+#              ext     - «расширенный» атомик (min, max, and, or, xor): для 64 бит ещё и INT64_EXT_ATOMICS
+#              sync    - точка синхронизации группы: в IR узел barrier, а не intrinsic (IR-S08)
 #              ulp=N   - допустимая погрешность в ULP для f32 (дифференциальные тесты, 8.3)
 #              ulp64=N - то же для f64; если не задано, равно ulp
 #   типы   - void bool i32 u32 i64 u64 f32 f64 (+ i8 u8 i16 u16 как типы хранения);
@@ -28,6 +30,8 @@
 #   jvm <типы> = <выражение>     - JVM-реализация (fallback и эталон тестов). <типы> - список скаляров через
 #                                  запятую (f32,f64,i32,i64) для обобщённых builtin; для необобщённых
 #                                  <типы> опускается. Параметры в выражении называются a, b, c.
+#                                  Выражение, начинающееся с '{', - тело метода целиком (для void и атомиков).
+#                                  Для ptr<T:...> перегрузки строятся для Global<T>Ptr и Local<T>Ptr.
 #                                  Векторные перегрузки строятся автоматически покомпонентно.
 #
 # Глобальные директивы (читает только генератор api):
@@ -35,8 +39,8 @@
 #   pointers <скаляры>           - классы-ссылки на скаляр FloatPtr, IntPtr, ... (поле value) и явные указатели
 #                                  GlobalFloatPtr, LocalFloatPtr, ConstantFloatPtr, ... (of/get/set/plus)
 #
-# builtin, у которого в сигнатуре есть тип без Java-представления (указатели ptr<...> до M9, u32/u64
-# и типы хранения), в Java-API пока не генерируется; генератор перечисляет такие builtins в Gpu.java.
+# builtin, у которого в сигнатуре есть тип без Java-представления (u32/u64 и типы хранения),
+# в Java-API не генерируется; генератор перечисляет такие builtins в Gpu.java.
 #
 # Значения ulp - минимальная точность функций по спецификации OpenCL C (full profile, раздел
 # «Relative Error as ULPs»): sin/cos 4 ULP; sqrt 3 ULP для float и корректное округление для double;
@@ -100,7 +104,48 @@ jvm f32,f64,i32,i64 = Math.min(a, b)
 doc Утверждает, что значение {@code a} одинаково у всех work-item группы (снимает предупреждение IR-B01); возвращает {@code a}.
 jvm f32,f64,i32,i64 = a
 
+# --- синхронизация группы -------------------------------------------------------------------------
+# Флаг sync: в IR это узел barrier (флаги 1 - local, 3 - local+global), а не intrinsic (IR-S08).
+# На JVM барьер выполнить нельзя (work-item'ы идут по очереди): такие ядра в JVM-fallback не уходят.
+15  barrier         effect,sync     void ()
+doc Барьер work-group с гарантией видимости записей в {@code local}-память: все work-item группы должны дойти до него, прежде чем кто-либо пойдёт дальше. Вызывать нужно из кода, одинакового для всей группы (IR-B01).
+jvm = { throw new UnsupportedOperationException("barrier выполняется только на устройстве или в IR-интерпретаторе"); }
+16  barrierGlobal   effect,sync     void ()
+doc То же, что {@code barrier()}, но гарантирует и видимость записей в {@code global}-память внутри группы.
+jvm = { throw new UnsupportedOperationException("barrierGlobal выполняется только на устройстве или в IR-интерпретаторе"); }
+
 # --- атомики -------------------------------------------------------------------------------------
-# Java-представления нет до появления pointer-типов (M9, M10).
-14  atomicAdd       effect,reads,atomic   T (ptr<T:geni>, T)
+# Первый аргумент - Global*Ptr либо Local*Ptr (Int/Long); результат - прежнее значение. На JVM work-item'ы идут по очереди,
+# поэтому обычное чтение-модификация-запись атомарно. Флаг ext: min/max/and/or/xor над 64 битами - расширенные атомики OpenCL.
+14  atomicAdd       effect,reads,atomic    T (ptr<T:geni>, T)
 doc Атомарно прибавляет {@code b} к значению по указателю {@code a} и возвращает прежнее значение.
+jvm i32 = { int old = a.get(0); a.set(0, old + b); return old; }
+jvm i64 = { long old = a.get(0); a.set(0, old + b); return old; }
+17  atomicSub       effect,reads,atomic    T (ptr<T:geni>, T)
+doc Атомарно вычитает {@code b} из значения по указателю {@code a} и возвращает прежнее значение.
+jvm i32 = { int old = a.get(0); a.set(0, old - b); return old; }
+jvm i64 = { long old = a.get(0); a.set(0, old - b); return old; }
+18  atomicMin       effect,reads,atomic,ext T (ptr<T:geni>, T)
+doc Атомарно заменяет значение по указателю {@code a} меньшим из него и {@code b}; возвращает прежнее значение.
+jvm i32 = { int old = a.get(0); a.set(0, Math.min(old, b)); return old; }
+jvm i64 = { long old = a.get(0); a.set(0, Math.min(old, b)); return old; }
+19  atomicMax       effect,reads,atomic,ext T (ptr<T:geni>, T)
+doc Атомарно заменяет значение по указателю {@code a} большим из него и {@code b}; возвращает прежнее значение.
+jvm i32 = { int old = a.get(0); a.set(0, Math.max(old, b)); return old; }
+jvm i64 = { long old = a.get(0); a.set(0, Math.max(old, b)); return old; }
+20  atomicAnd       effect,reads,atomic,ext T (ptr<T:geni>, T)
+doc Атомарно заменяет значение по указателю {@code a} на побитовое И с {@code b}; возвращает прежнее значение.
+jvm i32 = { int old = a.get(0); a.set(0, old & b); return old; }
+jvm i64 = { long old = a.get(0); a.set(0, old & b); return old; }
+21  atomicOr        effect,reads,atomic,ext T (ptr<T:geni>, T)
+doc Атомарно заменяет значение по указателю {@code a} на побитовое ИЛИ с {@code b}; возвращает прежнее значение.
+jvm i32 = { int old = a.get(0); a.set(0, old | b); return old; }
+jvm i64 = { long old = a.get(0); a.set(0, old | b); return old; }
+22  atomicXor       effect,reads,atomic,ext T (ptr<T:geni>, T)
+doc Атомарно заменяет значение по указателю {@code a} на побитовое исключающее ИЛИ с {@code b}; возвращает прежнее значение.
+jvm i32 = { int old = a.get(0); a.set(0, old ^ b); return old; }
+jvm i64 = { long old = a.get(0); a.set(0, old ^ b); return old; }
+23  atomicXchg      effect,reads,atomic    T (ptr<T:geni>, T)
+doc Атомарно записывает {@code b} по указателю {@code a} и возвращает прежнее значение.
+jvm i32 = { int old = a.get(0); a.set(0, b); return old; }
+jvm i64 = { long old = a.get(0); a.set(0, b); return old; }

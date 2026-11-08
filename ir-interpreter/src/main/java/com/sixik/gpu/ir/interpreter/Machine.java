@@ -29,6 +29,14 @@ import java.util.Arrays;
  * видна при следующем {@code local_get} той же локали. Адрес обязан лежать внутри буфера целиком (ширина доступа
  * учитывается), иначе {@code IN-R01}.</p>
  *
+ * <p><b>Группы и барьер (M10).</b> Ядро исполняется группа за группой. Массивы {@code local_array_decl} живут на уровне
+ * группы: буферы выделяются (нулями) при входе в группу и лежат сразу за хостовыми, private-буферы work-item-а - за ними.
+ * Если в модуле есть {@code barrier}, work-item-ы группы идут как сопрограммы ({@link Coop}): каждый - в своём потоке, но
+ * в любой момент работает ровно один (передача управления семафорами), поэтому исполнение детерминировано и без гонок
+ * данных самого интерпретатора. Барьер - точка передачи: группа движется вперёд, только когда все дошли до <i>одного и
+ * того же</i> барьера, иначе {@code IN-R05} (в OpenCL это неопределённое поведение, а интерпретатор строже).
+ * Ядра без барьера идут последовательно, как раньше.</p>
+ *
  * <p><b>Ошибки.</b> Нарушение времени выполнения (выход за границы, деление на ноль, исчерпание бюджета шагов) -
  * не исключение: первое нарушение запоминается, исполнение немедленно прекращается через код возврата
  * {@link #FAULT} стейтментов, а значения выражений после нарушения не используются (все обращения к памяти проверяются
@@ -69,6 +77,15 @@ final class Machine {
     private static final int B_MIN = 13;
     private static final int B_ASSUME_UNIFORM = 14;
     private static final int B_ATOMIC_ADD = 15;
+    private static final int B_ATOMIC_SUB = 16;
+    private static final int B_ATOMIC_MIN = 17;
+    private static final int B_ATOMIC_MAX = 18;
+    private static final int B_ATOMIC_AND = 19;
+    private static final int B_ATOMIC_OR = 20;
+    private static final int B_ATOMIC_XOR = 21;
+    private static final int B_ATOMIC_XCHG = 22;
+    /** barrier/barrierGlobal: в IR это узел {@code barrier}, intrinsic с таким id валидатор отвергает ({@code IR-S08}). */
+    private static final int B_SYNC = 23;
 
     /** Соответствие «id builtin -> код исполнения»; {@link #B_NONE}, если интерпретатор builtin не знает. */
     private static final int[] BUILTIN_CODE;
@@ -95,6 +112,14 @@ final class Machine {
                 case "min" -> B_MIN;
                 case "assumeUniform" -> B_ASSUME_UNIFORM;
                 case "atomicAdd" -> B_ATOMIC_ADD;
+                case "atomicSub" -> B_ATOMIC_SUB;
+                case "atomicMin" -> B_ATOMIC_MIN;
+                case "atomicMax" -> B_ATOMIC_MAX;
+                case "atomicAnd" -> B_ATOMIC_AND;
+                case "atomicOr" -> B_ATOMIC_OR;
+                case "atomicXor" -> B_ATOMIC_XOR;
+                case "atomicXchg" -> B_ATOMIC_XCHG;
+                case "barrier", "barrierGlobal" -> B_SYNC;
                 default -> B_NONE;
             };
         }
@@ -131,6 +156,17 @@ final class Machine {
     private final long limit;
     private long ret;
     private long[] retAgg;
+
+    // ---- группа: local-массивы и сопрограммы (M10) ------------------------------------------------
+    private final boolean hasBarrier;
+    private int[] localDecl = new int[0];       // узлы local_array_decl верхнего уровня ядра по порядку
+    private int[] localLength = new int[0];     // число элементов каждого
+    private int[] localWidth = new int[0];      // ячеек на элемент каждого
+    private int[] localOrdinal = new int[0];    // по узлу: номер в localDecl либо -1
+    private int privateBase;                    // номер первого private-буфера: hostCount + число local-массивов
+    private Coop coop;                          // планировщик группы, если в модуле есть barrier
+    private int itemIndex;                      // номер work-item-а в группе (для Coop)
+    private long totalSteps;                    // шаги work-item-ов групп, исполненных сопрограммами
 
     // ---- геометрия запуска ------------------------------------------------------------------------
     private final int workDim;
@@ -219,6 +255,38 @@ final class Machine {
             ngr[d] = global[d] / local[d];
         }
         this.limit = maxSteps > 0 ? maxSteps : Long.MAX_VALUE;
+        boolean barrier = false;
+        for (int n = 0; n < m.nodeCount(); n++) {
+            barrier |= m.op(n) == Op.BARRIER;
+        }
+        this.hasBarrier = barrier;
+    }
+
+    /** Исполнитель одного work-item-а группы: общие таблицы и буферы хоста, своё состояние (стек, private-память, шаги). */
+    private Machine(Machine p) {
+        this.m = p.m;
+        this.paramSlot = p.paramSlot;
+        this.localSlot = p.localSlot;
+        this.frameSize = p.frameSize;
+        this.arrayLocals = p.arrayLocals;
+        this.typeSlots = p.typeSlots;
+        this.typeAgg = p.typeAgg;
+        this.fieldSlot = p.fieldSlot;
+        this.hostCount = p.hostCount;
+        this.limit = p.limit;
+        this.workDim = p.workDim;
+        this.hasBarrier = p.hasBarrier;
+        System.arraycopy(p.gsz, 0, gsz, 0, 3);
+        System.arraycopy(p.lsz, 0, lsz, 0, 3);
+        System.arraycopy(p.ngr, 0, ngr, 0, 3);
+        this.bufs = Arrays.copyOf(p.bufs, p.bufs.length);
+        this.bufElem = Arrays.copyOf(p.bufElem, p.bufElem.length);
+        this.bufCount = p.bufCount;
+        this.localDecl = p.localDecl;
+        this.localLength = p.localLength;
+        this.localWidth = p.localWidth;
+        this.localOrdinal = p.localOrdinal;
+        this.privateBase = p.privateBase;
     }
 
     /**
@@ -255,7 +323,7 @@ final class Machine {
 
     /** @return число выполненных стейтментов */
     long steps() {
-        return steps;
+        return steps + totalSteps;
     }
 
     private boolean faulted() {
@@ -284,31 +352,194 @@ final class Machine {
      * @return {@code null}, если все work-item'ы завершились; иначе первое нарушение
      */
     Diagnostic run(int entry, long[] argv) {
-        int body = m.fBody(entry);
-        for (int z = 0; z < gsz[2]; z++) {
-            for (int y = 0; y < gsz[1]; y++) {
-                for (int x = 0; x < gsz[0]; x++) {
-                    gid[0] = x;
-                    gid[1] = y;
-                    gid[2] = z;
-                    for (int d = 0; d < 3; d++) {
-                        lid[d] = gid[d] % lsz[d];
-                        grp[d] = gid[d] / lsz[d];
+        prepareLocals(entry);
+        for (int gz = 0; gz < ngr[2]; gz++) {
+            for (int gy = 0; gy < ngr[1]; gy++) {
+                for (int gx = 0; gx < ngr[0]; gx++) {
+                    grp[0] = gx;
+                    grp[1] = gy;
+                    grp[2] = gz;
+                    long[][] shared = new long[localDecl.length][];
+                    for (int i = 0; i < shared.length; i++) {
+                        shared[i] = new long[localLength[i] * localWidth[i]];
                     }
-                    bufCount = hostCount;
-                    cur = entry;
-                    base = 0;
-                    top = frameSize[entry];
-                    ensureStack(top);
-                    System.arraycopy(argv, 0, stack, 0, argv.length);
-                    initArrayLocals(entry, 0);
-                    if (exec(body) == FAULT) {
+                    Diagnostic d = hasBarrier ? runGroupWithBarriers(entry, argv, shared)
+                            : runGroupSequentially(entry, argv, shared);
+                    if (d != null) {
+                        return d;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Находит local-массивы ядра (правило IR-M02: только верхний уровень тела) и считает размер их буферов. */
+    private void prepareLocals(int entry) {
+        localOrdinal = new int[m.nodeCount()];
+        Arrays.fill(localOrdinal, -1);
+        int body = m.fBody(entry);
+        java.util.ArrayList<Integer> found = new java.util.ArrayList<>();
+        if (m.op(body) == Op.BLOCK) {
+            for (int i = 0; i < m.b(body); i++) {
+                int st = m.list(m.a(body) + i);
+                if (m.op(st) == Op.LOCAL_ARRAY_DECL) {
+                    found.add(st);
+                }
+            }
+        }
+        localDecl = new int[found.size()];
+        localLength = new int[found.size()];
+        localWidth = new int[found.size()];
+        for (int i = 0; i < localDecl.length; i++) {
+            int st = found.get(i);
+            localDecl[i] = st;
+            localOrdinal[st] = i;
+            localLength[i] = m.a(m.b(st));
+            localWidth[i] = Math.max(1, typeSlots[m.typeB(m.fLocalType(entry, m.a(st)))]);
+        }
+        privateBase = hostCount + localDecl.length;
+    }
+
+    /** Подключает буферы local-массивов группы к таблице буферов этого исполнителя. */
+    private void installLocals(long[][] shared) {
+        if (bufs.length < privateBase + 8) {
+            bufs = Arrays.copyOf(bufs, privateBase + 16);
+            bufElem = Arrays.copyOf(bufElem, bufs.length);
+            Arrays.fill(bufElem, hostCount, bufElem.length, 1);
+        }
+        for (int i = 0; i < shared.length; i++) {
+            bufs[hostCount + i] = shared[i];
+            bufElem[hostCount + i] = localWidth[i];
+        }
+    }
+
+    /** Одна группа без барьеров: work-item-ы по очереди в этом же исполнителе. */
+    private Diagnostic runGroupSequentially(int entry, long[] argv, long[][] shared) {
+        installLocals(shared);
+        for (int lz = 0; lz < lsz[2]; lz++) {
+            for (int ly = 0; ly < lsz[1]; ly++) {
+                for (int lx = 0; lx < lsz[0]; lx++) {
+                    if (!runItem(entry, argv, lx, ly, lz)) {
                         return diagnostic();
                     }
                 }
             }
         }
         return null;
+    }
+
+    /**
+     * Исполняет одного work-item-а группы {@code grp}.
+     *
+     * @return {@code false}, если work-item нарушил правила (первое нарушение запомнено)
+     */
+    private boolean runItem(int entry, long[] argv, int lx, int ly, int lz) {
+        lid[0] = lx;
+        lid[1] = ly;
+        lid[2] = lz;
+        for (int d = 0; d < 3; d++) {
+            gid[d] = grp[d] * lsz[d] + lid[d];
+        }
+        bufCount = privateBase;
+        cur = entry;
+        base = 0;
+        top = frameSize[entry];
+        ensureStack(top);
+        System.arraycopy(argv, 0, stack, 0, argv.length);
+        initArrayLocals(entry, 0);
+        return exec(m.fBody(entry)) != FAULT;
+    }
+
+    /**
+     * Группа с барьерами. Каждый work-item - сопрограмма в своём (виртуальном) потоке; планировщик по очереди даёт каждому
+     * работать до очередного барьера или до конца и проверяет, что группа вышла на барьер целиком.
+     */
+    private Diagnostic runGroupWithBarriers(int entry, long[] argv, long[][] shared) {
+        int count = lsz[0] * lsz[1] * lsz[2];
+        Coop c = new Coop(count);
+        Machine[] items = new Machine[count];
+        Thread[] threads = new Thread[count];
+        for (int i = 0; i < count; i++) {
+            Machine item = new Machine(this);
+            item.installLocals(shared);
+            item.coop = c;
+            item.itemIndex = i;
+            items[i] = item;
+            int lx = i % lsz[0];
+            int ly = (i / lsz[0]) % lsz[1];
+            int lz = i / (lsz[0] * lsz[1]);
+            System.arraycopy(grp, 0, item.grp, 0, 3);
+            final int index = i;
+            threads[i] = Thread.ofVirtual().unstarted(() -> {
+                try {
+                    c.awaitFirstTurn(index);
+                    item.runItem(entry, argv, lx, ly, lz);
+                } catch (Coop.Abort ignored) {
+                    // группа остановлена из-за нарушения другого work-item-а
+                } catch (StackOverflowError e) {
+                    item.fault("IN-R04", -1, "слишком глубокая вложенность вызовов");
+                } catch (Throwable t) {
+                    item.fault("IN-R06", -1, "внутренняя ошибка интерпретатора: " + t);
+                } finally {
+                    c.finish(index);
+                }
+            });
+            threads[i].start();
+        }
+        Diagnostic result = null;
+        try {
+            while (result == null) {
+                int finished = 0;
+                int waiting = 0;
+                int barrierNode = -1;
+                for (int i = 0; i < count && result == null; i++) {
+                    if (c.isFinished(i)) {
+                        finished++;
+                        continue;
+                    }
+                    c.resume(i);
+                    if (items[i].faulted()) {
+                        result = items[i].diagnostic();
+                    } else if (c.isFinished(i)) {
+                        finished++;
+                    } else {
+                        waiting++;
+                        int at = c.waitingAt(i);
+                        if (barrierNode >= 0 && at != barrierNode) {
+                            result = barrierMismatch(entry, at,
+                                    "work-item-ы ждут на разных барьерах: n" + barrierNode + " и n" + at);
+                        }
+                        barrierNode = at;
+                    }
+                }
+                if (result == null && finished > 0 && waiting > 0) {
+                    result = barrierMismatch(entry, barrierNode, "часть work-item-ов группы завершилась, не дойдя до барьера n"
+                            + barrierNode + ", а остальные " + waiting + " ждут на нём");
+                }
+                if (result == null && waiting == 0) {
+                    break;
+                }
+            }
+        } finally {
+            c.abort();
+            for (Thread t : threads) {
+                try {
+                    t.join();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            for (Machine item : items) {
+                totalSteps += item.steps;
+            }
+        }
+        return result;
+    }
+
+    private Diagnostic barrierMismatch(int entry, int node, String message) {
+        return new Diagnostic("IN-R05", Diagnostic.Severity.ERROR, entry, node,
+                message + " [work-group=(" + grp[0] + "," + grp[1] + "," + grp[2] + ")]");
     }
 
     private Diagnostic diagnostic() {
@@ -421,6 +652,21 @@ final class Machine {
             }
             case Op.PRIVATE_ARRAY_DECL:
                 return execPrivateArray(n) ? NORMAL : FAULT;
+            case Op.LOCAL_ARRAY_DECL:
+                // буфер уже выделен на группу (prepareLocals/installLocals): work-item лишь получает на него ссылку
+                if (localOrdinal[n] < 0) {
+                    fault("IN-U01", n, "local_array_decl не на верхнем уровне тела ядра");
+                    return FAULT;
+                }
+                stack[slot(m.a(n))] = hostCount + localOrdinal[n];
+                return NORMAL;
+            case Op.BARRIER:
+                if (coop == null) {
+                    fault("IN-U01", n, "barrier вне группового планировщика");
+                    return FAULT;
+                }
+                coop.arrive(itemIndex, n);
+                return NORMAL;
             default:
                 fault("IN-U01", n, "узел " + Op.nameOf(m.op(n)) + " не поддерживается интерпретатором");
                 return FAULT;
@@ -988,14 +1234,22 @@ final class Machine {
                 long b = eval(m.list(off + 1));
                 return minMax(code == B_MAX, t, a, b);
             }
-            case B_ATOMIC_ADD: {
+            case B_ATOMIC_ADD:
+            case B_ATOMIC_SUB:
+            case B_ATOMIC_MIN:
+            case B_ATOMIC_MAX:
+            case B_ATOMIC_AND:
+            case B_ATOMIC_OR:
+            case B_ATOMIC_XOR:
+            case B_ATOMIC_XCHG: {
+                // work-item-ы исполняются по очереди, поэтому чтение-модификация-запись атомарна по построению
                 long p = eval(m.list(off));
                 long v = eval(m.list(off + 1));
                 long old = load(n, p);
                 if (faulted()) {
                     return 0;
                 }
-                store(n, p, Alu.arith(Op.ADD, t, old, v));
+                store(n, p, atomicApply(code, t, old, v));
                 return old;
             }
             default:
@@ -1054,6 +1308,39 @@ final class Machine {
             case B_COS -> Double.doubleToRawLongBits(StrictMath.cos(x));
             default -> Double.doubleToRawLongBits(Math.sqrt(x));
         };
+    }
+
+    /**
+     * Новое значение ячейки для атомарной операции. Каноническое значение 32-битного целого - его биты, расширенные
+     * знаком (и для {@code U32}), поэтому побитовые операции и обмен сохраняют каноничность, а {@code min/max} для
+     * беззнаковых типов сравнивают как беззнаковые.
+     *
+     * @param code код builtin ({@code B_ATOMIC_*})
+     * @param t    тип значения ({@code I32, U32, I64, U64})
+     * @param old  прежнее значение
+     * @param v    операнд
+     * @return записываемое значение
+     */
+    private static long atomicApply(int code, int t, long old, long v) {
+        switch (code) {
+            case B_ATOMIC_ADD:
+                return Alu.arith(Op.ADD, t, old, v);
+            case B_ATOMIC_SUB:
+                return Alu.arith(Op.SUB, t, old, v);
+            case B_ATOMIC_AND:
+                return old & v;
+            case B_ATOMIC_OR:
+                return old | v;
+            case B_ATOMIC_XOR:
+                return old ^ v;
+            case B_ATOMIC_XCHG:
+                return v;
+            default: {
+                int cmp = t == Types.U64 ? Long.compareUnsigned(old, v)
+                        : t == Types.U32 ? Integer.compareUnsigned((int) old, (int) v) : Long.compare(old, v);
+                return code == B_ATOMIC_MAX ? (cmp >= 0 ? old : v) : (cmp <= 0 ? old : v);
+            }
+        }
     }
 
     /**

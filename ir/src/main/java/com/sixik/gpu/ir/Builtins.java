@@ -28,6 +28,10 @@ public final class Builtins {
     public static final int UNIFORM = 1 << 4;
     /** Флаг: атомарная операция. */
     public static final int ATOMIC = 1 << 5;
+    /** Флаг: точка синхронизации группы; в IR выражается узлом {@code barrier}, а не {@code intrinsic} ({@code IR-S08}). */
+    public static final int SYNC = 1 << 6;
+    /** Флаг: атомарная операция из «расширенного» набора (min, max, and, or, xor); для 64 бит нужна {@link Features#INT64_EXT_ATOMICS}. */
+    public static final int EXT = 1 << 7;
 
     // Кодирование токенов сигнатуры.
     private static final int TOK_BIND = 100;   // 100 + класс: связывает T
@@ -144,6 +148,8 @@ public final class Builtins {
             case "div" -> DIV;
             case "uniform" -> UNIFORM;
             case "atomic" -> ATOMIC;
+            case "sync" -> SYNC;
+            case "ext" -> EXT;
             default -> throw new IllegalStateException("builtins.def: неизвестный флаг '" + f + "' у id " + id);
         };
     }

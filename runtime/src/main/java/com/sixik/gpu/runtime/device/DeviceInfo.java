@@ -83,6 +83,9 @@ public record DeviceInfo(int index, long platform, long handle, String platformN
         if (ext.contains("cl_khr_int64_base_atomics")) {
             mask |= Features.INT64_ATOMICS;
         }
+        if (ext.contains("cl_khr_int64_extended_atomics")) {
+            mask |= Features.INT64_EXT_ATOMICS;
+        }
         if (ext.contains("cl_khr_fp16")) {
             mask |= Features.FP16;
         }

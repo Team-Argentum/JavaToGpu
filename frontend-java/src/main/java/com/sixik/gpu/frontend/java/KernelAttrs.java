@@ -21,7 +21,7 @@ import java.util.TreeSet;
 final class KernelAttrs {
 
     /** Имена возможностей устройства, допустимые в {@code required} (совпадают с {@code Features} в модуле ir). */
-    static final Set<String> KNOWN_FEATURES = Set.of("FP64", "INT64_ATOMICS", "FP16", "IMAGES");
+    static final Set<String> KNOWN_FEATURES = Set.of("FP64", "INT64_ATOMICS", "INT64_EXT_ATOMICS", "FP16", "IMAGES");
 
     private final int inline;
     private final int optLevel;

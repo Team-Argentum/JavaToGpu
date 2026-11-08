@@ -208,6 +208,22 @@ class ValidatorSemanticsTest {
         }), "IR-C03");
     }
 
+    @Test
+    void s08_syncBuiltinMustBeABarrierNode() {
+        expect(kernel(NO_PARAMS, b -> new int[]{b.exprStmt(b.intrinsic(Builtins.idOf("barrier")))}), "IR-S08");
+    }
+
+    @Test
+    void features_extendedInt64AtomicsNeedTheirOwnBit() {
+        java.util.function.Function<String, Integer> features = name -> {
+            IrModule m = kernel(b -> new int[]{b.ptr(AddressSpace.GLOBAL, Types.I64)},
+                    b -> new int[]{b.exprStmt(b.intrinsic(Builtins.idOf(name), b.param(0), b.constI64(1)))});
+            return Validator.validate(m).functions()[0].requiredFeatures();
+        };
+        assertEquals(Features.INT64_ATOMICS, (int) features.apply("atomicAdd"));
+        assertEquals(Features.INT64_ATOMICS | Features.INT64_EXT_ATOMICS, (int) features.apply("atomicMax"));
+    }
+
     // ---------------------------------------------------------------- IR-M ----------------------
 
     @Test

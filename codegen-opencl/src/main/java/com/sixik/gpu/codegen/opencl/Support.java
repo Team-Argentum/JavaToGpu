@@ -15,10 +15,10 @@ import java.util.List;
  *
  * <p>Эмиттер покрывает скаляры, векторы и struct (M8), указатели на них в любом пространстве адресов (M9: параметры и
  * локали device-функций, {@code local_addr}, {@code field_ptr}), массивы {@code global/constant/private}, управление
- * потоком, вызовы функций, builtins. Всё, что относится к следующим вехам, отвергается диагностикой {@code CG-U01} - так
- * же, как интерпретатор отвечает {@code IN-U01}: {@code barrier}, {@code local_array_decl} и {@code __local}-параметры
- * (M10), {@code spec_const}, нативные тела и указатель в параметре ядра (у ядра параметр-массив несёт длину, у
- * указателя её нет). Обход итеративный, каждый узел проверяется один раз.</p>
+ * потоком, вызовы функций, builtins, {@code barrier} и {@code local_array_decl} (M10). Остальное отвергается диагностикой
+ * {@code CG-U01} - так же, как интерпретатор отвечает {@code IN-U01}: {@code spec_const}, нативные тела,
+ * {@code __local}-параметры ядра (вне v1: локальный массив объявляется в теле ядра) и указатель в параметре ядра
+ * (у ядра параметр-массив несёт длину, у указателя её нет). Обход итеративный, каждый узел проверяется один раз.</p>
  */
 final class Support {
 
@@ -175,16 +175,16 @@ final class Support {
     private static void checkSignature(IrModule m, int f, boolean kernel, List<Diagnostic> out) {
         for (int i = 0; i < m.fParamCount(f); i++) {
             int t = m.fParamType(f, i);
-            if (!storageOk(m, t, true)) {
+            if (!storageOk(m, t)) {
                 out.add(unsupported(f, -1, "параметр " + i + " типа t" + t + " не поддержан"));
             } else if (kernel && m.typeKind(t) == Types.KIND_PTR) {
                 out.add(unsupported(f, -1, "параметр " + i + ": указатель в параметрах ядра не поддержан, используйте массив"));
             } else if (kernel && m.typeKind(t) == Types.KIND_ARRAY && Types.space(m, t) == AddressSpace.LOCAL) {
-                out.add(unsupported(f, -1, "параметр " + i + ": __local-массив в параметрах ядра - веха M10"));
+                out.add(unsupported(f, -1, "параметр " + i + ": __local-массив в параметрах ядра - вне v1 (локальный массив объявляется в теле ядра)"));
             }
         }
         for (int l = 0; l < m.fLocalCount(f); l++) {
-            if (!storageOk(m, m.fLocalType(f, l), false)) {
+            if (!storageOk(m, m.fLocalType(f, l))) {
                 out.add(unsupported(f, -1, "локаль " + l + " типа t" + m.fLocalType(f, l) + " не поддержана"));
             }
         }
@@ -234,8 +234,8 @@ final class Support {
         }
     }
 
-    /** Допустимый тип параметра/локали: значение, указатель либо одномерный массив в global/constant/private. */
-    private static boolean storageOk(IrModule m, int t, boolean param) {
+    /** Допустимый тип параметра/локали: значение, указатель либо одномерный массив в global/constant/private/local. */
+    private static boolean storageOk(IrModule m, int t) {
         if (valueOk(m, t) || pointerOk(m, t)) {
             return true;
         }
@@ -243,7 +243,7 @@ final class Support {
             int space = Types.space(m, t);
             int elem = Types.elem(m, t);
             return valueOk(m, elem) && (space == AddressSpace.GLOBAL || space == AddressSpace.CONSTANT
-                    || space == AddressSpace.PRIVATE || (param && space == AddressSpace.LOCAL));
+                    || space == AddressSpace.PRIVATE || space == AddressSpace.LOCAL);
         }
         return false;
     }
@@ -253,11 +253,10 @@ final class Support {
         String why = null;
         switch (op) {
             case Op.SPEC_CONST -> why = "spec_const не поддержана";
-            case Op.BARRIER, Op.LOCAL_ARRAY_DECL -> why = Op.nameOf(op) + " - local memory и barrier, веха M10";
             default -> {
                 int t = m.type(n);
                 boolean ok = t == Types.VOID || valueOk(m, t)
-                        || (m.typeKind(t) == Types.KIND_ARRAY && storageOk(m, t, true))
+                        || (m.typeKind(t) == Types.KIND_ARRAY && storageOk(m, t))
                         || pointerOk(m, t);
                 if (!ok) {
                     why = "значение типа t" + t + " не поддержано";

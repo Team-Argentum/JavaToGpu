@@ -396,7 +396,7 @@ public final class ApiGenerator {
         sb.append(" * <p>Таблица версии ").append(def.version()).append(" генерируется из {@code builtins/builtins.def}; допуски в ULP ")
                 .append("для сравнения с GPU заданы там же (REWORK_ARCHITECTURE.md, 8.3).");
         if (!skipped.isEmpty()) {
-            sb.append(" Пока без Java-представления (нужны pointer-типы): ").append(String.join(", ", skipped)).append('.');
+            sb.append(" Без Java-представления (тип сигнатуры не имеет Java-класса): ").append(String.join(", ", skipped)).append('.');
         }
         sb.append("</p>\n */\n");
         sb.append("public final class Gpu {\n\n    private Gpu() {\n    }\n");
@@ -410,7 +410,7 @@ public final class ApiGenerator {
         List<String> toks = new ArrayList<>(b.args());
         toks.add(b.ret());
         for (String t : toks) {
-            boolean generic = t.equals("T") || t.startsWith("T:");
+            boolean generic = t.equals("T") || t.startsWith("T:") || t.startsWith("ptr<T:");
             if (!generic && !FIXED_JAVA.containsKey(t)) {
                 return "тип '" + t + "' без Java-представления";
             }
@@ -419,7 +419,7 @@ public final class ApiGenerator {
     }
 
     private static boolean isGeneric(Builtin b) {
-        return b.ret().equals("T") || b.args().stream().anyMatch(a -> a.equals("T") || a.startsWith("T:"));
+        return b.ret().equals("T") || b.args().stream().anyMatch(a -> a.equals("T") || a.startsWith("T:") || a.startsWith("ptr<T:"));
     }
 
     private static List<String> classScalars(String cls, String builtin) {
@@ -437,13 +437,17 @@ public final class ApiGenerator {
                 throw new IllegalArgumentException("builtin " + b.name() + ": нужна ровно одна jvm-реализация без типов");
             }
             emit(out, b, FIXED_JAVA.get(b.ret()), b.args().stream().map(FIXED_JAVA::get).toList(),
-                    "return " + b.jvm().get("") + ";", false);
+                    body(b.jvm().get("")), false);
             return;
         }
         String cls = null;
         for (String a : b.args()) {
             if (a.startsWith("T:")) {
                 cls = a.substring(2);
+                break;
+            }
+            if (a.startsWith("ptr<T:") && a.endsWith(">")) {
+                cls = a.substring(6, a.length() - 1);
                 break;
             }
         }
@@ -462,12 +466,17 @@ public final class ApiGenerator {
                 throw new IllegalArgumentException("builtin " + b.name() + ": нет jvm-реализации для " + s);
             }
         }
+        boolean hasPtr = b.args().stream().anyMatch(a -> a.startsWith("ptr<T:"));
         for (String s : scalars) {
             String j = SCALARS.get(s).java();
-            emit(out, b, subst(b.ret(), j, b), b.args().stream().map(a -> subst(a, j, b)).toList(),
-                    "return " + b.jvm().get(s) + ";", false);
+            // указатель-аргумент: по перегрузке на каждое пространство, в котором атомарные операции допустимы
+            for (Space space : hasPtr ? List.of(Space.GLOBAL, Space.LOCAL) : java.util.Arrays.asList((Space) null)) {
+                emit(out, b, subst(b.ret(), j, b), b.args().stream().map(a -> a.startsWith("ptr<T:")
+                                ? space.cls + SCALARS.get(s).cls() + "Ptr" : subst(a, j, b)).toList(),
+                        body(b.jvm().get(s)), false);
+            }
         }
-        boolean vectorizable = b.ret().equals("T");
+        boolean vectorizable = b.ret().equals("T") && !hasPtr;
         if (!vectorizable) {
             return;
         }
@@ -495,6 +504,15 @@ public final class ApiGenerator {
                 emit(out, b, v, params, body.toString(), true);
             }
         }
+    }
+
+    /** Тело метода: выражение {@code e} превращается в {@code return e;}, текст в фигурных скобках берётся как есть. */
+    private static String body(String jvm) {
+        String t = jvm.strip();
+        if (t.startsWith("{") && t.endsWith("}")) {
+            return t.substring(1, t.length() - 1).strip();
+        }
+        return "return " + t + ";";
     }
 
     private static String subst(String token, String javaType, Builtin b) {

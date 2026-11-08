@@ -53,7 +53,10 @@ class SupportTest {
 
     @Test
     void checkReportsEveryUnsupportedNodeWithItsLocation() {
-        IrModule m = Fixtures.rich();
+        IrBuilder b = new IrBuilder();
+        b.beginFunction(IrModule.KERNEL, Types.VOID, b.array(AddressSpace.GLOBAL, Types.I32));
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), b.specConst(0, Types.I32))));
+        IrModule m = b.build();
         int kernel = m.functionCount() - 1;
         List<Diagnostic> d = Support.check(m, kernel, Support.reachable(m, kernel));
         assertFalse(d.isEmpty());

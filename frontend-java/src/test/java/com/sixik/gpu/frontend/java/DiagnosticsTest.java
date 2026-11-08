@@ -254,7 +254,7 @@ class DiagnosticsTest {
     );
 
     /** Коды, проверяемые отдельными тестами окружения и внутренних ошибок. */
-    private static final Set<String> ENVIRONMENT_CODES = Set.of("GPU0201", "GPU0901", "GPU0902", "GPU0903");
+    private static final Set<String> ENVIRONMENT_CODES = Set.of("GPU0130", "GPU0131", "GPU0201", "GPU0901", "GPU0902", "GPU0903");
 
     @Test
     void everyCaseReportsItsCodeOnTheMarkedLine() {

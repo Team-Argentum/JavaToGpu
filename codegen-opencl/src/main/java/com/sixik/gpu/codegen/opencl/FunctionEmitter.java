@@ -242,6 +242,15 @@ final class FunctionEmitter {
                     line("}");
                 }
             }
+            case Op.LOCAL_ARRAY_DECL -> {
+                // __local-переменная обязана быть на уровне функции-ядра (IR-M02): это верхний уровень тела
+                int l = m.a(n);
+                int len = m.a(m.b(n));
+                arrayLen[l] = len;
+                line("__local " + lay.type(Types.elem(m, m.fLocalType(f, l))) + " " + localNames[l] + "[" + len + "];");
+            }
+            case Op.BARRIER -> line("barrier(" + ((m.a(n) & 1) != 0 ? "CLK_LOCAL_MEM_FENCE" : "")
+                    + (m.a(n) == 3 ? " | " : "") + ((m.a(n) & 2) != 0 ? "CLK_GLOBAL_MEM_FENCE" : "") + ");");
             case Op.IF -> ifStatement(n);
             case Op.LOOP -> loopStatement(n);
             case Op.DO_WHILE -> {
@@ -919,8 +928,9 @@ final class FunctionEmitter {
             }
             case "assumeUniform":
                 return expr(Operands.get(m, n, 0));
-            case "atomicAdd": {
-                String fn = Types.bits(t) == 64 ? "atom_add" : "atomic_add";
+            case "atomicAdd", "atomicSub", "atomicMin", "atomicMax", "atomicAnd", "atomicOr", "atomicXor", "atomicXchg": {
+                // 32 бита - atomic_*, 64 бита - atom_* (cl_khr_int64_*_atomics); суффикс - имя операции в нижнем регистре
+                String fn = (Types.bits(t) == 64 ? "atom_" : "atomic_") + name.substring("atomic".length()).toLowerCase();
                 return new Ex(fn + "(" + expr(Operands.get(m, n, 0)).s() + ", " + expr(Operands.get(m, n, 1)).s() + ")",
                         P_ATOM);
             }

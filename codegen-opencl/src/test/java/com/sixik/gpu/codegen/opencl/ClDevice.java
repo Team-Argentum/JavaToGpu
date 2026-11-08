@@ -25,6 +25,7 @@ final class ClDevice implements AutoCloseable {
     private static final int CL_DEVICE_TYPE_GPU = 4;
     private static final int CL_DEVICE_TYPE_ALL = 0xFFFFFFFF;
     private static final int CL_DEVICE_NAME = 0x102B;
+    private static final int CL_DEVICE_EXTENSIONS = 0x1030;
     private static final int CL_PROGRAM_BUILD_LOG = 0x1183;
     private static final int CL_MEM_READ_WRITE = 1;
 
@@ -44,6 +45,7 @@ final class ClDevice implements AutoCloseable {
     private MemorySegment context;
     private MemorySegment queue;
     private String name;
+    private String extensions = "";
 
     private ClDevice(SymbolLookup lib) {
         this.lib = lib;
@@ -67,6 +69,11 @@ final class ClDevice implements AutoCloseable {
     /** @return имя устройства */
     String name() {
         return name;
+    }
+
+    /** @return строка расширений устройства ({@code CL_DEVICE_EXTENSIONS}) */
+    String extensions() {
+        return extensions;
     }
 
     private MethodHandle fn(String symbol, FunctionDescriptor fd) {
@@ -107,6 +114,9 @@ final class ClDevice implements AutoCloseable {
             MemorySegment ret = arena.allocate(8);
             fn("clGetDeviceInfo", FunctionDescriptor.of(I, A, I, L, A, A)).invoke(device, CL_DEVICE_NAME, 256L, buf, ret);
             name = buf.getString(0, StandardCharsets.UTF_8);
+            MemorySegment ext = arena.allocate(8192);
+            fn("clGetDeviceInfo", FunctionDescriptor.of(I, A, I, L, A, A)).invoke(device, CL_DEVICE_EXTENSIONS, 8192L, ext, ret);
+            extensions = ext.getString(0, StandardCharsets.UTF_8);
             MemorySegment err = arena.allocate(4);
             MemorySegment devices = arena.allocate(8);
             devices.set(A, 0, device);

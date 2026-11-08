@@ -323,7 +323,7 @@ public final class GpuContext implements AutoCloseable {
      * @param kernel  индекс функции-ядра
      * @param options параметры генерации
      * @return скомпилированное ядро (в диагностиках - предупреждения драйвера) либо ошибки: {@code IR-*}/{@code CG-*}
-     *         от генератора, {@code RT-D02} (устройство не поддерживает нужные возможности), {@code RT-C01} (драйвер
+     *         от генератора, {@code RT-D02} (устройство не поддерживает нужные возможности), {@code RT-D04} (local-памяти ядра больше, чем у устройства), {@code RT-C01} (драйвер
      *         отверг исходник), {@code RT-X01} (ошибка драйвера), {@code RT-X02} (контекст закрыт)
      */
     public Result<CompiledKernel> compile(IrModule module, int kernel, EmitOptions options) {
@@ -356,6 +356,30 @@ public final class GpuContext implements AutoCloseable {
                 + device.name() + "|" + device.driverVersion();
     }
 
+    /**
+     * Сколько байт {@code local}-памяти объявляет ядро: сумма {@code длина × размер элемента} по узлам
+     * {@code local_array_decl} верхнего уровня тела (правило IR-M02 запрещает их где-либо ещё). Размер элемента - по
+     * {@link AbiLayout}, как у массива в C, поэтому {@code float3} считается за 16 байт.
+     *
+     * @param m      модуль
+     * @param kernel индекс ядра
+     * @return байты local-памяти на work-group
+     */
+    static long localMemoryBytes(IrModule m, int kernel) {
+        int body = m.fBody(kernel);
+        long bytes = 0;
+        if (m.op(body) == com.sixik.gpu.ir.Op.BLOCK) {
+            for (int i = 0; i < m.b(body); i++) {
+                int st = m.list(m.a(body) + i);
+                if (m.op(st) == com.sixik.gpu.ir.Op.LOCAL_ARRAY_DECL) {
+                    int elem = Types.elem(m, m.fLocalType(kernel, m.a(st)));
+                    bytes += (long) m.a(m.b(st)) * AbiLayout.sizeOf(m, elem);
+                }
+            }
+        }
+        return bytes;
+    }
+
     private Result<CompiledKernel> build(IrModule m, int kernel, EmitOptions options) {
         Result<Artifact> emitted = OpenClEmitter.emit(m, kernel, target, options);
         if (!emitted.isOk()) {
@@ -366,6 +390,12 @@ public final class GpuContext implements AutoCloseable {
         if (missing != 0) {
             return failure("RT-D02", "устройство " + device.describe() + " не поддерживает " + Features.describe(missing)
                     + ", а ядро " + art.entry() + " их использует");
+        }
+        long localBytes = localMemoryBytes(m, kernel);
+        if (localBytes > device.localMemory()) {
+            return failure("RT-D04", "ядро " + art.entry() + " объявляет " + localBytes + " байт local-памяти, а устройство "
+                    + device.describe() + " даёт на work-group " + device.localMemory() + " (CL_DEVICE_LOCAL_MEM_SIZE); "
+                    + "уменьшите массивы с @Local");
         }
         int[] access = Validator.validate(m).functions()[kernel].paramAccess();
         long program = 0;

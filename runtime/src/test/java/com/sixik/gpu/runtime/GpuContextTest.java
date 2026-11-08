@@ -265,9 +265,9 @@ class GpuContextTest {
     @Test
     void codegenErrorsPassThrough() {
         IrBuilder b = new IrBuilder();
-        int arr = b.array(AddressSpace.GLOBAL, Types.F32);
+        int arr = b.array(AddressSpace.GLOBAL, Types.I32);
         b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
-        b.endFunction(b.block(b.barrier(1))); // barrier - веха M10: кодген отвечает CG-U01
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), b.specConst(0, Types.I32)))); // spec_const вне v1: CG-U01
         try (GpuContext ctx = open(FakeDeviceApi.withGpu())) {
             assertEquals("CG-U01", code(ctx.compile(b.build())));
         }

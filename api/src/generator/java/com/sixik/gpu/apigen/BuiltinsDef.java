@@ -23,7 +23,7 @@ public final class BuiltinsDef {
     /** Допустимое число компонент вектора (совпадает с {@code Types} в модуле {@code ir}, правило IR-T07). */
     public static final Set<Integer> API_LANES = Set.of(2, 3, 4, 8, 16);
 
-    private static final Set<String> FLAG_NAMES = Set.of("pure", "effect", "reads", "div", "uniform", "atomic");
+    private static final Set<String> FLAG_NAMES = Set.of("pure", "effect", "reads", "div", "uniform", "atomic", "ext", "sync");
 
     /**
      * Один builtin.

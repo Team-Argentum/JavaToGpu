@@ -145,14 +145,29 @@ class ApiGeneratorTest {
     }
 
     @Test
-    void builtinWithPointerIsSkippedAndReported() {
-        var out = ApiGenerator.generate(BuiltinsDef.parse(generic("jvm f32 = a\njvm f64 = a\n")
-                + "8 atom effect,atomic T (ptr<T:geni>, T)\ndoc Атомик.\n"));
-        assertEquals(List.of("atom"), out.skipped());
+    void pointerBuiltinGetsOverloadsForGlobalAndLocalPointersWithBlockBody() {
+        var out = ApiGenerator.generate(BuiltinsDef.parse(HEAD
+                + "8 atom effect,atomic T (ptr<T:geni>, T)\ndoc Атомик.\n"
+                + "jvm i32 = { int old = a.get(0); a.set(0, old + b); return old; }\n"
+                + "jvm i64 = { long old = a.get(0); a.set(0, old + b); return old; }\n"));
+        assertEquals(List.of(), out.skipped());
         String src = out.files().get("com/sixik/gpu/api/Gpu.java");
-        assertFalse(src.contains(" atom("));
-        assertTrue(src.contains("Пока без Java-представления"));
-        assertTrue(src.contains("atom."), "в Javadoc класса перечислены пропущенные builtins");
+        for (String sig : new String[]{"int atom(GlobalIntPtr a, int b)", "int atom(LocalIntPtr a, int b)",
+                "long atom(GlobalLongPtr a, long b)", "long atom(LocalLongPtr a, long b)"}) {
+            assertTrue(src.contains("public static " + sig), sig);
+        }
+        assertFalse(src.contains("ConstantIntPtr a"), "в constant атомики недопустимы");
+        assertFalse(src.contains("Int2 atom("), "векторных перегрузок у атомиков нет");
+        assertTrue(src.contains("int old = a.get(0); a.set(0, old + b); return old;"), "блок вставлен как есть");
+        assertFalse(src.contains("return {"), src);
+    }
+
+    @Test
+    void voidBuiltinWithBlockBody() {
+        String src = ApiGenerator.generate(BuiltinsDef.parse(HEAD + "9 sync effect,sync void ()\ndoc Барьер.\n"
+                + "jvm = { throw new UnsupportedOperationException(\"x\"); }\n")).files().get("com/sixik/gpu/api/Gpu.java");
+        assertTrue(src.contains("public static void sync() {"), src);
+        assertTrue(src.contains("throw new UnsupportedOperationException(\"x\");"), src);
     }
 
     @Test
@@ -229,10 +244,10 @@ class ApiGeneratorTest {
     void realTableGeneratesFullApi() throws IOException {
         var def = BuiltinsDef.parse(Files.readString(Path.of(System.getProperty("builtins.def")), StandardCharsets.UTF_8));
         var out = ApiGenerator.generate(def);
-        assertEquals(List.of("atomicAdd"), out.skipped(), "до M10 Java-представления нет только у atomic-builtin");
+        assertEquals(List.of(), out.skipped(), "с M10 у всех builtins есть Java-представление");
         // Gpu + 4 скаляра x 5 размеров векторов + 4 класса-ссылки + 4 скаляра x 3 пространства указателей
         assertEquals(1 + 20 + 4 + 12, out.files().size());
-        assertEquals(15, def.builtins().size());
+        assertEquals(24, def.builtins().size());
         for (var e : out.files().entrySet()) {
             assertTrue(e.getValue().startsWith("// СГЕНЕРИРОВАНО"), e.getKey());
             assertFalse(e.getValue().contains("\r"), "только \\n: вывод не зависит от ОС");

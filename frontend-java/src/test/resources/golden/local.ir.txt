@@ -1,0 +1,62 @@
+=== exchange ===
+module format=1 builtins=1 nodes=45 functions=1
+type t16 = array<global,i32>
+type t17 = array<local,i32>
+type t18 = ptr<global,i32>
+type t19 = ptr<local,i32>
+func f0 "exchange" kernel ret=void reqd_wg=(8,1,1) features=- group_sync=yes
+  param p0 "in" : array<global,i32>  access=READ
+  param p1 "out" : array<global,i32>  access=WRITE
+  param p2 "total" : array<global,i32>  access=READ_WRITE
+  local l0 "tile" : array<local,i32>
+  local l1 "lid" : i32
+  local l2 "old" : i32
+  local l3 : i32
+  body = n44
+nodes:
+  n0 const_int i32 8
+  n1 local_array_decl void l0 len n0  @11:9
+  n2 const_int i32 0  @12:34
+  n3 intrinsic i32 getLocalId[n2]  @12:19
+  n4 local_decl void l1 = n3  @12:9
+  n5 param array<global,i32> p0  @13:21
+  n6 const_int i32 0  @13:40
+  n7 intrinsic i32 getGlobalId[n6]  @13:24
+  n8 elem_ptr ptr<global,i32> n5[n7]
+  n9 load i32 n8  @13:21
+  n10 local_get array<local,i32> l0  @13:9
+  n11 local_get i32 l1  @13:14
+  n12 elem_ptr ptr<local,i32> n10[n11]
+  n13 store void n12 = n9  @13:9
+  n14 barrier void flags=1  @14:9
+  n15 local_get array<local,i32> l0  @15:35
+  n16 const_int i32 7  @15:40
+  n17 local_get i32 l1  @15:44
+  n18 sub i32 n16 n17  @15:40
+  n19 elem_ptr ptr<local,i32> n15[n18]
+  n20 load i32 n19  @15:35
+  n21 param array<global,i32> p1  @15:9
+  n22 const_int i32 0  @15:29
+  n23 intrinsic i32 getGlobalId[n22]  @15:13
+  n24 elem_ptr ptr<global,i32> n21[n23]
+  n25 store void n24 = n20  @15:9
+  n26 barrier void flags=3  @16:9
+  n27 param array<global,i32> p2  @17:49
+  n28 const_int i32 0  @17:56
+  n29 elem_ptr ptr<global,i32> n27[n28]  @17:33
+  n30 local_get array<local,i32> l0  @17:60
+  n31 local_get i32 l1  @17:65
+  n32 elem_ptr ptr<local,i32> n30[n31]
+  n33 load i32 n32  @17:60
+  n34 intrinsic i32 atomicAdd[n29, n33]
+  n35 local_decl void l3 = n34  @17:19
+  n36 local_get i32 l3  @17:19
+  n37 local_decl void l2 = n36  @17:9
+  n38 local_get array<local,i32> l0  @18:38
+  n39 const_int i32 0  @18:44
+  n40 elem_ptr ptr<local,i32> n38[n39]  @18:23
+  n41 local_get i32 l2  @18:48
+  n42 intrinsic i32 atomicMax[n40, n41]
+  n43 expr_stmt void n42  @18:9
+  n44 block void [n1, n4, n13, n14, n25, n26, n35, n37, n43]
+

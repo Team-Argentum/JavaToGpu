@@ -395,38 +395,87 @@ class EmitterTest {
         assertTrue(r.diagnostics().stream().allMatch(d -> d.code().startsWith("IR-")), r.diagnostics().toString());
     }
 
+    /** Ядро с тремя вещами вне v1: указатель-параметр, {@code __local}-параметр и {@code spec_const}. */
+    private static IrModule outsideV1() {
+        IrBuilder b = new IrBuilder();
+        b.beginFunction(IrModule.KERNEL, Types.VOID, b.array(AddressSpace.GLOBAL, Types.I32),
+                b.ptr(AddressSpace.GLOBAL, Types.I32), b.array(AddressSpace.LOCAL, Types.I32));
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), b.specConst(0, Types.I32))));
+        return b.build();
+    }
+
     @Test
     void unsupportedConstructsAreReportedBeforeAnyTextIsProduced() {
-        IrModule rich = Fixtures.rich();
-        Result<Artifact> r = OpenClEmitter.emit(rich, Target.GENERIC);
+        Result<Artifact> r = OpenClEmitter.emit(outsideV1(), Target.GENERIC);
         assertFalse(r.isOk());
         assertTrue(r.diagnostics().stream().allMatch(d -> d.code().equals("CG-U01")), r.diagnostics().toString());
-        assertTrue(r.diagnostics().toString().contains("M10"), "остался только local memory: " + r.diagnostics());
+        assertTrue(r.diagnostics().size() >= 3, "все нарушения за один проход: " + r.diagnostics());
+        assertTrue(r.diagnostics().toString().contains("вне v1"), r.diagnostics().toString());
     }
 
     @Test
-    void everyViolationIsReportedInOnePass() {
-        IrBuilder b = new IrBuilder();
-        int arr = b.array(AddressSpace.GLOBAL, Types.I32);
-        b.beginFunction(IrModule.KERNEL, Types.VOID, arr, b.ptr(AddressSpace.GLOBAL, Types.I32));
-        int la = b.declareLocal(b.array(AddressSpace.LOCAL, Types.I32));
-        b.endFunction(b.block(b.localArrayDecl(la, b.constI32(8)), b.barrier(1)));
-        Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
-        assertTrue(r.diagnostics().stream().allMatch(d -> d.code().equals("CG-U01")), r.diagnostics().toString());
-        assertTrue(r.diagnostics().size() >= 3, "указатель-параметр, local_array_decl и barrier: " + r.diagnostics());
+    void richModuleWithLocalArrayBarrierAndPointersIsEmitted() {
+        Result<Artifact> r = OpenClEmitter.emit(Fixtures.rich(), Target.GENERIC);
+        assertTrue(r.isOk(), r.diagnostics().toString());
+        assertTrue(r.value().source().contains("__local "), r.value().source());
     }
 
     @Test
-    void barrierAndLocalMemoryAreMilestoneM10() {
+    void localArrayAndBarrierAreEmittedAtKernelLevel() {
         IrBuilder b = new IrBuilder();
         int arr = b.array(AddressSpace.GLOBAL, Types.I32);
         b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        b.requireWorkGroup(8, 1, 1);
         int la = b.declareLocal(b.array(AddressSpace.LOCAL, Types.I32));
-        b.endFunction(b.block(b.localArrayDecl(la, b.constI32(8)), b.barrier(1)));
+        b.nameLocal(la, "tile");
+        b.endFunction(b.block(b.localArrayDecl(la, b.constI32(8)), b.barrier(1), b.barrier(2), b.barrier(3),
+                b.store(b.elemPtr(b.localGet(la), b.constI32(0)), b.constI32(1)),
+                b.store(b.elemPtr(b.param(0), b.constI32(0)), b.arrayLen(b.localGet(la)))));
+        Result<Artifact> r = OpenClEmitter.emit(b.build(), 0, Target.GENERIC, EmitOptions.DEBUG);
+        assertTrue(r.isOk(), r.diagnostics().toString());
+        String src = r.value().source();
+        assertTrue(src.contains("    __local int tile[8];"), src);
+        assertTrue(src.contains("barrier(CLK_LOCAL_MEM_FENCE);"), src);
+        assertTrue(src.contains("barrier(CLK_GLOBAL_MEM_FENCE);"), src);
+        assertTrue(src.contains("barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);"), src);
+        assertTrue(src.contains("[0] = 8;"), "длина local-массива - константа: " + src);
+    }
+
+    @Test
+    void atomicFamilyUsesAtomicPrefixFor32BitAndAtomForWiderTypes() {
+        IrBuilder b = new IrBuilder();
+        int i32 = b.array(AddressSpace.GLOBAL, Types.I32);
+        int i64 = b.array(AddressSpace.GLOBAL, Types.I64);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, i32, i64);
+        String[] ops = {"atomicAdd", "atomicSub", "atomicMin", "atomicMax", "atomicAnd", "atomicOr", "atomicXor", "atomicXchg"};
+        int[] st = new int[ops.length * 2];
+        for (int i = 0; i < ops.length; i++) {
+            st[2 * i] = b.exprStmt(b.intrinsic(com.sixik.gpu.ir.Builtins.idOf(ops[i]), b.elemPtr(b.param(0), b.constI32(0)), b.constI32(1)));
+            st[2 * i + 1] = b.exprStmt(b.intrinsic(com.sixik.gpu.ir.Builtins.idOf(ops[i]), b.elemPtr(b.param(1), b.constI32(0)), b.constI64(1)));
+        }
+        b.endFunction(b.block(st));
         Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
-        assertEquals("CG-U01", code(r));
-        String all = r.diagnostics().toString();
-        assertTrue(all.contains("M10"), all);
+        assertTrue(r.isOk(), r.diagnostics().toString());
+        String src = r.value().source();
+        for (String op : new String[]{"add", "sub", "min", "max", "and", "or", "xor", "xchg"}) {
+            assertTrue(src.contains("atomic_" + op + "(&"), op + "\n" + src);
+            assertTrue(src.contains("atom_" + op + "(&"), op + "\n" + src);
+        }
+        assertTrue(src.contains("#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable"), src);
+        assertTrue(src.contains("#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable"), src);
+    }
+
+    @Test
+    void baseAtomicsOf64BitsDoNotRequireTheExtendedExtension() {
+        IrBuilder b = new IrBuilder();
+        int i64 = b.array(AddressSpace.GLOBAL, Types.I64);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, i64);
+        b.endFunction(b.block(b.exprStmt(b.intrinsic(com.sixik.gpu.ir.Builtins.idOf("atomicAdd"),
+                b.elemPtr(b.param(0), b.constI32(0)), b.constI64(1)))));
+        Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
+        assertTrue(r.isOk(), r.diagnostics().toString());
+        assertTrue(r.value().source().contains("cl_khr_int64_base_atomics"));
+        assertFalse(r.value().source().contains("cl_khr_int64_extended_atomics"));
     }
 
     @Test
@@ -536,14 +585,14 @@ class EmitterTest {
     }
 
     @Test
-    void localArrayParameterOfKernelIsMilestoneM10() {
+    void localArrayParameterOfKernelIsOutsideV1() {
         IrBuilder b = new IrBuilder();
         int la = b.array(AddressSpace.LOCAL, Types.F32);
         b.beginFunction(IrModule.KERNEL, Types.VOID, la);
         b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), b.constF32(1f))));
         Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
         assertEquals("CG-U01", code(r));
-        assertTrue(r.diagnostics().toString().contains("M10"), r.diagnostics().toString());
+        assertTrue(r.diagnostics().toString().contains("вне v1"), r.diagnostics().toString());
     }
 
     @Test

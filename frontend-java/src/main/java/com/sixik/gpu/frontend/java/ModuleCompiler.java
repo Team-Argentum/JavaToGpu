@@ -57,9 +57,19 @@ final class ModuleCompiler {
     private final Map<ExecutableElement, Checked> cache = new HashMap<>();
     private final Set<Tree> reportedCycles = new HashSet<>();
 
+    private final Validator.Options options;
+
     ModuleCompiler(Trees trees, Reporter rep) {
+        this(trees, rep, Validator.Options.DEFAULT);
+    }
+
+    /**
+     * @param options параметры валидатора: {@code strictBarriers} делает {@code IR-B01} ошибкой {@code GPU0131}
+     */
+    ModuleCompiler(Trees trees, Reporter rep, Validator.Options options) {
         this.trees = trees;
         this.rep = rep;
+        this.options = options;
         this.checker = new SubsetChecker(trees, rep);
     }
 
@@ -136,11 +146,19 @@ final class ModuleCompiler {
      * @return {@code true}, если ошибок нет
      */
     boolean validate(IrModule m, TreePath path, String name) {
-        Validator.Report report = Validator.validate(m);
+        Validator.Report report = Validator.validate(m, options);
+        boolean ok = true;
         for (Diagnostic d : report.diagnostics()) {
-            rep.report(path, d.isError() ? "GPU0901" : "GPU0903", name, d);
+            if (d.code().equals("IR-B01")) {
+                // барьер под расходящимся управлением - ошибка пользователя, а не фронтенда: свой код и позиция метода
+                rep.report(path, d.isError() ? "GPU0131" : "GPU0130", name, d.message());
+                ok &= !d.isError();
+            } else {
+                rep.report(path, d.isError() ? "GPU0901" : "GPU0903", name, d);
+                ok &= !d.isError();
+            }
         }
-        return !report.hasErrors();
+        return ok;
     }
 
     /** Обход замыкания: функции попадают в {@code order} после всех, от кого они зависят. */

@@ -20,6 +20,7 @@ import java.util.Random;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -324,6 +325,132 @@ class DeviceTest {
             check("structs(" + x + ")", HandModules.structs(), NdRange.of1D(1), () -> new Object[]{
                     new float[]{x, 2f, 3f, 4f, 5f, 6f}, new float[HandModules.STRUCTS_OUT]}, 0);
         }
+    }
+
+    // ---- группы, local-память, барьеры, атомики (M10) -----------------------------------------------
+
+    private static IrModule local(String kernel) {
+        return SampleKernels.kernel(com.sixik.gpu.ir.interpreter.samples.LocalKernels.class, kernel).module();
+    }
+
+    private static void runOnDevice(IrModule m, NdRange range, Object... args) {
+        int f = m.functionCount() - 1;
+        Result<Artifact> emitted = OpenClEmitter.emit(m, f, Target.GENERIC, EmitOptions.DEBUG);
+        assertTrue(emitted.isOk(), emitted.diagnostics().toString());
+        Artifact art = emitted.value();
+        long[] global = new long[range.dim()];
+        long[] local = new long[range.dim()];
+        for (int d = 0; d < range.dim(); d++) {
+            global[d] = range.global(d);
+            int req = m.fReqWorkGroup(f, d);
+            local[d] = req > 0 ? req : 1;
+        }
+        try (ClDevice.Program p = device.build(art.source(), art.buildOptions())) {
+            device.run(p, art, args, global, local);
+        } catch (ClDevice.ClException e) {
+            fail(e.getMessage() + "\n----\n" + art.source());
+        }
+    }
+
+    @Test
+    void treeReductionMatchesInterpreter() {
+        check("reduceSum", local("reduceSum"), NdRange.of1D(512), () -> {
+            int[] in = new int[512];
+            for (int i = 0; i < in.length; i++) {
+                in[i] = i * 2654435 - 1000;
+            }
+            return new Object[]{in, new int[8]};
+        }, 0);
+    }
+
+    @Test
+    void tileTransposeMatchesInterpreter() {
+        check("transpose", local("transpose"), NdRange.of2D(24, 16), () -> {
+            float[] in = new float[24 * 16];
+            for (int i = 0; i < in.length; i++) {
+                in[i] = i * 0.25f - 11;
+            }
+            return new Object[]{new float[24 * 16], in, 24, 16};
+        }, 0);
+    }
+
+    @Test
+    void prefixSumMatchesInterpreter() {
+        check("scan", local("scan"), NdRange.of1D(64), () -> {
+            int[] in = new int[64];
+            for (int i = 0; i < in.length; i++) {
+                in[i] = (i * 37) % 11 - 3;
+            }
+            return new Object[]{in, new int[64]};
+        }, 0);
+    }
+
+    @Test
+    void histogramWithLocalAtomicsMatchesInterpreter() {
+        check("histogram", local("histogram"), NdRange.of1D(256), () -> {
+            int[] data = new int[256];
+            Random rnd = new Random(77);
+            for (int i = 0; i < data.length; i++) {
+                data[i] = rnd.nextInt(5000);
+            }
+            int[] bins = new int[16];
+            for (int i = 0; i < bins.length; i++) {
+                bins[i] = 10 * i;
+            }
+            return new Object[]{data, bins};
+        }, 0);
+    }
+
+    @Test
+    void globalAtomicsGiveTheSameTotalsAndAPermutationOfOldValues() {
+        int n = 1000;
+        int[] data = new int[n];
+        Random rnd = new Random(3);
+        int or = 0;
+        int xor = 0;
+        int and = -1;
+        int max = Integer.MIN_VALUE;
+        int min = Integer.MAX_VALUE;
+        for (int i = 0; i < n; i++) {
+            data[i] = rnd.nextInt() | 0x0F0F0000;
+            or |= data[i];
+            xor ^= data[i];
+            and &= data[i];
+            max = Math.max(max, data[i]);
+            min = Math.min(min, data[i]);
+        }
+        int[] counters = {0, Integer.MIN_VALUE, Integer.MAX_VALUE, 0, 0, -1, 0};
+        int[] olds = new int[n];
+        runOnDevice(local("counters"), NdRange.of1D(n), data, counters, olds);
+        assertArrayEquals(new int[]{n, max, min, or, xor, and, -n}, counters);
+        int[] sorted = olds.clone();
+        java.util.Arrays.sort(sorted);
+        for (int i = 0; i < n; i++) {
+            assertEquals(-(n - 1) + i, sorted[i], "прежние значения atomic_sub - перестановка 0, -1, ..., -(n-1)");
+        }
+    }
+
+    @Test
+    void sixtyFourBitAtomicsIncludingExtendedOnes() {
+        Assumptions.assumeTrue(device.extensions().contains("cl_khr_int64_extended_atomics"), "нет 64-битных расширенных атомиков");
+        int n = 300;
+        long[] data = new long[n];
+        long sum = 0;
+        long max = Long.MIN_VALUE;
+        for (int i = 0; i < n; i++) {
+            data[i] = (i - 100) * 0x123456789L;
+            sum += data[i];
+            max = Math.max(max, data[i]);
+        }
+        long[] sums = {0, Long.MIN_VALUE, 0};
+        runOnDevice(local("wide"), NdRange.of1D(n), data, sums);
+        assertEquals(sum, sums[0]);
+        assertEquals(max, sums[1]);
+        boolean written = false;
+        for (long v : data) {
+            written |= v == sums[2];
+        }
+        assertTrue(written, "atom_xchg оставил одно из записанных значений");
     }
 
     @Test

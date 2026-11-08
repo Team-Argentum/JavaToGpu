@@ -42,6 +42,9 @@ import java.util.Set;
  */
 public class GpuProcessor extends AbstractProcessor {
 
+    /** Опция компилятора {@code -Ajavatogpu.strictBarriers=true}: барьер под расходящимся управлением - ошибка. */
+    public static final String STRICT_BARRIERS = "javatogpu.strictBarriers";
+
     private Trees trees;
     private Reporter rep;
     private ModuleCompiler compiler;
@@ -60,7 +63,8 @@ public class GpuProcessor extends AbstractProcessor {
             ProcessingEnvironment javac = ProcessingEnvironments.unwrap(env);
             trees = Trees.instance(javac);
             rep = new Reporter(trees, env.getMessager());
-            compiler = new ModuleCompiler(trees, rep);
+            boolean strict = Boolean.parseBoolean(env.getOptions().getOrDefault(STRICT_BARRIERS, "false"));
+            compiler = new ModuleCompiler(trees, rep, new com.sixik.gpu.ir.Validator.Options(strict));
         } catch (RuntimeException e) {
             disabled = true;
             env.getMessager().printMessage(Diagnostic.Kind.ERROR, Diag.format("GPU0201", env.getClass().getName()));
@@ -70,6 +74,11 @@ public class GpuProcessor extends AbstractProcessor {
     @Override
     public Set<String> getSupportedAnnotationTypes() {
         return Set.of(Kernel.class.getName(), DeviceFunction.class.getName(), Constant.class.getName());
+    }
+
+    @Override
+    public Set<String> getSupportedOptions() {
+        return Set.of(STRICT_BARRIERS);
     }
 
     @Override

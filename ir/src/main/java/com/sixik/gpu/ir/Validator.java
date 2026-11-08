@@ -991,6 +991,8 @@ public final class Validator {
                 case Op.INTRINSIC -> {
                     if (!Builtins.isValid(a)) {
                         err("IR-S01", f, n, "builtin #" + a + " отсутствует в таблице");
+                    } else if (Builtins.has(a, Builtins.SYNC)) {
+                        err("IR-S08", f, n, "builtin " + Builtins.name(a) + " - точка синхронизации: в IR это узел barrier");
                     } else {
                         int[] argTypes = new int[c];
                         for (int i = 0; i < c; i++) {
@@ -1221,7 +1223,9 @@ public final class Validator {
                                 if (Builtins.has(id, Builtins.ATOMIC) && m.c(n) > 0) {
                                     int pt = ty(m.list(m.b(n)));
                                     if (m.typeKind(pt) == Types.KIND_PTR && Types.bits(m.typeB(pt)) == 64) {
-                                        features |= Features.INT64_ATOMICS;
+                                        features |= Builtins.has(id, Builtins.EXT)
+                                                ? Features.INT64_ATOMICS | Features.INT64_EXT_ATOMICS
+                                                : Features.INT64_ATOMICS;
                                     }
                                     markAccess(access, m.list(m.b(n)), ACCESS_READ | ACCESS_WRITE);
                                 }

@@ -25,7 +25,7 @@ public final class SampleArgs {
 
     /**
      * Образцы, которые нельзя сверять на устройстве с интерпретатором: гонки между work-item'ами (все пишут в одну
-     * ячейку или читают чужие записи), алиасинг (на устройстве два аргумента - два буфера) и приватный массив в 1 МиБ,
+     * ячейку или читают чужие записи; ядра групп {@code LocalKernels} требуют особых запусков и сверяются отдельными тестами), алиасинг (на устройстве два аргумента - два буфера) и приватный массив в 1 МиБ,
      * который интерпретатор осиливает, а устройство отвергает ({@code CL_OUT_OF_RESOURCES}).
      *
      * @param label имя вида {@code "MemoryKernels.prefixSum"}
@@ -33,7 +33,8 @@ public final class SampleArgs {
      */
     public static boolean notComparableOnDevice(String label) {
         return label.equals("MemoryKernels.prefixSum") || label.equals("MemoryKernels.aliasing")
-                || label.equals("MemoryKernels.lengths") || label.equals("MemoryKernels.manyCalls");
+                || label.equals("MemoryKernels.lengths") || label.equals("MemoryKernels.manyCalls")
+                || label.startsWith("LocalKernels.");
     }
 
     /**

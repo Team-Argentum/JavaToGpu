@@ -28,7 +28,7 @@ import java.util.List;
  *
  * <p>Ошибки возвращаются значениями: если модуль не проходит {@link Validator}, возвращаются его диагностики
  * ({@code IR-*}); {@code CG-A00} - нет такой функции, {@code CG-A01} - функция не ядро, {@code CG-U01} - конструкция
- * из следующих вех (векторы и struct - M8, pointer-типы - M9, local memory и barrier - M10).</p>
+ * не входящая в v1 (нативные тела, {@code spec_const}, {@code __local}-параметры ядра, указатель-параметр ядра).</p>
  */
 public final class OpenClEmitter {
 
@@ -119,6 +119,9 @@ public final class OpenClEmitter {
         }
         if ((features & Features.FP64) != 0) {
             src.append("#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n");
+        }
+        if ((features & Features.INT64_EXT_ATOMICS) != 0) {
+            src.append("#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable\n");
         }
         if ((features & Features.INT64_ATOMICS) != 0) {
             src.append("#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n");

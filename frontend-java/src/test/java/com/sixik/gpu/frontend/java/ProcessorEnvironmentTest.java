@@ -308,7 +308,7 @@ class ProcessorEnvironmentTest {
     }
 
     @Test
-    void irValidatorFindingsBecomeGpu0901AndGpu0903() {
+    void irValidatorFindingsBecomeGpu0901AndGpu0130() {
         assertTrue(Validator.validate(invalidModule()).hasErrors());
         assertFalse(Validator.validate(warningModule()).hasErrors());
         assertFalse(Validator.validate(warningModule()).diagnostics().isEmpty(), "предупреждение IR-B01 ожидается");
@@ -318,7 +318,7 @@ class ProcessorEnvironmentTest {
         List<FrontendHarness.Diag> gpu = r.gpu();
         assertTrue(gpu.stream().anyMatch(d -> d.code().equals("GPU0901") && d.kind() == Diagnostic.Kind.ERROR
                 && d.message().contains("IR-V02") && d.message().contains("bad")), r.describe());
-        assertTrue(gpu.stream().anyMatch(d -> d.code().equals("GPU0903") && d.kind() == Diagnostic.Kind.WARNING
-                && d.message().contains("IR-B01") && d.message().contains("suspicious")), r.describe());
+        assertTrue(gpu.stream().anyMatch(d -> d.code().equals("GPU0130") && d.kind() == Diagnostic.Kind.WARNING
+                && d.message().contains("расходящимся") && d.message().contains("suspicious")), r.describe());
     }
 }

@@ -643,7 +643,10 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         boolean ok;
         if (parent instanceof MethodInvocationTree mi && mi.getArguments().contains(id)) {
             Element callee = trees.getElement(new TreePath(p.getParentPath(), mi.getMethodSelect()));
-            ok = callee != null && callee.getAnnotation(DeviceFunction.class) != null;
+            // указатель можно отдать device-функции и атомику Gpu.atomic*; ссылку FloatPtr - только device-функции
+            ok = callee != null && (callee.getAnnotation(DeviceFunction.class) != null
+                    || (!ptr.ref() && callee.getEnclosingElement() instanceof TypeElement owner
+                    && owner.getQualifiedName().contentEquals(GPU_CLASS)));
         } else if (parent instanceof MemberSelectTree ms && ms.getExpression() == id) {
             ok = true; // у ссылки есть только поле value, методы отвергает checkPointerMethod (GPU0112)
         } else {

@@ -54,11 +54,16 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
         ext.getGroup().convention(DEFAULT_GROUP);
         ext.getAutoDependencies().convention(true);
         ext.getWeave().convention(true);
+        ext.getStrictBarriers().convention(false);
         ext.getExtraJvmArgs().convention(List.of());
 
         project.afterEvaluate(p -> {
             if (ext.getAutoDependencies().get()) {
                 addDependencies(p, ext);
+            }
+            if (ext.getStrictBarriers().get()) {
+                p.getTasks().withType(JavaCompile.class).configureEach(compile ->
+                        compile.getOptions().getCompilerArgs().add("-Ajavatogpu.strictBarriers=true"));
             }
         });
 

@@ -922,6 +922,12 @@ final class FunctionLowerer {
         int node;
         boolean effectful;
         boolean open;
+        if (isBuiltin && Builtins.has(Builtins.idOf(callee.getSimpleName().toString()), Builtins.SYNC)) {
+            // barrier()/barrierGlobal(): в IR это стейтмент barrier, а не intrinsic (IR-S08); флаги - какую память упорядочить
+            effects = true;
+            out.add(at(mit, b.barrier(callee.getSimpleName().contentEquals("barrierGlobal") ? 3 : 1)));
+            return null;
+        }
         if (isBuiltin) {
             int id = Builtins.idOf(callee.getSimpleName().toString());
             node = b.intrinsic(id, args);

@@ -440,14 +440,11 @@ class InterpreterTest {
     }
 
     @Test
-    void barrierIsReportedAsNotSupportedYet() {
+    void localParametersOfTheKernelAreNotSupported() {
         IrBuilder b = new IrBuilder();
-        b.beginFunction(IrModule.KERNEL, Types.VOID);
-        int st = b.barrier(1);
-        b.endFunction(b.block(st));
-        Result<?> r = run(b.build(), NdRange.of1D(1));
-        assertCode(r, "IN-U01");
-        assertTrue(r.diagnostics().get(0).message().contains("M10"), r.diagnostics().get(0).message());
+        b.beginFunction(IrModule.KERNEL, Types.VOID, b.array(AddressSpace.LOCAL, Types.F32));
+        b.endFunction(b.block());
+        assertCode(run(b.build(), NdRange.of1D(1), (Object) new float[4]), "IN-U01");
     }
 
     @Test

@@ -12,6 +12,7 @@ import org.gradle.api.provider.Property;
  *     group = 'io.github.deussixik'
  *     autoDependencies = true    // подключать библиотеки и annotation processor
  *     weave = true               // подменять тела @Kernel-методов после компиляции
+ *     strictBarriers = false     // true: barrier под расходящимся управлением - ошибка компиляции (GPU0131), а не предупреждение
  * }
  * }</pre>
  */
@@ -28,6 +29,12 @@ public abstract class JavaToGpuExtension {
 
     /** @return {@code true} - после компиляции тела {@code @Kernel}-методов подменяются (weave-шаг) */
     public abstract Property<Boolean> getWeave();
+
+    /**
+     * @return {@code true} - процессор получает {@code -Ajavatogpu.strictBarriers=true}: {@code barrier()} под управлением,
+     *         зависящим от {@code getGlobalId/getLocalId}, становится ошибкой {@code GPU0131}
+     */
+    public abstract Property<Boolean> getStrictBarriers();
 
     /** @return дополнительные аргументы JVM для задач {@code test} и {@code run} (помимо {@code --enable-native-access}) */
     public abstract ListProperty<String> getExtraJvmArgs();

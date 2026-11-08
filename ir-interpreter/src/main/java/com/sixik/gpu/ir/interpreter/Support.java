@@ -13,8 +13,7 @@ import java.util.List;
  * Предварительная проверка: достижимый из ядра код не содержит того, что интерпретатор пока не исполняет.
  *
  * <p>Так «ещё не сделано» превращается в понятную диагностику {@code IN-U01} <em>до</em> запуска, а не в сбой
- * посреди работы. Список сужается по мере вех: векторы и struct - M8, {@code local_addr} - M9, local memory и
- * {@code barrier} - M10.</p>
+ * посреди работы. Остались: {@code spec_const}, нативные тела и {@code __local}-параметры ядра (вне v1).</p>
  */
 final class Support {
 
@@ -39,7 +38,7 @@ final class Support {
         int[] nwork = new int[Math.max(1, m.nodeCount())];
         while (fsize > 0) {
             int f = fwork[--fsize];
-            checkSignature(m, f, out);
+            checkSignature(m, f, f == entry, out);
             if (m.fBodyKind(f) != IrModule.BODY_IR || m.fBody(f) < 0) {
                 out.add(unsupported(f, -1, "функция f" + f + " с нативным телом (не v1)"));
                 continue;
@@ -72,8 +71,12 @@ final class Support {
         return out;
     }
 
-    private static void checkSignature(IrModule m, int f, List<Diagnostic> out) {
+    private static void checkSignature(IrModule m, int f, boolean kernel, List<Diagnostic> out) {
         for (int i = 0; i < m.fParamCount(f); i++) {
+            int pt = m.fParamType(f, i);
+            if (kernel && m.typeKind(pt) == Types.KIND_ARRAY && Types.space(m, pt) == com.sixik.gpu.ir.AddressSpace.LOCAL) {
+                out.add(unsupported(f, -1, "параметр " + i + ": __local-массив в параметрах ядра - вне v1 (локальный массив объявляется в теле ядра)"));
+            }
             String why = unsupportedType(m, m.fParamType(f, i));
             if (why != null) {
                 out.add(unsupported(f, -1, "параметр " + i + " функции f" + f + ": " + why));
@@ -92,8 +95,6 @@ final class Support {
         switch (op) {
             case Op.SPEC_CONST ->
                     out.add(unsupported(f, n, "spec_const зарезервирован под AutoTune (post-v1)"));
-            case Op.BARRIER, Op.LOCAL_ARRAY_DECL ->
-                    out.add(unsupported(f, n, "узел " + Op.nameOf(op) + ": local memory и barrier - веха M10"));
             case Op.INTRINSIC -> {
                 if (!Machine.supportsBuiltin(m.a(n))) {
                     out.add(unsupported(f, n, "builtin #" + m.a(n) + " не поддерживается интерпретатором"));

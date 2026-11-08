@@ -405,26 +405,27 @@ class JavaToGpuTest {
 
     @Test
     void kernelsWithBarriersNeverFallBack(@TempDir Path dir) throws Exception {
-        // IR с barrier и local-памятью кладём в ресурсы вручную: Java-API для barrier появится в M10
-        IrModule rich = Fixtures.rich();
-        String id = IrBinary.kernelId(rich);
-        KernelCompiler.Compiled r = KernelCompiler.compileWithoutProcessing(dir, """
+        // настоящее Java-ядро с barrier и @Local: устройства нет, а на JVM такое ядро не выполняется (RT-F01)
+        KernelCompiler.Compiled r = KernelCompiler.compile(dir, """
                 package demo;
-                import com.sixik.gpu.api.annotations.Kernel;
+                import com.sixik.gpu.api.Gpu;
+                import com.sixik.gpu.api.annotations.*;
                 public class Sync {
-                    @Kernel public static void rich(float[] a, int[] b, Object c, float[] d) { }
+                    @Kernel @WorkGroup(x = 4)
+                    public static void run(@Global int[] a) {
+                        @Local int[] t = new int[4];
+                        t[Gpu.getLocalId(0)] = 1;
+                        Gpu.barrier();
+                        a[Gpu.getGlobalId(0)] = t[0];
+                    }
                 }
                 """);
         assertTrue(r.success(), r.diagnostics());
-        Files.createDirectories(dir.resolve("META-INF/gpu/ir"));
-        Files.write(dir.resolve("META-INF/gpu/ir/" + id + ".gir"), IrBinary.write(rich));
-        Files.writeString(dir.resolve(KernelIndex.PATH), "demo.Sync\trich\t([F[ILjava/lang/Object;[F)V\t" + id + "\n");
         assertEquals(1, Weaver.weaveTree(dir).kernels());
         JavaToGpu.configureDefault(b -> b.api(new FakeDeviceApi()).ignoreEnvironment());
         try (URLClassLoader loader = new URLClassLoader(new URL[]{dir.toUri().toURL()}, getClass().getClassLoader())) {
             Class<?> sync = loader.loadClass("demo.Sync");
-            GpuException e = assertThrows(GpuException.class,
-                    () -> call(sync, "rich", new float[1], new int[1], new Object(), new float[1]));
+            GpuException e = assertThrows(GpuException.class, () -> call(sync, "run", new int[4]));
             assertEquals("RT-F01", e.diagnostics().get(0).code());
         }
     }
