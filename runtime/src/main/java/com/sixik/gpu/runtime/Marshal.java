@@ -146,8 +146,18 @@ final class Marshal {
      * @return сегмент ровно {@code byteSize(array)} байт (для пустого массива - 8 байт запаса не раскрывается)
      */
     static MemorySegment toNative(Arena arena, Object array) {
-        long bytes = byteSize(array);
-        MemorySegment seg = arena.allocate(Math.max(bytes, 8), 8);
+        MemorySegment seg = arena.allocate(Math.max(byteSize(array), 8), 8);
+        copyToNative(array, seg);
+        return seg;
+    }
+
+    /**
+     * Копирует массив в уже выделенную нативную память (для повторных запусков без новых аллокаций).
+     *
+     * @param array источник
+     * @param seg   приёмник не короче {@code byteSize(array)} байт
+     */
+    static void copyToNative(Object array, MemorySegment seg) {
         int n = length(array);
         switch (array) {
             case byte[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_BYTE, 0, n);
@@ -164,7 +174,6 @@ final class Marshal {
             case double[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_DOUBLE, 0, n);
             default -> throw new IllegalArgumentException("неподдержанный массив " + array.getClass());
         }
-        return seg;
     }
 
     /**
@@ -234,10 +243,20 @@ final class Marshal {
      * @return память по смещениям листьев, нулевые байты в выравнивающих промежутках
      */
     static MemorySegment toNative(Arena arena, IrModule m, int elem, Object[] a) {
+        MemorySegment seg = arena.allocate(Math.max((long) a.length * AbiLayout.sizeOf(m, elem), 8), 8);
+        copyToNative(m, elem, a, seg);
+        return seg;
+    }
+
+    /**
+     * То же в уже выделенную память: меняются только байты листьев, выравнивающие промежутки остаются нулевыми.
+     *
+     * @param seg приёмник не короче {@code a.length * sizeOf(elem)} байт
+     */
+    static void copyToNative(IrModule m, int elem, Object[] a, MemorySegment seg) {
         int stride = AbiLayout.sizeOf(m, elem);
         int[] types = HostObjects.leafTypes(m, elem);
         int[] offsets = HostObjects.leafOffsets(m, elem);
-        MemorySegment seg = arena.allocate(Math.max((long) a.length * stride, 8), 8);
         long[] leaves = new long[types.length];
         for (int i = 0; i < a.length; i++) {
             HostObjects.flatten(m, elem, a[i], leaves, 0);
@@ -245,7 +264,6 @@ final class Marshal {
                 putLeaf(seg, (long) i * stride + offsets[k], types[k], leaves[k]);
             }
         }
-        return seg;
     }
 
     /** Обратная операция: обновляет struct на месте, заменяет векторы новыми объектами. */

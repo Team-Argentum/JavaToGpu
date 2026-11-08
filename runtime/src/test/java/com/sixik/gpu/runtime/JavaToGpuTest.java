@@ -137,6 +137,47 @@ class JavaToGpuTest {
         }
     }
 
+    // ---- подготовленный запуск ------------------------------------------------------------------
+
+    @Test
+    void facadePreparesRepeatedLaunchesOfAKernelByName(@TempDir Path dir) throws Exception {
+        URLClassLoader[] holder = new URLClassLoader[1];
+        FakeDeviceApi fake = scaleDevice(new ArrayList<>(), new ArrayList<>());
+        try (GpuContext ctx = context(fake, new ArrayList<>(), GpuContext.Fallback.ALLOWED); var scope = JavaToGpu.use(ctx)) {
+            Class<?> demo = woven(dir, holder);
+            float[] in = {1, 2, 3};
+            float[] out = new float[3];
+            try (PreparedLauncher p = JavaToGpu.prepare(demo, "scale", in, out, 2f)) {
+                p.run(LaunchConfig.of1D(3));
+                assertArrayEquals(new float[]{2, 4, 6}, out);
+                p.set(2, 10f).run(LaunchConfig.of1D(3));
+                assertArrayEquals(new float[]{10, 20, 30}, out);
+            }
+            assertEquals(2, fake.enqueues());
+            assertEquals(0, fake.liveBuffers(), "запуск закрыт - буферы освобождены");
+
+            GpuException missing = assertThrows(GpuException.class, () -> JavaToGpu.prepare(demo, "nope", in, out, 2f));
+            assertEquals("RT-F02", missing.diagnostics().get(0).code());
+            GpuException wrong = assertThrows(GpuException.class, () -> JavaToGpu.prepare(demo, "scale", in));
+            assertEquals("RT-A01", wrong.diagnostics().get(0).code());
+        } finally {
+            holder[0].close();
+        }
+    }
+
+    @Test
+    void facadePrepareWithoutDeviceFailsInsteadOfFallingBack(@TempDir Path dir) throws Exception {
+        URLClassLoader[] holder = new URLClassLoader[1];
+        JavaToGpu.configureDefault(b -> b.api(new FakeDeviceApi()).ignoreEnvironment());
+        try {
+            Class<?> demo = woven(dir, holder);
+            GpuException e = assertThrows(GpuException.class, () -> JavaToGpu.prepare(demo, "scale", new float[1], new float[1], 1f));
+            assertEquals("RT-D01", e.diagnostics().get(0).code());
+        } finally {
+            holder[0].close();
+        }
+    }
+
     // ---- устройство -----------------------------------------------------------------------------
 
     @Test

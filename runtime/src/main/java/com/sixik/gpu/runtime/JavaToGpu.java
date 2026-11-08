@@ -260,6 +260,71 @@ public final class JavaToGpu {
         runOnJvm(owner, method, kernelId, module, config, args);
     }
 
+    /**
+     * Готовит повторные запуски {@code @Kernel}-метода с одними и теми же аргументами (горячий путь, см.
+     * {@link PreparedLauncher}). Использует контекст из {@link #use} либо контекст по умолчанию. JVM-fallback здесь нет:
+     * подготовленный запуск владеет буферами устройства, поэтому без устройства он невозможен.
+     *
+     * @param owner  класс с ядром
+     * @param method имя ядра (перегрузок у ядер нет)
+     * @param args   значения параметров ядра: {@link GpuBuffer}, Java-массивы и скаляры
+     * @return запуск; закрывается пользователем (или вместе с контекстом)
+     * @throws GpuException если ядро не найдено, устройства нет, компиляция или проверка аргументов не удались
+     */
+    public static PreparedLauncher prepare(Class<?> owner, String method, Object... args) {
+        IrModule module = module(owner, kernelId(owner, method));
+        GpuContext ctx = CONTEXTS.get().peek();
+        if (ctx == null) {
+            ctx = defaultContext().orElse(null);
+        }
+        if (ctx == null) {
+            List<Diagnostic> reason;
+            synchronized (LOCK) {
+                reason = defaultFailure == null ? List.of() : defaultFailure;
+            }
+            throw new GpuException(reason);
+        }
+        Result<CompiledKernel> compiled = ctx.compile(module);
+        if (!compiled.isOk()) {
+            throw new GpuException(compiled.diagnostics());
+        }
+        Result<PreparedLauncher> prepared = ctx.prepare(compiled.value(), args);
+        if (!prepared.isOk()) {
+            throw new GpuException(prepared.diagnostics());
+        }
+        return prepared.value();
+    }
+
+    /**
+     * Находит идентификатор ядра по классу и имени в индексах {@code META-INF/gpu/kernels.idx} загрузчика класса
+     * (строки {@code класс TAB метод TAB дескриптор TAB id}).
+     */
+    private static String kernelId(Class<?> owner, String method) {
+        ClassLoader loader = owner.getClassLoader() != null ? owner.getClassLoader() : ClassLoader.getSystemClassLoader();
+        java.util.Set<String> ids = new java.util.TreeSet<>();
+        try {
+            java.util.Enumeration<java.net.URL> urls = loader.getResources("META-INF/gpu/kernels.idx");
+            while (urls.hasMoreElements()) {
+                try (InputStream in = urls.nextElement().openStream()) {
+                    for (String line : new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
+                        String[] row = line.strip().split("\t");
+                        if (row.length == 4 && row[0].equals(owner.getName()) && row[1].equals(method)) {
+                            ids.add(row[3]);
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw fail("RT-F02", "индекс ядер не читается: " + e.getMessage());
+        }
+        if (ids.size() != 1) {
+            throw fail("RT-F02", ids.isEmpty()
+                    ? "ядро " + owner.getName() + "." + method + " не найдено в META-INF/gpu/kernels.idx"
+                    : "ядро " + owner.getName() + "." + method + " неоднозначно: " + ids);
+        }
+        return ids.iterator().next();
+    }
+
     // =============================================================================================
     // IR ядра и размеры
     // =============================================================================================

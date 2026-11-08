@@ -23,6 +23,13 @@ dependencies {
     testImplementation testFixtures(project(':weaver'))
 }
 
+// JMH: накладные расходы подготовленного и обычного запуска на фейковом устройстве (без драйвера) и на реальном, если он есть.
+apply from: rootProject.file('gradle/jmh.gradle')
+
+dependencies {
+    jmhImplementation sourceSets.testFixtures.output
+}
+
 tasks.named('test') {
     // KernelCompiler компилирует образцы javac in-process: classpath задаём явно, а не полагаемся на java.class.path воркера.
     systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath

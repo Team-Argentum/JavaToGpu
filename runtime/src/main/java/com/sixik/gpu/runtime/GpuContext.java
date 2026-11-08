@@ -65,24 +65,25 @@ public final class GpuContext implements AutoCloseable {
         Result<CompiledKernel> result;
     }
 
-    private final DeviceApi api;
+    final DeviceApi api;
     private final boolean ownsApi;
     private final DeviceInfo device;
-    private final long contextHandle;
-    private final long queue;
+    final long contextHandle;
+    final long queue;
     private final Target target;
     private final EventListener listener;
     private final EmitOptions emitOptions;
     private final Fallback fallback;
     private final Set<String> fallbackReported = ConcurrentHashMap.newKeySet();
 
-    private final ReentrantLock lock = new ReentrantLock();
+    final ReentrantLock lock = new ReentrantLock();
     private final ConcurrentHashMap<String, Entry> cache = new ConcurrentHashMap<>();
     private final List<CompiledKernel> compiled = new ArrayList<>();
     private final Set<GpuBuffer> buffers = ConcurrentHashMap.newKeySet();
+    private final Set<PreparedLauncher> launchers = ConcurrentHashMap.newKeySet();
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
-    private volatile boolean closed;
+    volatile boolean closed;
 
     private GpuContext(DeviceApi api, boolean ownsApi, DeviceInfo device, long contextHandle, long queue,
                        EventListener listener, EmitOptions emitOptions, Fallback fallback) {
@@ -584,6 +585,37 @@ public final class GpuContext implements AutoCloseable {
     }
 
     /**
+     * Готовит повторные запуски ядра с одними и теми же аргументами (горячий путь): проверяет аргументы, создаёт буферы
+     * под массивы хоста и нативную память упаковки один раз. Подробности и правила владения - в {@link PreparedLauncher}.
+     *
+     * @param kernel ядро этого контекста
+     * @param args   значения параметров ядра по порядку: {@link GpuBuffer}, Java-массив или скаляр
+     * @return запуск либо диагностики {@code RT-A01/RT-A02/RT-A04} (аргументы), {@code RT-X01} (драйвер), {@code RT-X02}
+     *         (контекст закрыт или ядро чужого контекста)
+     */
+    public Result<PreparedLauncher> prepare(CompiledKernel kernel, Object... args) {
+        if (kernel == null) {
+            throw new IllegalArgumentException("kernel обязателен");
+        }
+        if (closed) {
+            return failure("RT-X02", "контекст закрыт");
+        }
+        if (kernel.owner() != this) {
+            return failure("RT-A02", "ядро скомпилировано в другом контексте");
+        }
+        Result<PreparedLauncher> r = PreparedLauncher.create(this, kernel, args == null ? new Object[0] : args);
+        if (r.isOk()) {
+            launchers.add(r.value());
+        }
+        return r;
+    }
+
+    /** Исключает закрытый запуск из учёта контекста. */
+    void forget(PreparedLauncher launcher) {
+        launchers.remove(launcher);
+    }
+
+    /**
      * Запускает скомпилированное ядро. Массивы хоста, которые ядро записывает, обновляются только при успехе.
      *
      * @param kernel ядро этого контекста
@@ -626,7 +658,7 @@ public final class GpuContext implements AutoCloseable {
     }
 
     /** Проверяет размеры запуска; возвращает размеры work-group для драйвера либо {@code null}. */
-    private long[] checkLaunch(CompiledKernel k, LaunchConfig cfg, List<Diagnostic> out) {
+    long[] checkLaunch(CompiledKernel k, LaunchConfig cfg, List<Diagnostic> out) {
         IrModule m = k.module();
         int f = k.function();
         int dim = cfg.dim();
@@ -662,7 +694,7 @@ public final class GpuContext implements AutoCloseable {
         return any ? local : null;
     }
 
-    private void checkArguments(CompiledKernel k, Object[] args, List<Diagnostic> out) {
+    void checkArguments(CompiledKernel k, Object[] args, List<Diagnostic> out) {
         IrModule m = k.module();
         int f = k.function();
         int n = m.fParamCount(f);
@@ -671,45 +703,59 @@ public final class GpuContext implements AutoCloseable {
             return;
         }
         for (int i = 0; i < n; i++) {
-            int t = m.fParamType(f, i);
-            Object a = args[i];
-            if (m.typeKind(t) == Types.KIND_ARRAY) {
-                int elem = Types.elem(m, t);
-                if (HostObjects.isAggregate(m, elem)) {
-                    if (a instanceof GpuBuffer) {
-                        out.add(error("RT-A02", "аргумент " + i + ": буферы GpuBuffer для массивов векторов и struct "
-                                + "пока не поддержаны, передайте массив объектов"));
-                    } else {
-                        String why = Marshal.objectArrayProblem(m, elem, a);
-                        if (!why.isEmpty()) {
-                            out.add(error("RT-A02", "аргумент " + i + ": " + why));
-                        }
+            checkArgument(k, i, args[i], out);
+        }
+    }
+
+    /**
+     * Проверяет один аргумент против параметра ядра ({@code RT-A02}). Вынесено из {@link #checkArguments}, чтобы
+     * {@link PreparedLauncher#set} проверял только заменяемое значение.
+     *
+     * @param k   ядро
+     * @param i   номер параметра
+     * @param a   значение
+     * @param out сюда добавляются ошибки
+     */
+    void checkArgument(CompiledKernel k, int i, Object a, List<Diagnostic> out) {
+        IrModule m = k.module();
+        int f = k.function();
+        int t = m.fParamType(f, i);
+        if (m.typeKind(t) == Types.KIND_ARRAY) {
+            int elem = Types.elem(m, t);
+            if (HostObjects.isAggregate(m, elem)) {
+                if (a instanceof GpuBuffer) {
+                    out.add(error("RT-A02", "аргумент " + i + ": буферы GpuBuffer для массивов векторов и struct "
+                            + "пока не поддержаны, передайте массив объектов"));
+                } else {
+                    String why = Marshal.objectArrayProblem(m, elem, a);
+                    if (!why.isEmpty()) {
+                        out.add(error("RT-A02", "аргумент " + i + ": " + why));
                     }
-                } else if (a instanceof GpuBuffer b) {
-                    if (b.owner() != this) {
-                        out.add(error("RT-A02", "аргумент " + i + ": буфер принадлежит другому контексту"));
-                    } else if (b.isClosed()) {
-                        out.add(error("RT-A02", "аргумент " + i + ": буфер закрыт"));
-                    } else if (!Marshal.compatible(elem, b.elementType())) {
-                        out.add(error("RT-A02", "аргумент " + i + ": буфер с элементом t" + b.elementType()
-                                + " не подходит параметру с элементом t" + elem));
-                    } else if (b.length() > Integer.MAX_VALUE) {
-                        out.add(error("RT-A02", "аргумент " + i + ": длина буфера не помещается в int"));
-                    }
-                } else if (!Marshal.accepts(elem, a)) {
-                    out.add(error("RT-A02", "аргумент " + i + ": параметру-массиву t" + elem + " не подходит "
-                            + Marshal.describe(a)));
                 }
-            } else if (HostObjects.isAggregate(m, t)) {
-                String why = a == null ? "ожидается объект вектора или struct, передано null"
-                        : HostObjects.mismatch(m, t, a.getClass());
-                if (!why.isEmpty()) {
-                    out.add(error("RT-A02", "аргумент " + i + ": " + why));
+            } else if (a instanceof GpuBuffer b) {
+                if (b.owner() != this) {
+                    out.add(error("RT-A02", "аргумент " + i + ": буфер принадлежит другому контексту"));
+                } else if (b.isClosed()) {
+                    out.add(error("RT-A02", "аргумент " + i + ": буфер закрыт"));
+                } else if (!Marshal.compatible(elem, b.elementType())) {
+                    out.add(error("RT-A02", "аргумент " + i + ": буфер с элементом t" + b.elementType()
+                            + " не подходит параметру с элементом t" + elem));
+                } else if (b.length() > Integer.MAX_VALUE) {
+                    out.add(error("RT-A02", "аргумент " + i + ": длина буфера не помещается в int"));
                 }
-            } else if (!Marshal.scalarMatches(t, a)) {
-                out.add(error("RT-A02", "аргумент " + i + ": скалярному параметру t" + t + " не подходит "
+            } else if (!Marshal.accepts(elem, a)) {
+                out.add(error("RT-A02", "аргумент " + i + ": параметру-массиву t" + elem + " не подходит "
                         + Marshal.describe(a)));
             }
+        } else if (HostObjects.isAggregate(m, t)) {
+            String why = a == null ? "ожидается объект вектора или struct, передано null"
+                    : HostObjects.mismatch(m, t, a.getClass());
+            if (!why.isEmpty()) {
+                out.add(error("RT-A02", "аргумент " + i + ": " + why));
+            }
+        } else if (!Marshal.scalarMatches(t, a)) {
+            out.add(error("RT-A02", "аргумент " + i + ": скалярному параметру t" + t + " не подходит "
+                    + Marshal.describe(a)));
         }
     }
 
@@ -724,7 +770,7 @@ public final class GpuContext implements AutoCloseable {
      * @param args проверенные аргументы
      * @param out  сюда добавляется {@code RT-A04} на каждое нарушение
      */
-    private void checkConstantArguments(CompiledKernel k, Object[] args, List<Diagnostic> out) {
+    void checkConstantArguments(CompiledKernel k, Object[] args, List<Diagnostic> out) {
         IrModule m = k.module();
         int f = k.function();
         int count = 0;
@@ -748,6 +794,60 @@ public final class GpuContext implements AutoCloseable {
             out.add(error("RT-A04", "ядро получает " + count + " аргументов __constant, а устройство допускает не более "
                     + device.maxConstantArgs() + " (CL_DEVICE_MAX_CONSTANT_ARGS)"));
         }
+    }
+
+    /**
+     * Выставляет аргументы {@code cl_kernel} по сигнатуре артефакта. Вызывается под замком; после неё состояние
+     * объекта драйвера «чужое» для любого {@link PreparedLauncher}, поэтому {@code boundTo} сбрасывается.
+     *
+     * @param handles дескрипторы буферов по номеру параметра-массива
+     * @param lengths длины массивов по номеру параметра
+     * @param arena   владелец временной памяти для значений-агрегатов
+     */
+    void setKernelArgs(CompiledKernel k, Object[] args, long[] handles, long[] lengths, Arena arena) {
+        k.boundTo = null;
+        for (int i = 0; i < k.artifact().args().size(); i++) {
+            setKernelArg(k, i, args, handles, lengths, arena);
+        }
+    }
+
+    /**
+     * Выставляет один аргумент {@code cl_kernel} (номер - в списке аргументов артефакта). Вызывается под замком.
+     * Вызывающий отвечает за {@code boundTo}: после частичной установки он обязан быть {@code null}.
+     */
+    void setKernelArg(CompiledKernel k, int i, Object[] args, long[] handles, long[] lengths, Arena arena) {
+        IrModule m = k.module();
+        KernelArg ka = k.artifact().args().get(i);
+        switch (ka.kind()) {
+            case KernelArg.SCALAR -> {
+                if (HostObjects.isAggregate(m, ka.type())) {
+                    int size = AbiLayout.sizeOf(m, ka.type());
+                    api.setArgBytes(k.kernel, i, Marshal.valueToNative(arena, m, ka.type(), args[ka.param()]), size);
+                } else {
+                    api.setArgScalar(k.kernel, i, Marshal.scalarSize(ka.type()), Marshal.scalarBits(args[ka.param()]));
+                }
+            }
+            case KernelArg.ARRAY_PTR -> api.setArgBuffer(k.kernel, i, handles[ka.param()]);
+            default -> api.setArgScalar(k.kernel, i, 4, lengths[ka.param()]);
+        }
+    }
+
+    /**
+     * Ставит ядро в очередь и ждёт завершения. Вызывается под замком.
+     *
+     * @return время работы ядра, нс
+     */
+    long dispatch(CompiledKernel k, LaunchConfig cfg, long[] local) {
+        long[] global = new long[cfg.dim()];
+        for (int d = 0; d < global.length; d++) {
+            global[d] = cfg.global(d);
+        }
+        long t1 = System.nanoTime();
+        api.enqueue(queue, k.kernel, cfg.dim(), global, local);
+        api.finish(queue);
+        long nanos = System.nanoTime() - t1;
+        emit(GpuEvent.Kind.KERNEL, k.artifact().entry(), nanos, 0, cfg.toString());
+        return nanos;
     }
 
     /** Выполняет запуск под замком; аргументы уже проверены. */
@@ -798,30 +898,8 @@ public final class GpuContext implements AutoCloseable {
             upNanos = System.nanoTime() - t0;
             emit(GpuEvent.Kind.UPLOAD, k.artifact().entry(), upNanos, up, "");
 
-            for (int i = 0; i < k.artifact().args().size(); i++) {
-                KernelArg ka = k.artifact().args().get(i);
-                switch (ka.kind()) {
-                    case KernelArg.SCALAR -> {
-                        if (HostObjects.isAggregate(m, ka.type())) {
-                            int size = AbiLayout.sizeOf(m, ka.type());
-                            api.setArgBytes(k.kernel, i, Marshal.valueToNative(arena, m, ka.type(), args[ka.param()]), size);
-                        } else {
-                            api.setArgScalar(k.kernel, i, Marshal.scalarSize(ka.type()), Marshal.scalarBits(args[ka.param()]));
-                        }
-                    }
-                    case KernelArg.ARRAY_PTR -> api.setArgBuffer(k.kernel, i, handles[ka.param()]);
-                    default -> api.setArgScalar(k.kernel, i, 4, lengths[ka.param()]);
-                }
-            }
-            long[] global = new long[cfg.dim()];
-            for (int d = 0; d < global.length; d++) {
-                global[d] = cfg.global(d);
-            }
-            long t1 = System.nanoTime();
-            api.enqueue(queue, k.kernel, cfg.dim(), global, local);
-            api.finish(queue);
-            kernelNanos = System.nanoTime() - t1;
-            emit(GpuEvent.Kind.KERNEL, k.artifact().entry(), kernelNanos, 0, cfg.toString());
+            setKernelArgs(k, args, handles, lengths, arena);
+            kernelNanos = dispatch(k, cfg, local);
 
             long t2 = System.nanoTime();
             for (Map.Entry<Object, long[]> e : hostBuffers.entrySet()) {
@@ -867,6 +945,10 @@ public final class GpuContext implements AutoCloseable {
             if (closed) {
                 return;
             }
+            for (PreparedLauncher l : launchers) {
+                l.releaseLocked(); // до closed = true: освобождает свои буферы в драйвере
+            }
+            launchers.clear();
             closed = true;
             for (CompiledKernel k : compiled) {
                 api.release(DeviceApi.HandleKind.KERNEL, k.kernel);
@@ -899,7 +981,7 @@ public final class GpuContext implements AutoCloseable {
         }
     }
 
-    private void emit(GpuEvent.Kind kind, String subject, long nanos, long bytes, String detail) {
+    void emit(GpuEvent.Kind kind, String subject, long nanos, long bytes, String detail) {
         try {
             listener.onEvent(new GpuEvent(kind, subject, nanos, bytes, detail));
         } catch (RuntimeException ignored) {
@@ -907,11 +989,11 @@ public final class GpuContext implements AutoCloseable {
         }
     }
 
-    private static Diagnostic error(String code, String message) {
+    static Diagnostic error(String code, String message) {
         return new Diagnostic(code, Diagnostic.Severity.ERROR, -1, -1, message);
     }
 
-    private static <T> Result<T> failure(String code, String message) {
+    static <T> Result<T> failure(String code, String message) {
         return Result.failed(List.of(error(code, message)));
     }
 }

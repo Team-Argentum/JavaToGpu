@@ -1,0 +1,388 @@
+package com.sixik.gpu.runtime;
+
+import com.sixik.gpu.codegen.opencl.KernelArg;
+import com.sixik.gpu.ir.Diagnostic;
+import com.sixik.gpu.ir.HostObjects;
+import com.sixik.gpu.ir.IrModule;
+import com.sixik.gpu.ir.Result;
+import com.sixik.gpu.ir.Types;
+import com.sixik.gpu.ir.Validator;
+import com.sixik.gpu.runtime.device.DeviceApi;
+import com.sixik.gpu.runtime.device.DeviceApiException;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Подготовленный запуск ядра для горячего пути (REWORK_ARCHITECTURE.md, 9, 5.23): аргументы проверены и привязаны один раз,
+ * буферы и нативная память созданы один раз, повторный {@link #launch} делает только то, что действительно изменилось.
+ * Единственная реализация вместо трёх вложенных слоёв прежней версии.
+ *
+ * <h2>Владение вместо флагов</h2>
+ * <p>Что передаётся между хостом и устройством, определяется <b>тем, кому принадлежит память</b>, а не масками
+ * {@code withoutHostUpload/Readback}:</p>
+ * <ul>
+ *   <li><b>{@link GpuBuffer}</b> - данные живут на устройстве и принадлежат пользователю: запуск не передаёт их ни
+ *       туда, ни обратно. Так выражаются static-аргументы (таблица, загруженная один раз) и цепочки ядер без хоста.</li>
+ *   <li><b>Массив хоста</b> - буфер на устройстве принадлежит этому запуску ({@link #close} освободит его). Перед каждым
+ *       запуском массив целиком записывается в буфер (как и при обычном вызове: нетронутые ядром элементы обязаны
+ *       сохраниться, а пользователь мог изменить массив между запусками); после запуска назад в массив возвращается
+ *       только то, что ядро <b>записывает</b> (режим доступа считает валидатор IR). Длина массива не должна меняться.</li>
+ *   <li><b>Скаляр или вектор/struct по значению</b> - заменяется {@link #set}, остальные аргументы остаются привязанными.</li>
+ * </ul>
+ *
+ * <h2>Что экономится относительно {@link GpuContext#launch}</h2>
+ * <p>Не создаются и не освобождаются буферы устройства, не выделяется нативная память под упаковку (одна область на
+ * массив, переиспользуется), аргументы {@code cl_kernel} выставляются только если изменились или если после этого
+ * запуска ядро запускал кто-то другой (объект драйвера общий для всех запусков одного ядра), аргументы не
+ * проверяются заново.</p>
+ *
+ * <p>Объект <b>не потокобезопасен</b> (как {@link GpuBuffer}); обращения к драйверу внутри сериализует замок контекста.
+ * Закрывается {@link #close()} либо вместе с контекстом.</p>
+ */
+public final class PreparedLauncher implements AutoCloseable {
+
+    /** Массив хоста, привязанный к собственному буферу на устройстве. */
+    private static final class Slot {
+        final Object array;
+        final int elemType;
+        final boolean objects;
+        final int length;
+        final long bytes;
+        final long handle;
+        final MemorySegment staging;
+        int access;
+
+        Slot(Object array, int elemType, boolean objects, int length, long bytes, long handle, MemorySegment staging) {
+            this.array = array;
+            this.elemType = elemType;
+            this.objects = objects;
+            this.length = length;
+            this.bytes = bytes;
+            this.handle = handle;
+            this.staging = staging;
+        }
+    }
+
+    private final GpuContext ctx;
+    private final CompiledKernel kernel;
+    private final IrModule module;
+    private final Object[] args;
+    private final Slot[] slotOf;
+    private final Slot[] slots;
+    private final long[] handles;
+    private final long[] lengths;
+    private final boolean[] dirty;
+    private final boolean hasValueAggregates;
+    private final Arena staging;
+    private boolean closed;
+
+    private PreparedLauncher(GpuContext ctx, CompiledKernel kernel, Object[] args, Slot[] slotOf, Slot[] slots,
+                             long[] handles, long[] lengths, Arena staging) {
+        this.ctx = ctx;
+        this.kernel = kernel;
+        this.module = kernel.module();
+        this.args = args;
+        this.slotOf = slotOf;
+        this.slots = slots;
+        this.handles = handles;
+        this.lengths = lengths;
+        this.dirty = new boolean[args.length];
+        this.staging = staging;
+        boolean aggregates = false;
+        for (int i = 0; i < args.length; i++) {
+            int t = module.fParamType(kernel.function(), i);
+            aggregates |= module.typeKind(t) != Types.KIND_ARRAY && HostObjects.isAggregate(module, t);
+        }
+        this.hasValueAggregates = aggregates;
+    }
+
+    /**
+     * Привязывает аргументы к ядру и создаёт буферы под массивы хоста. Вызывается из {@link GpuContext#prepare}.
+     *
+     * @return запуск либо диагностики ({@code RT-A01/A02/A04}, {@code RT-X01}, {@code RT-X02})
+     */
+    static Result<PreparedLauncher> create(GpuContext ctx, CompiledKernel kernel, Object[] given) {
+        Object[] args = given.clone();
+        List<Diagnostic> problems = new ArrayList<>();
+        ctx.checkArguments(kernel, args, problems);
+        if (problems.isEmpty()) {
+            ctx.checkConstantArguments(kernel, args, problems);
+        }
+        if (!problems.isEmpty()) {
+            return Result.failed(problems);
+        }
+        IrModule m = kernel.module();
+        int f = kernel.function();
+        int n = args.length;
+        Slot[] slotOf = new Slot[n];
+        Map<Object, Slot> byArray = new IdentityHashMap<>();
+        List<Slot> slots = new ArrayList<>();
+        long[] handles = new long[n];
+        long[] lengths = new long[n];
+        Arena staging = Arena.ofShared();
+        ctx.lock.lock();
+        try {
+            if (ctx.closed) {
+                staging.close();
+                return GpuContext.failure("RT-X02", "контекст закрыт");
+            }
+            for (int i = 0; i < n; i++) {
+                if (m.typeKind(m.fParamType(f, i)) != Types.KIND_ARRAY) {
+                    continue;
+                }
+                if (args[i] instanceof GpuBuffer b) {
+                    handles[i] = b.handle();
+                    lengths[i] = b.length();
+                    continue;
+                }
+                Slot slot = byArray.get(args[i]);
+                if (slot == null) {
+                    int elem = Types.elem(m, m.fParamType(f, i));
+                    boolean objects = HostObjects.isAggregate(m, elem);
+                    long bytes = objects ? Marshal.byteSize(m, elem, (Object[]) args[i]) : Marshal.byteSize(args[i]);
+                    long handle = ctx.api.createBuffer(ctx.contextHandle, Math.max(bytes, 4));
+                    slot = new Slot(args[i], elem, objects, Marshal.length(args[i]), bytes, handle,
+                            staging.allocate(Math.max(bytes, 8), 8));
+                    byArray.put(args[i], slot);
+                    slots.add(slot);
+                }
+                slot.access |= kernel.access(i);
+                slotOf[i] = slot;
+                handles[i] = slot.handle;
+                lengths[i] = slot.length;
+            }
+        } catch (DeviceApiException e) {
+            for (Slot s : slots) {
+                ctx.api.release(DeviceApi.HandleKind.BUFFER, s.handle);
+            }
+            staging.close();
+            return GpuContext.failure("RT-X01", "ошибка драйвера при подготовке запуска: " + e.getMessage());
+        } finally {
+            ctx.lock.unlock();
+        }
+        PreparedLauncher launcher = new PreparedLauncher(ctx, kernel, args, slotOf, slots.toArray(new Slot[0]), handles,
+                lengths, staging);
+        Arrays.fill(launcher.dirty, true);
+        return Result.ok(launcher);
+    }
+
+    /** @return ядро, к которому привязан запуск */
+    public CompiledKernel kernel() {
+        return kernel;
+    }
+
+    /** @return {@code true}, если запуск закрыт (явно или вместе с контекстом) */
+    public boolean isClosed() {
+        return closed;
+    }
+
+    /**
+     * Заменяет значение скалярного (или векторного/struct) аргумента либо подставляет другой {@link GpuBuffer} вместо
+     * прежнего буфера. Остальные аргументы остаются привязанными; на устройство уйдёт только изменённый.
+     *
+     * @param param номер параметра ядра
+     * @param value новое значение того же вида, что и прежнее
+     * @return этот запуск
+     * @throws GpuException если запуск закрыт, номер неверен, значение не подходит параметру либо параметр - массив
+     *                      хоста (его замена потребовала бы нового буфера: подготовьте новый запуск)
+     */
+    public PreparedLauncher set(int param, Object value) {
+        requireOpen();
+        if (param < 0 || param >= args.length) {
+            throw new GpuException(List.of(GpuContext.error("RT-A01", "у ядра " + args.length + " параметров, номер " + param)));
+        }
+        if (slotOf[param] != null) {
+            throw new GpuException(List.of(GpuContext.error("RT-A02", "аргумент " + param
+                    + " - массив хоста с буфером этого запуска: заменить его нельзя, подготовьте новый запуск или "
+                    + "передайте GpuBuffer")));
+        }
+        List<Diagnostic> problems = new ArrayList<>();
+        ctx.checkArgument(kernel, param, value, problems);
+        boolean array = module.typeKind(module.fParamType(kernel.function(), param)) == Types.KIND_ARRAY;
+        if (problems.isEmpty() && array) {
+            Object[] trial = args.clone();
+            trial[param] = value;
+            ctx.checkConstantArguments(kernel, trial, problems);
+        }
+        if (!problems.isEmpty()) {
+            throw new GpuException(problems);
+        }
+        args[param] = value;
+        if (array) {
+            GpuBuffer b = (GpuBuffer) value;
+            handles[param] = b.handle();
+            lengths[param] = b.length();
+        }
+        dirty[param] = true;
+        return this;
+    }
+
+    /**
+     * Запускает ядро; ошибки - исключением.
+     *
+     * @param config размеры запуска
+     * @return тайминги и объёмы передачи
+     * @throws GpuException если запуск закрыт, размеры недопустимы, аргументы изменились или драйвер вернул ошибку
+     */
+    public LaunchStats run(LaunchConfig config) {
+        Result<LaunchStats> r = launch(config);
+        if (!r.isOk()) {
+            throw new GpuException(r.diagnostics());
+        }
+        return r.value();
+    }
+
+    /**
+     * Запускает ядро. Массивы хоста, которые ядро записывает, обновляются только при успехе.
+     *
+     * @param config размеры запуска
+     * @return итог либо диагностики: {@code RT-L01} (размеры), {@code RT-A02} (длина массива хоста изменилась или
+     *         {@link GpuBuffer} закрыт), {@code RT-X01} (ошибка драйвера), {@code RT-X02} (запуск или контекст закрыты)
+     */
+    public Result<LaunchStats> launch(LaunchConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("config обязателен");
+        }
+        if (closed || ctx.closed) {
+            return GpuContext.failure("RT-X02", closed ? "запуск закрыт" : "контекст закрыт");
+        }
+        List<Diagnostic> problems = new ArrayList<>();
+        long[] local = ctx.checkLaunch(kernel, config, problems);
+        for (Slot s : slots) {
+            if (Marshal.length(s.array) != s.length) {
+                problems.add(GpuContext.error("RT-A02", "длина массива хоста изменилась с " + s.length + " до "
+                        + Marshal.length(s.array) + ": буфер подготовленного запуска создан под прежнюю"));
+            }
+        }
+        for (int i = 0; i < args.length; i++) {
+            if (args[i] instanceof GpuBuffer b && b.isClosed()) {
+                problems.add(GpuContext.error("RT-A02", "аргумент " + i + ": буфер закрыт"));
+            }
+        }
+        if (!problems.isEmpty()) {
+            return Result.failed(problems);
+        }
+        ctx.lock.lock();
+        try {
+            if (ctx.closed) {
+                return GpuContext.failure("RT-X02", "контекст закрыт");
+            }
+            return execute(config, local);
+        } catch (DeviceApiException e) {
+            kernel.boundTo = null;
+            return GpuContext.failure("RT-X01", "ошибка драйвера при запуске: " + e.getMessage());
+        } finally {
+            ctx.lock.unlock();
+        }
+    }
+
+    /** Один запуск под замком контекста. */
+    private Result<LaunchStats> execute(LaunchConfig config, long[] local) {
+        DeviceApi api = ctx.api;
+        long up = 0;
+        long t0 = System.nanoTime();
+        for (Slot s : slots) {
+            if (s.bytes > 0) {
+                if (s.objects) {
+                    Marshal.copyToNative(module, s.elemType, (Object[]) s.array, s.staging);
+                } else {
+                    Marshal.copyToNative(s.array, s.staging);
+                }
+                api.writeBuffer(ctx.queue, s.handle, 0, s.bytes, s.staging);
+                up += s.bytes;
+            }
+        }
+        long upNanos = System.nanoTime() - t0;
+        ctx.emit(GpuEvent.Kind.UPLOAD, kernel.artifact().entry(), upNanos, up, "");
+
+        bindArguments();
+        long kernelNanos = ctx.dispatch(kernel, config, local);
+
+        long t2 = System.nanoTime();
+        long down = 0;
+        for (Slot s : slots) {
+            if ((s.access & Validator.ACCESS_WRITE) != 0 && s.bytes > 0) {
+                api.readBuffer(ctx.queue, s.handle, 0, s.bytes, s.staging);
+                if (s.objects) {
+                    Marshal.fromNative(s.staging, module, s.elemType, (Object[]) s.array);
+                } else {
+                    Marshal.fromNative(s.staging, s.array);
+                }
+                down += s.bytes;
+            }
+        }
+        long downNanos = System.nanoTime() - t2;
+        ctx.emit(GpuEvent.Kind.READBACK, kernel.artifact().entry(), downNanos, down, "");
+        return Result.ok(new LaunchStats(upNanos, kernelNanos, downNanos, up, down));
+    }
+
+    /** Выставляет аргументы {@code cl_kernel}: все, если ядро запускал кто-то другой, иначе только изменённые. */
+    private void bindArguments() {
+        boolean all = kernel.boundTo != this;
+        kernel.boundTo = null;
+        Arena temp = hasValueAggregates ? Arena.ofConfined() : null;
+        try {
+            List<KernelArg> list = kernel.artifact().args();
+            for (int i = 0; i < list.size(); i++) {
+                if (all || dirty[list.get(i).param()]) {
+                    ctx.setKernelArg(kernel, i, args, handles, lengths, temp);
+                }
+            }
+        } finally {
+            if (temp != null) {
+                temp.close();
+            }
+        }
+        Arrays.fill(dirty, false);
+        kernel.boundTo = this;
+    }
+
+    private void requireOpen() {
+        if (closed) {
+            throw new GpuException(List.of(GpuContext.error("RT-X02", "запуск закрыт")));
+        }
+    }
+
+    /**
+     * Освобождает буферы массивов хоста и нативную память упаковки. {@link GpuBuffer}, переданные пользователем,
+     * не трогаются. Повторный вызов безопасен.
+     */
+    @Override
+    public void close() {
+        ctx.lock.lock();
+        try {
+            releaseLocked();
+            ctx.forget(this);
+        } finally {
+            ctx.lock.unlock();
+        }
+    }
+
+    /** Освобождение под замком контекста; вызывается и из {@link GpuContext#close()}. */
+    void releaseLocked() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        if (kernel.boundTo == this) {
+            kernel.boundTo = null;
+        }
+        if (!ctx.closed) {
+            for (Slot s : slots) {
+                ctx.api.release(DeviceApi.HandleKind.BUFFER, s.handle);
+            }
+        }
+        staging.close();
+    }
+
+    @Override
+    public String toString() {
+        return "PreparedLauncher[" + kernel.artifact().entry() + (closed ? ", closed" : "") + "]";
+    }
+}

@@ -154,6 +154,7 @@ public final class FakeDeviceApi implements DeviceApi {
     private int livePrograms;
     private int liveKernels;
     private boolean closed;
+    private boolean journaling = true;
     private int builds;
     private int enqueues;
     private int writes;
@@ -212,6 +213,16 @@ public final class FakeDeviceApi implements DeviceApi {
      */
     public FakeDeviceApi failNext(String function, int status) {
         failures.put(function, status);
+        return this;
+    }
+
+    /**
+     * Выключает журнал вызовов (счётчики остаются): в бенчмарках миллионы вызовов, и журнал занял бы всю память.
+     *
+     * @return этот фейк
+     */
+    public FakeDeviceApi withoutJournal() {
+        journaling = false;
         return this;
     }
 
@@ -290,8 +301,10 @@ public final class FakeDeviceApi implements DeviceApi {
     // ---- реализация ---------------------------------------------------------------------------
 
     private void call(String function) {
-        journal.add(function);
-        Integer status = failures.remove(function);
+        if (journaling) {
+            journal.add(function);
+        }
+        Integer status = failures.isEmpty() ? null : failures.remove(function);
         if (status != null) {
             throw new DeviceApiException(status, function, "имитированный отказ");
         }

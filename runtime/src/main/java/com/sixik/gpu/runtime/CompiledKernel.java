@@ -21,6 +21,12 @@ public final class CompiledKernel {
     final long program;
     final long kernel;
     final long maxWorkGroupSize;
+    /**
+     * Кто последним выставил аргументы {@code cl_kernel}: {@link PreparedLauncher} либо {@code null}. Объект драйвера общий
+     * для всех запусков этого ядра, а запуски идут под замком контекста, поэтому поле читается и пишется только под ним.
+     * Совпадение с самим запускающим означает «аргументы на месте, {@code clSetKernelArg} можно не вызывать».
+     */
+    Object boundTo;
 
     CompiledKernel(GpuContext owner, IrModule module, int function, Artifact artifact, String kernelId, int[] access,
                    long program, long kernel, long maxWorkGroupSize) {
