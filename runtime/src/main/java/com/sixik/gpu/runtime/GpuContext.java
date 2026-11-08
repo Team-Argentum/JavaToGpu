@@ -70,6 +70,8 @@ public final class GpuContext implements AutoCloseable {
     private final Target target;
     private final EventListener listener;
     private final EmitOptions emitOptions;
+    private final Fallback fallback;
+    private final Set<String> fallbackReported = ConcurrentHashMap.newKeySet();
 
     private final ReentrantLock lock = new ReentrantLock();
     private final ConcurrentHashMap<String, Entry> cache = new ConcurrentHashMap<>();
@@ -80,7 +82,7 @@ public final class GpuContext implements AutoCloseable {
     private volatile boolean closed;
 
     private GpuContext(DeviceApi api, boolean ownsApi, DeviceInfo device, long contextHandle, long queue,
-                       EventListener listener, EmitOptions emitOptions) {
+                       EventListener listener, EmitOptions emitOptions, Fallback fallback) {
         this.api = api;
         this.ownsApi = ownsApi;
         this.device = device;
@@ -88,6 +90,7 @@ public final class GpuContext implements AutoCloseable {
         this.queue = queue;
         this.listener = listener;
         this.emitOptions = emitOptions;
+        this.fallback = fallback;
         this.target = new Target("opencl", device.vendor().toLowerCase(java.util.Locale.ROOT).replaceAll("\\W+", "-"),
                 device.isGpu() ? "gpu" : device.isCpu() ? "cpu" : "accelerator", device.features(), 0,
                 device.computeUnits());
@@ -102,6 +105,16 @@ public final class GpuContext implements AutoCloseable {
         return new Builder();
     }
 
+    /**
+     * Что делать фасаду {@link JavaToGpu}, когда ядро нельзя выполнить на устройстве (REWORK_ARCHITECTURE.md, 3.8).
+     */
+    public enum Fallback {
+        /** Выполнить ядро на JVM и сообщить об этом одним предупреждением в {@link EventListener}. */
+        ALLOWED,
+        /** Не уходить на JVM: бросить {@link GpuException}. */
+        NEVER
+    }
+
     /** Построитель {@link GpuContext}. */
     public static final class Builder {
         private DeviceApi api;
@@ -109,6 +122,7 @@ public final class GpuContext implements AutoCloseable {
         private boolean environment = true;
         private EventListener listener = EventListener.NONE;
         private EmitOptions emitOptions = EmitOptions.RELEASE;
+        private Fallback fallback = Fallback.ALLOWED;
 
         private Builder() {
         }
@@ -163,6 +177,15 @@ public final class GpuContext implements AutoCloseable {
         }
 
         /**
+         * @param fallback поведение при невозможности выполнить ядро на устройстве (по умолчанию {@link Fallback#ALLOWED})
+         * @return этот построитель
+         */
+        public Builder fallback(Fallback fallback) {
+            this.fallback = fallback;
+            return this;
+        }
+
+        /**
          * Создаёт контекст; отсутствие драйвера или устройства - значение, а не исключение.
          *
          * @return контекст либо {@code RT-D01} (устройств нет), {@code RT-D03} (ошибка драйвера)
@@ -198,7 +221,7 @@ public final class GpuContext implements AutoCloseable {
                     throw e;
                 }
                 GpuContext gc = new GpuContext(a, owns, d, ctx, q, listener == null ? EventListener.NONE : listener,
-                        emitOptions);
+                        emitOptions, fallback == null ? Fallback.ALLOWED : fallback);
                 gc.emit(GpuEvent.Kind.DEVICE_SELECTED, d.describe(), 0, 0, d.platformName() + ", драйвер " + d.driverVersion());
                 return Result.ok(gc);
             } catch (DeviceApiException e) {
@@ -248,6 +271,27 @@ public final class GpuContext implements AutoCloseable {
     /** @return {@code true} после {@link #close()} */
     public boolean isClosed() {
         return closed;
+    }
+
+    /** @return политика ухода на JVM, которую применяет фасад {@link JavaToGpu} */
+    public Fallback fallback() {
+        return fallback;
+    }
+
+    /**
+     * Сообщает, что ядро выполнено на JVM: событие {@link GpuEvent.Kind#FALLBACK} уходит в {@link EventListener}
+     * <b>один раз</b> на ядро и контекст (повторные уходы того же ядра не засоряют журнал).
+     *
+     * @param kernelId идентификатор ядра
+     * @param reason   причина (диагностики компиляции, отсутствие устройства)
+     * @return {@code true}, если событие отправлено, {@code false}, если об этом ядре уже сообщалось
+     */
+    public boolean reportFallback(String kernelId, String reason) {
+        if (!fallbackReported.add(kernelId)) {
+            return false;
+        }
+        emit(GpuEvent.Kind.FALLBACK, kernelId, 0, 0, reason);
+        return true;
     }
 
     /** @return счётчики кэша скомпилированных ядер */

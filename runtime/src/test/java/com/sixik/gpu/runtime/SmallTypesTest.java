@@ -231,7 +231,7 @@ class SmallTypesTest {
         GpuEvent e = new GpuEvent(GpuEvent.Kind.UPLOAD, "buf", 5, 64, "");
         assertEquals(64, e.bytes());
         assertEquals(GpuEvent.Kind.UPLOAD, e.kind());
-        assertEquals(7, GpuEvent.Kind.values().length);
+        assertEquals(8, GpuEvent.Kind.values().length);
     }
 
     @Test

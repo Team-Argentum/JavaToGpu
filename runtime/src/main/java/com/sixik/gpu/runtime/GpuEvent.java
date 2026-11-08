@@ -26,6 +26,8 @@ public record GpuEvent(Kind kind, String subject, long nanos, long bytes, String
         READBACK,
         /** Предупреждение (например, предупреждения build log драйвера). */
         WARNING,
+        /** Ядро выполнено на JVM вместо устройства ({@code detail} - причина). */
+        FALLBACK,
         /** Контекст закрыт. */
         CLOSED
     }

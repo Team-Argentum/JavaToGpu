@@ -1,6 +1,22 @@
+plugins {
+    // KernelCompiler (javac in-process с процессором frontend-java) переиспользуют тесты runtime и gradle-plugin.
+    id 'java-test-fixtures'
+}
+
 description = 'Подмена тела @Kernel-метода в байткоде (ASM): оригинал уходит в <name>$jvm, метод становится делегатом.'
 
 dependencies {
     implementation 'org.ow2.asm:asm:9.11.1'
     implementation 'org.ow2.asm:asm-tree:9.11.1'
+
+    // Только тесты: образцы собираются в class-файлы и IR-ресурсы так же, как у пользователя.
+    testImplementation project(':api')
+    testImplementation project(':ir')
+    testImplementation project(':frontend-java')
+    testImplementation testFixtures(project(':weaver'))
+}
+
+tasks.named('test') {
+    // Тесты компилируют образцы javac in-process: classpath задаём явно, а не полагаемся на java.class.path воркера.
+    systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
 }

@@ -16,9 +16,16 @@ dependencies {
     testImplementation project(':ir-interpreter')
     testImplementation testFixtures(project(':ir-interpreter'))
     testFixturesApi project(':ir')
+
+    // E2E фасада: исходник -> javac с процессором frontend-java -> weaver -> загрузка класса -> обычный вызов.
+    testImplementation project(':frontend-java')
+    testImplementation project(':weaver')
+    testImplementation testFixtures(project(':weaver'))
 }
 
 tasks.named('test') {
+    // KernelCompiler компилирует образцы javac in-process: classpath задаём явно, а не полагаемся на java.class.path воркера.
+    systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
     useJUnitPlatform {
         excludeTags 'device' // тесты на реальном драйвере - отдельной задачей deviceTest
     }
@@ -30,6 +37,7 @@ tasks.register('deviceTest', Test) {
     description = 'Тесты рантайма на реальном OpenCL-устройстве (тег device).'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
     useJUnitPlatform {
         includeTags 'device'
     }
