@@ -12,3 +12,4 @@ include 'weaver'           // подмена тела @Kernel-метода (ASM,
 include 'gradle-plugin'    // тонкая обёртка над weaver для Gradle.
 include 'test-support'     // JUnit 5/6: GpuAssert, @GPUTest, KernelSample.
 include 'tools'            // дампы IR, CI-отчёты. Не входит в production-артефакт.
+include 'app'              // тестовое приложение: примеры ядер, запуск и интеграционные тесты.

@@ -65,6 +65,7 @@ def allowedProjectDeps = [
         'gradle-plugin' : ['weaver'],
         'test-support'  : ['api', 'ir', 'ir-interpreter', 'runtime'],
         'tools'         : ['ir', 'codegen-opencl', 'ir-interpreter', 'runtime'],
+        'app'           : ['api', 'runtime', 'frontend-java'],
 ]
 
 // Внешние библиотеки (production-конфигурации). Всё остальное запрещено.

@@ -19,6 +19,7 @@
 | `gradle-plugin` | Gradle-обёртка над `weaver` |
 | `test-support` | JUnit-библиотека (`GpuAssert`, `@GPUTest`) |
 | `tools` | дампы IR, отчёты |
+| `app` | тестовое приложение, примеры ядер и интеграционные тесты |
 
 Допустимые зависимости между модулями задаёт `build.gradle`; задача `verifyModuleBoundaries` (входит в `check`) проверяет граф и запрещённые импорты.
 
@@ -57,3 +58,26 @@ Sine.computeSine(input, output);   // OpenCL-устройство, а если �
 ```
 ./gradlew build
 ```
+
+## Тестовое приложение
+
+Модуль `app` использует библиотеки из этой сборки; публикация в Maven не требуется.
+Ядра лежат в `app/src/main/java/com/sixik/gpu/app/Kernels.java`, точка входа — `Main.java`.
+При сборке annotation processor создаёт IR, а weaver подменяет тела `@Kernel`-методов.
+
+```powershell
+.\gradlew.bat :app:run                       # сложение 1024 элементов и проверка результата
+.\gradlew.bat :app:run --args="65536"        # свой размер массивов
+.\gradlew.bat :app:test                      # тесты без OpenCL-драйвера
+.\gradlew.bat :app:deviceTest                # сверка JVM / IR / OpenCL, без устройства пропуск
+.\gradlew.bat :app:installDist               # приложение со скриптами запуска и зависимостями
+```
+
+На Linux/macOS используйте `./gradlew`. Готовые скрипты находятся в `app/build/install/app/bin`.
+Для готовых скриптов нужен JDK 25 в `JAVA_HOME` или `PATH`; задача `:app:run` выбирает его через toolchain.
+При запуске приложение выводит выбранное устройство, факт выполнения ядра на нём либо причину
+перехода на JVM. Если подходящего OpenCL-устройства нет, пример выполняется на JVM.
+
+JMH-сценарии CPU/GPU для многослойного 3D-шума и игрового цикла с видимостью
+32 чанка и высотой 360 блоков: [описание и команды](app/benchmarks/README.md),
+[результаты измерений](app/benchmarks/RESULTS.md).

@@ -49,3 +49,4 @@ bin/
 /.metadata/
 /custom_data_m
 /tmp/jitpack-gradle-home-*/
+/app/benchmarks

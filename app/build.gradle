@@ -1,0 +1,98 @@
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+
+plugins {
+    id 'application'
+}
+
+description = 'Тестовое приложение для разработки и запуска JavaToGpu-ядер.'
+
+// Плагин из соседнего gradle-plugin ещё не собран при конфигурации этой сборки.
+// Используем те же frontend и weaver напрямую, без публикации библиотек.
+sourceSets {
+    buildTools
+}
+
+dependencies {
+    implementation project(':api')
+    implementation project(':runtime')
+    annotationProcessor project(':frontend-java')
+    testAnnotationProcessor project(':frontend-java')
+
+    buildToolsImplementation project(':weaver')
+    testImplementation project(':test-support')
+    testImplementation testFixtures(project(':runtime'))
+}
+
+application {
+    mainClass = 'com.sixik.gpu.app.Main'
+    applicationDefaultJvmArgs = ['--enable-native-access=ALL-UNNAMED']
+}
+
+apply from: rootProject.file('gradle/jmh.gradle')
+
+tasks.named('jmh') {
+    // Относительные пути результатов JMH разрешаются от корня репозитория.
+    workingDir rootProject.projectDir
+}
+
+tasks.register('terrainSweep', JavaExec) {
+    group = 'verification'
+    description = 'Однократная генерация полного окна 65x65 чанков; дополнительная проверка масштаба к JMH.'
+    classpath = sourceSets.jmh.runtimeClasspath
+    mainClass = 'com.sixik.gpu.app.terrain.TerrainSweep'
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+    jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xmx2g'
+    if (findProperty('terrainSampling') != null) {
+        args findProperty('terrainSampling').toString()
+    }
+}
+
+// Weaver собран на Java 25: запускаем его через toolchain, даже если Gradle работает на Java 21.
+abstract class WeavingServices {
+    @Inject
+    abstract ExecOperations getExecOperations()
+}
+
+def weavingServices = objects.newInstance(WeavingServices)
+def weavingClasspath = sourceSets.buildTools.runtimeClasspath
+def weavingLauncher = javaToolchains.launcherFor(java.toolchain)
+
+['compileJava', 'compileTestJava'].each { taskName ->
+    tasks.named(taskName, JavaCompile) {
+        dependsOn tasks.named('buildToolsClasses')
+        inputs.files(weavingClasspath).withPropertyName('weavingClasspath').withNormalizer(ClasspathNormalizer)
+        options.compilerArgs += ['-Xlint:-processing']
+        // Подмена внутри compile-задачи: up-to-date и build cache хранят готовые классы.
+        doLast {
+            def classesDirectory = destinationDirectory.get().asFile.absolutePath
+            weavingServices.execOperations.javaexec {
+                executable = weavingLauncher.get().executablePath.asFile.absolutePath
+                classpath = weavingClasspath
+                mainClass = 'com.sixik.gpu.app.buildtools.Weave'
+                args classesDirectory
+            }
+        }
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'device'
+    }
+}
+
+tasks.register('deviceTest', Test) {
+    group = 'verification'
+    description = 'Сверяет ядра приложения с реальным OpenCL-устройством; без устройства пропускается.'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'device'
+    }
+    shouldRunAfter tasks.named('test')
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        showStandardStreams = true
+    }
+}
