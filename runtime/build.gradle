@@ -1,7 +1,40 @@
+plugins {
+    // Фейковый DeviceApi (тесты без железа) переиспользуют test-support и E2E-тесты weaver/плагина.
+    id 'java-test-fixtures'
+}
+
 description = 'GpuContext, устройства (FFM к libOpenCL), GpuBuffer, кэш, запуск, JVM-fallback.'
 
 dependencies {
     api project(':api')
     api project(':ir')
-    implementation project(':codegen-opencl')
+    api project(':codegen-opencl')
+
+    // Только тесты (production-граф проверяет verifyModuleBoundaries и этих связей не видит):
+    //  * фикстуры ir - модули, собранные вручную; ir-interpreter и его образцы - эталон для device-теста.
+    testImplementation testFixtures(project(':ir'))
+    testImplementation project(':ir-interpreter')
+    testImplementation testFixtures(project(':ir-interpreter'))
+    testFixturesApi project(':ir')
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'device' // тесты на реальном драйвере - отдельной задачей deviceTest
+    }
+}
+
+// Тесты на настоящем OpenCL-устройстве. Без драйвера пропускаются (Assumptions), в обычную сборку не входят.
+tasks.register('deviceTest', Test) {
+    group = 'verification'
+    description = 'Тесты рантайма на реальном OpenCL-устройстве (тег device).'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'device'
+    }
+    testLogging {
+        showStandardStreams = true
+    }
+    shouldRunAfter tasks.named('test')
 }

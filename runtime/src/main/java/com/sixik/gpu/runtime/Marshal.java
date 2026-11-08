@@ -1,0 +1,204 @@
+package com.sixik.gpu.runtime;
+
+import com.sixik.gpu.ir.Types;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+
+/**
+ * Соответствие значений хоста типам IR и упаковка массивов в память устройства (то же соответствие, что у
+ * {@code ir-interpreter}, чтобы JVM, интерпретатор и устройство принимали одинаковые аргументы).
+ *
+ * <p>Массив: {@code I8 - byte[]}; {@code U8 - byte[]} или {@code boolean[]} (один байт на элемент, {@code 0/1});
+ * {@code I16 - short[]}; {@code U16 - char[]} или {@code short[]}; {@code I32/U32 - int[]}; {@code I64/U64 - long[]};
+ * {@code F32 - float[]}; {@code F64 - double[]}. Скаляр: строго {@code Integer / Long / Float / Double}. Порядок
+ * байт - родной (little-endian на всех поддерживаемых платформах), раскладка плотная: элемент занимает ровно свой
+ * размер (REWORK_ARCHITECTURE.md, 5.3).</p>
+ */
+final class Marshal {
+
+    private Marshal() {
+    }
+
+    /**
+     * Тип элемента IR, естественный для Java-массива.
+     *
+     * @param array Java-массив примитивов
+     * @return {@code I8, U8 (boolean[]), I16, U16 (char[]), I32, I64, F32, F64} либо {@code -1}, если это не поддержанный массив
+     */
+    static int elementTypeOf(Object array) {
+        return switch (array) {
+            case byte[] x -> Types.I8;
+            case boolean[] x -> Types.U8;
+            case short[] x -> Types.I16;
+            case char[] x -> Types.U16;
+            case int[] x -> Types.I32;
+            case long[] x -> Types.I64;
+            case float[] x -> Types.F32;
+            case double[] x -> Types.F64;
+            case null, default -> -1;
+        };
+    }
+
+    /**
+     * @param array поддержанный массив
+     * @return число элементов
+     */
+    static int length(Object array) {
+        return java.lang.reflect.Array.getLength(array);
+    }
+
+    /**
+     * @param elemType тип элемента IR
+     * @return размер элемента в байтах
+     */
+    static int elementSize(int elemType) {
+        return Types.bits(elemType) / 8;
+    }
+
+    /**
+     * Принимает ли параметр-массив с элементом {@code elemType} этот Java-массив.
+     *
+     * @param elemType тип элемента параметра
+     * @param array    значение
+     * @return {@code true}, если соответствие допустимо
+     */
+    static boolean accepts(int elemType, Object array) {
+        return switch (elemType) {
+            case Types.I8 -> array instanceof byte[];
+            case Types.U8 -> array instanceof byte[] || array instanceof boolean[];
+            case Types.I16 -> array instanceof short[];
+            case Types.U16 -> array instanceof char[] || array instanceof short[];
+            case Types.I32, Types.U32 -> array instanceof int[];
+            case Types.I64, Types.U64 -> array instanceof long[];
+            case Types.F32 -> array instanceof float[];
+            case Types.F64 -> array instanceof double[];
+            default -> false;
+        };
+    }
+
+    /**
+     * Совместимы ли тип элемента буфера и параметра: одинаковый размер и одинаковая «вещественность»
+     * ({@code int[]}-буфер подходит параметрам {@code I32} и {@code U32}, но не {@code F32}).
+     *
+     * @param paramElem  элемент параметра
+     * @param bufferElem элемент буфера
+     * @return {@code true}, если буфер можно привязать к параметру
+     */
+    static boolean compatible(int paramElem, int bufferElem) {
+        return Types.bits(paramElem) == Types.bits(bufferElem) && Types.isFloat(paramElem) == Types.isFloat(bufferElem);
+    }
+
+    /**
+     * @param type  тип скалярного параметра
+     * @param value значение
+     * @return {@code true}, если значение допустимо
+     */
+    static boolean scalarMatches(int type, Object value) {
+        return switch (type) {
+            case Types.I32, Types.U32 -> value instanceof Integer;
+            case Types.I64, Types.U64 -> value instanceof Long;
+            case Types.F32 -> value instanceof Float;
+            case Types.F64 -> value instanceof Double;
+            default -> false;
+        };
+    }
+
+    /**
+     * @param value допустимый скаляр
+     * @return его биты (для 4-байтных - младшие 32)
+     */
+    static long scalarBits(Object value) {
+        return switch (value) {
+            case Integer x -> x;
+            case Long x -> x;
+            case Float x -> Float.floatToRawIntBits(x);
+            case Double x -> Double.doubleToRawLongBits(x);
+            default -> throw new IllegalArgumentException("не скаляр: " + value);
+        };
+    }
+
+    /**
+     * @param type тип скаляра
+     * @return размер в байтах (4 или 8)
+     */
+    static int scalarSize(int type) {
+        return Types.bits(type) / 8;
+    }
+
+    /**
+     * @param array поддержанный массив
+     * @return размер содержимого в байтах
+     */
+    static long byteSize(Object array) {
+        return (long) length(array) * elementSize(elementTypeOf(array));
+    }
+
+    /**
+     * Копирует массив в новую нативную память.
+     *
+     * @param arena владелец памяти
+     * @param array источник
+     * @return сегмент ровно {@code byteSize(array)} байт (для пустого массива - 8 байт запаса не раскрывается)
+     */
+    static MemorySegment toNative(Arena arena, Object array) {
+        long bytes = byteSize(array);
+        MemorySegment seg = arena.allocate(Math.max(bytes, 8), 8);
+        int n = length(array);
+        switch (array) {
+            case byte[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_BYTE, 0, n);
+            case boolean[] x -> {
+                for (int i = 0; i < n; i++) {
+                    seg.set(ValueLayout.JAVA_BYTE, i, (byte) (x[i] ? 1 : 0));
+                }
+            }
+            case short[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_SHORT, 0, n);
+            case char[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_CHAR, 0, n);
+            case int[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_INT, 0, n);
+            case long[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_LONG, 0, n);
+            case float[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_FLOAT, 0, n);
+            case double[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_DOUBLE, 0, n);
+            default -> throw new IllegalArgumentException("неподдержанный массив " + array.getClass());
+        }
+        return seg;
+    }
+
+    /**
+     * Копирует нативную память в массив.
+     *
+     * @param seg   источник (не короче содержимого массива)
+     * @param array приёмник
+     */
+    static void fromNative(MemorySegment seg, Object array) {
+        int n = length(array);
+        switch (array) {
+            case byte[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, 0, x, 0, n);
+            case boolean[] x -> {
+                for (int i = 0; i < n; i++) {
+                    x[i] = seg.get(ValueLayout.JAVA_BYTE, i) != 0;
+                }
+            }
+            case short[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_SHORT, 0, x, 0, n);
+            case char[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_CHAR, 0, x, 0, n);
+            case int[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_INT, 0, x, 0, n);
+            case long[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_LONG, 0, x, 0, n);
+            case float[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_FLOAT, 0, x, 0, n);
+            case double[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_DOUBLE, 0, x, 0, n);
+            default -> throw new IllegalArgumentException("неподдержанный массив " + array.getClass());
+        }
+    }
+
+    /**
+     * Название типа значения хоста для сообщений об ошибках.
+     *
+     * @param value значение
+     * @return например {@code "int[]"}, {@code "Integer"}, {@code "null"}
+     */
+    static String describe(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        return value.getClass().isArray() ? value.getClass().getComponentType() + "[]" : value.getClass().getSimpleName();
+    }
+}

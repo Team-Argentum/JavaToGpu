@@ -6,6 +6,7 @@ import com.sixik.gpu.ir.Result;
 import com.sixik.gpu.ir.Types;
 import com.sixik.gpu.ir.interpreter.Interpreter;
 import com.sixik.gpu.ir.interpreter.NdRange;
+import com.sixik.gpu.ir.interpreter.samples.SampleArgs;
 import com.sixik.gpu.ir.interpreter.samples.SampleKernels;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
@@ -56,18 +57,8 @@ class DeviceTest {
     // образцы-ядра, собранные из Java
     // =============================================================================================
 
-    /**
-     * Образцы, которые на устройстве не проверяются: гонки между work-item'ами (все пишут в одну ячейку или читают
-     * чужие записи), алиасинг (на устройстве два аргумента - два буфера) и приватный массив в 1 МиБ, который
-     * интерпретатор осиливает, а устройство отвергает ({@code CL_OUT_OF_RESOURCES}). Для них остаются golden-файлы.
-     */
-    private static boolean racy(String label) {
-        return label.equals("MemoryKernels.prefixSum") || label.equals("MemoryKernels.aliasing")
-                || label.equals("MemoryKernels.lengths") || label.equals("MemoryKernels.manyCalls");
-    }
-
     static Stream<String> sampleNames() {
-        return SampleKernels.all().stream().map(SampleKernels.Kernel::label).filter(l -> !racy(l));
+        return SampleKernels.all().stream().map(SampleKernels.Kernel::label).filter(l -> !SampleArgs.notComparableOnDevice(l));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -80,9 +71,9 @@ class DeviceTest {
         NdRange range = m.fReqWorkGroup(f, 0) > 0 ? NdRange.of2D(8, 4) : NdRange.of1D(16);
         boolean floats = false;
         for (int i = 0; i < m.fParamCount(f); i++) {
-            floats |= Types.isFloat(scalarOf(m, m.fParamType(f, i)));
+            floats |= Types.isFloat(SampleArgs.scalarOf(m, m.fParamType(f, i)));
         }
-        check(label, m, range, randomArgs(m, f, 4242), floats ? 4 : 0);
+        check(label, m, range, SampleArgs.random(m, f, 4242), floats ? 4 : 0);
     }
 
     // =============================================================================================
@@ -413,114 +404,5 @@ class DeviceTest {
 
     private static long orderedL(long bits) {
         return bits >= 0 ? bits : Long.MIN_VALUE - bits;
-    }
-
-    // =============================================================================================
-    // случайные аргументы по сигнатуре ядра
-    // =============================================================================================
-
-    private static int scalarOf(IrModule m, int t) {
-        return m.typeKind(t) == Types.KIND_ARRAY ? Types.elem(m, t) : t;
-    }
-
-    private static final int ARRAY_LEN = 1024;
-
-    /**
-     * Строит фабрику случайных, но воспроизводимых аргументов по типам параметров. Целые ненулевые (чтобы не
-     * делить на ноль), вещественные - умеренные плюс {@code 0, -0, NaN, +-inf}.
-     */
-    private static Supplier<Object[]> randomArgs(IrModule m, int f, long seed) {
-        return () -> {
-            Random r = new Random(seed);
-            Object[] out = new Object[m.fParamCount(f)];
-            for (int i = 0; i < out.length; i++) {
-                int t = m.fParamType(f, i);
-                boolean array = m.typeKind(t) == Types.KIND_ARRAY;
-                int e = scalarOf(m, t);
-                if (array) {
-                    out[i] = randomArray(r, e);
-                } else {
-                    out[i] = switch (e) {
-                        case Types.I32 -> nonZeroInt(r);
-                        case Types.I64 -> (long) nonZeroInt(r) * 1000003L;
-                        case Types.F32 -> randomFloat(r);
-                        default -> (double) randomFloat(r);
-                    };
-                }
-            }
-            return out;
-        };
-    }
-
-    private static int nonZeroInt(Random r) {
-        int v = r.nextInt(201) - 100;
-        return v == 0 ? 17 : v;
-    }
-
-    private static float randomFloat(Random r) {
-        int k = r.nextInt(20);
-        return switch (k) {
-            case 0 -> 0f;
-            case 1 -> -0f;
-            case 2 -> Float.NaN;
-            case 3 -> Float.POSITIVE_INFINITY;
-            case 4 -> Float.NEGATIVE_INFINITY;
-            default -> (r.nextFloat() - 0.5f) * 40f;
-        };
-    }
-
-    private static Object randomArray(Random r, int elem) {
-        int n = ARRAY_LEN;
-        switch (elem) {
-            case Types.I8, Types.U8: {
-                byte[] a = new byte[n];
-                for (int i = 0; i < n; i++) {
-                    a[i] = (byte) (r.nextInt(100) + 1);
-                }
-                return a;
-            }
-            case Types.I16: {
-                short[] a = new short[n];
-                for (int i = 0; i < n; i++) {
-                    a[i] = (short) (r.nextInt(3000) + 1);
-                }
-                return a;
-            }
-            case Types.U16: {
-                char[] a = new char[n];
-                for (int i = 0; i < n; i++) {
-                    a[i] = (char) (r.nextInt(60000) + 1);
-                }
-                return a;
-            }
-            case Types.I32, Types.U32: {
-                int[] a = new int[n];
-                for (int i = 0; i < n; i++) {
-                    a[i] = nonZeroInt(r);
-                }
-                return a;
-            }
-            case Types.I64, Types.U64: {
-                long[] a = new long[n];
-                for (int i = 0; i < n; i++) {
-                    a[i] = (long) nonZeroInt(r) * 1000003L;
-                }
-                return a;
-            }
-            case Types.F32: {
-                float[] a = new float[n];
-                for (int i = 0; i < n; i++) {
-                    a[i] = randomFloat(r);
-                }
-                return a;
-            }
-            default: {
-                double[] a = new double[n];
-                for (int i = 0; i < n; i++) {
-                    a[i] = randomFloat(r);
-                }
-                return a;
-            }
-        }
     }
 }
