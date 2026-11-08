@@ -77,7 +77,21 @@ Sine.computeSine(input, output);   // OpenCL-устройство, а если �
 Для готовых скриптов нужен JDK 25 в `JAVA_HOME` или `PATH`; задача `:app:run` выбирает его через toolchain.
 При запуске приложение выводит выбранное устройство, факт выполнения ядра на нём либо причину
 перехода на JVM. Если подходящего OpenCL-устройства нет, пример выполняется на JVM.
+`Main` всегда включает дамп сгенерированных OpenCL-ядер в `build/opencl` относительно
+рабочего каталога: при запуске через `:app:run` это `app/build/opencl/*.cl`.
 
 JMH-сценарии CPU/GPU для многослойного 3D-шума и игрового цикла с видимостью
 32 чанка и высотой 360 блоков: [описание и команды](app/benchmarks/README.md),
 [результаты измерений](app/benchmarks/RESULTS.md).
+
+Для дампа OpenCL из JMH добавьте `-PdumpOpencl`:
+
+```powershell
+.\gradlew.bat :app:jmh -PdumpOpencl '-PjmhArgs=TerrainBatchBenchmarks -p backend=GPU_PREPARED -p sampling=COARSE -p chunksPerCall=1'
+```
+
+Исходники сохраняются в `app/build/opencl/jmh/<ядро>-<хэш>.cl`.
+Свой каталог: `'-PdumpOpencl=app/build/my-opencl'` (путь относительно корня проекта).
+Отключение: `-PdumpOpencl=off`. Также поддерживаются `-Djavatogpu.dump=<каталог>`
+и переменная окружения `JAVATOGPU_DUMP`; `-PdumpOpencl` имеет приоритет.
+Настройка передаётся fork-процессам JMH; запись выполняется в `@Setup`, вне измерений.

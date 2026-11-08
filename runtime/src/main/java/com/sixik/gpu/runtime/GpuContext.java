@@ -89,13 +89,15 @@ public final class GpuContext implements AutoCloseable {
     private final AtomicLong diskWrites = new AtomicLong();
     private final Map<IrModule, String> kernelIds = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
     private final DiskCache disk;
+    private final Path sourceDump;
     private final String codegenVersion;
     volatile boolean closed;
 
     private GpuContext(DeviceApi api, boolean ownsApi, DeviceInfo device, long contextHandle, long queue,
                        EventListener listener, EmitOptions emitOptions, Fallback fallback, DiskCache disk,
-                       String codegenVersion) {
+                       Path sourceDump, String codegenVersion) {
         this.disk = disk;
+        this.sourceDump = sourceDump;
         this.codegenVersion = codegenVersion;
         this.api = api;
         this.ownsApi = ownsApi;
@@ -133,6 +135,10 @@ public final class GpuContext implements AutoCloseable {
     public static final String CACHE_PROPERTY = "javatogpu.cache";
     /** Переменная окружения с каталогом дискового кэша либо {@code off}. */
     public static final String CACHE_ENVIRONMENT = "JAVATOGPU_CACHE";
+    /** Системное свойство с каталогом выгрузки сгенерированного OpenCL C ({@code off} - не выгружать). */
+    public static final String DUMP_PROPERTY = "javatogpu.dump";
+    /** Переменная окружения с каталогом выгрузки сгенерированного OpenCL C ({@code off} - не выгружать). */
+    public static final String DUMP_ENVIRONMENT = "JAVATOGPU_DUMP";
 
     /** Построитель {@link GpuContext}. */
     public static final class Builder {
@@ -145,6 +151,7 @@ public final class GpuContext implements AutoCloseable {
         private Path diskCachePath;
         private boolean diskCacheOff;
         private long diskCacheMaxBytes = DiskCache.DEFAULT_MAX_BYTES;
+        private Path sourceDumpPath;
         private String codegenVersion = OpenClEmitter.VERSION;
 
         private Builder() {
@@ -215,6 +222,21 @@ public final class GpuContext implements AutoCloseable {
          */
         public Builder diskCacheLimit(long bytes) {
             this.diskCacheMaxBytes = bytes;
+            return this;
+        }
+
+        /**
+         * Каталог, в который выгружается сгенерированный OpenCL C каждого собранного ядра: файл
+         * {@code <ядро>-<хэш исходника>.cl}. Выгрузка не зависит от дискового кэша и делается и при попадании в него
+         * (бинарь кэша читать глазами нельзя, исходник - можно). Ошибка записи не мешает сборке. Если не задан,
+         * берётся из свойства {@code javatogpu.dump} / переменной {@code JAVATOGPU_DUMP} (путь либо {@code off}),
+         * пока не вызван {@link #ignoreEnvironment()}; по умолчанию выгрузки нет.
+         *
+         * @param directory каталог (создаётся при первой записи); {@code null} - не выгружать
+         * @return этот построитель
+         */
+        public Builder dumpSources(Path directory) {
+            this.sourceDumpPath = directory;
             return this;
         }
 
@@ -302,7 +324,7 @@ public final class GpuContext implements AutoCloseable {
                     throw e;
                 }
                 GpuContext gc = new GpuContext(a, owns, d, ctx, q, listener == null ? EventListener.NONE : listener,
-                        emitOptions, fallback == null ? Fallback.ALLOWED : fallback, openDiskCache(owns), codegenVersion);
+                        emitOptions, fallback == null ? Fallback.ALLOWED : fallback, openDiskCache(owns), openSourceDump(), codegenVersion);
                 gc.emit(GpuEvent.Kind.DEVICE_SELECTED, d.describe(), 0, 0, d.platformName() + ", драйвер " + d.driverVersion());
                 return Result.ok(gc);
             } catch (DeviceApiException e) {
@@ -343,6 +365,23 @@ public final class GpuContext implements AutoCloseable {
                 }
             }
             return realDriver ? new DiskCache(DiskCache.defaultDirectory(), diskCacheMaxBytes) : null;
+        }
+
+        /** Каталог выгрузки исходников по настройкам построителя и окружения; {@code null} - выключена. */
+        private Path openSourceDump() {
+            if (sourceDumpPath != null) {
+                return sourceDumpPath;
+            }
+            if (environment) {
+                String setting = System.getProperty(DUMP_PROPERTY, System.getenv(DUMP_ENVIRONMENT));
+                if (setting != null && !setting.isBlank()) {
+                    return switch (setting.strip().toLowerCase(java.util.Locale.ROOT)) {
+                        case "off", "false", "0", "no" -> null;
+                        default -> Path.of(setting.strip());
+                    };
+                }
+            }
+            return null;
         }
 
         private static String describeAll(List<DeviceInfo> all) {
@@ -545,6 +584,7 @@ public final class GpuContext implements AutoCloseable {
             return Result.failed(emitted.diagnostics());
         }
         Artifact art = emitted.value();
+        dumpSource(art);
         int missing = (art.requiredFeatures() | requiredMask(m, kernel)) & ~device.features();
         if (missing != 0) {
             return failure("RT-D02", "устройство " + device.describe() + " не поддерживает " + Features.describe(missing)
@@ -596,6 +636,23 @@ public final class GpuContext implements AutoCloseable {
             return failure("RT-X01", "ошибка драйвера при компиляции: " + e.getMessage());
         } finally {
             lock.unlock();
+        }
+    }
+
+    /** Пишет сгенерированный OpenCL C в каталог выгрузки, если он задан; любая ошибка записи игнорируется. */
+    private void dumpSource(Artifact art) {
+        if (sourceDump == null) {
+            return;
+        }
+        try {
+            String hash = java.util.HexFormat.of().formatHex(DiskCache.sha256(
+                    art.source().getBytes(java.nio.charset.StandardCharsets.UTF_8)), 0, 4);
+            String entry = art.entry().replaceAll("[^A-Za-z0-9_.-]", "_");
+            java.nio.file.Files.createDirectories(sourceDump);
+            java.nio.file.Files.writeString(sourceDump.resolve(entry + "-" + hash + ".cl"), art.source(),
+                    java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // выгрузка - отладочная помощь, не причина падения сборки
         }
     }
 

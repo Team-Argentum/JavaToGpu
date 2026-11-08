@@ -34,6 +34,25 @@ apply from: rootProject.file('gradle/jmh.gradle')
 tasks.named('jmh') {
     // Относительные пути результатов JMH разрешаются от корня репозитория.
     workingDir rootProject.projectDir
+    // JMH наследует аргументы JVM запускающего процесса в fork-процессы.
+    // Используем тот же параметр runtime, что и пример Main.
+    def dumpOption = providers.gradleProperty('dumpOpencl')
+            .orElse(providers.systemProperty('javatogpu.dump'))
+    if (dumpOption.isPresent()) {
+        def value = dumpOption.get().trim()
+        def setting
+        switch (value.toLowerCase(Locale.ROOT)) {
+            case ['', 'true', '1', 'yes']:
+                setting = layout.buildDirectory.dir('opencl/jmh').get().asFile.absolutePath
+                break
+            case ['off', 'false', '0', 'no']:
+                setting = 'off'
+                break
+            default:
+                setting = rootProject.file(value).absolutePath
+        }
+        systemProperty 'javatogpu.dump', setting
+    }
 }
 
 tasks.register('terrainSweep', JavaExec) {

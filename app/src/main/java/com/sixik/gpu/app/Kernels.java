@@ -1,6 +1,7 @@
 package com.sixik.gpu.app;
 
 import com.sixik.gpu.api.Gpu;
+import com.sixik.gpu.api.annotations.Constant;
 import com.sixik.gpu.api.annotations.DeviceFunction;
 import com.sixik.gpu.api.annotations.Global;
 import com.sixik.gpu.api.annotations.Kernel;
@@ -11,6 +12,9 @@ public final class Kernels {
     /** Запрещает создание экземпляров набора ядер. */
     private Kernels() {
     }
+
+    @Constant
+    public static final int CONST = 50;
 
     /**
      * Складывает по одному элементу двух массивов на каждый work-item.
@@ -26,7 +30,7 @@ public final class Kernels {
     @Kernel
     public static void vectorAdd(@Global float[] left, @Global float[] right, @Global float[] output) {
         int i = Gpu.getGlobalId(0);
-        output[i] = left[i] + right[i];
+        output[i] = left[i] + right[i] + math(left[i], right[i]);
     }
 
     @DeviceFunction
@@ -34,12 +38,11 @@ public final class Kernels {
         int i = 0;
 
         do {
-
             if (i < a) {
                 i++;
             }
 
-            return a * i + b;
+            return a * i + b + CONST;
         } while (true);
     }
 }
