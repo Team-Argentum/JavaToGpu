@@ -3,7 +3,8 @@ package com.sixik.gpu.ir.interpreter;
 import com.sixik.gpu.api.WorkItem;
 import com.sixik.gpu.api.WorkItemContext;
 import com.sixik.gpu.ir.Diagnostic;
-import com.sixik.gpu.ir.IrBinary;
+import com.sixik.gpu.ir.interpreter.samples.SampleKernels;
+import com.sixik.gpu.ir.interpreter.samples.SampleKernels.Kernel;
 import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Result;
 
@@ -41,71 +42,16 @@ final class Differential {
     /** Страховка: образцы малы, а зациклившийся интерпретатор должен упасть с IN-R03, а не повесить сборку. */
     private static final Interpreter.Options BUDGET = new Interpreter.Options(200_000_000L);
 
-    private static final String INDEX = "/META-INF/gpu/kernels.idx";
-    private static Map<String, String> ids;
-
     private Differential() {
-    }
-
-    // =============================================================================================
-    // поиск IR ядра
-    // =============================================================================================
-
-    private static synchronized Map<String, String> index() {
-        if (ids == null) {
-            Map<String, String> map = new HashMap<>();
-            try (InputStream in = Differential.class.getResourceAsStream(INDEX)) {
-                assertNotNull(in, "нет " + INDEX + ": образцы не обработаны annotation processor'ом frontend-java");
-                for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
-                    if (line.isBlank()) {
-                        continue;
-                    }
-                    String[] f = line.split("\t");
-                    map.put(f[0] + "\t" + f[1] + "\t" + f[2], f[3]);
-                }
-            } catch (IOException e) {
-                throw new AssertionError(e);
-            }
-            ids = map;
-        }
-        return ids;
     }
 
     /**
      * @param cls    класс образца
-     * @param method имя ядра (перегрузок у образцов нет)
-     * @return метод и его IR-модуль, прочитанный из ресурса
+     * @param method имя ядра
+     * @return ядро образца (см. {@link SampleKernels})
      */
     static Kernel kernel(Class<?> cls, String method) {
-        Method found = null;
-        for (Method m : cls.getDeclaredMethods()) {
-            if (m.getName().equals(method)) {
-                assertTrue(found == null, "в образце несколько методов " + method);
-                found = m;
-            }
-        }
-        assertNotNull(found, "нет метода " + method + " в " + cls.getName());
-        String descriptor = MethodType.methodType(found.getReturnType(), found.getParameterTypes())
-                .toMethodDescriptorString();
-        String id = index().get(cls.getName() + "\t" + method + "\t" + descriptor);
-        assertNotNull(id, "в kernels.idx нет ядра " + cls.getName() + "." + method + descriptor);
-        try (InputStream in = Differential.class.getResourceAsStream("/META-INF/gpu/ir/" + id + ".gir")) {
-            assertNotNull(in, "нет IR-ресурса " + id);
-            Result<IrModule> r = IrBinary.read(in.readAllBytes());
-            assertTrue(r.isOk(), "IR не читается: " + r.diagnostics());
-            return new Kernel(found, r.value());
-        } catch (IOException e) {
-            throw new AssertionError(e);
-        }
-    }
-
-    /**
-     * Ядро образца.
-     *
-     * @param method оригинальный Java-метод
-     * @param module IR-модуль ядра
-     */
-    record Kernel(Method method, IrModule module) {
+        return SampleKernels.kernel(cls, method);
     }
 
     // =============================================================================================

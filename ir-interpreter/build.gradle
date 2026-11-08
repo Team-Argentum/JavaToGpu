@@ -1,3 +1,8 @@
+plugins {
+    // Образцы-ядра (настоящие Java-методы @Kernel и каталог SampleKernels) переиспользуются тестами codegen-opencl.
+    id 'java-test-fixtures'
+}
+
 description = 'Эталонный CPU-интерпретатор IR для дифференциальных тестов.'
 
 dependencies {
@@ -9,11 +14,14 @@ dependencies {
     //    и тест берёт IR из ресурсов META-INF/gpu (это заодно проверяет весь путь «исходник -> ресурс -> исполнение»);
     //  * фикстуры ir - модули, собранные вручную.
     testImplementation project(':api')
-    testAnnotationProcessor project(':frontend-java')
     testImplementation testFixtures(project(':ir'))
+
+    testFixturesApi project(':ir')
+    testFixturesImplementation project(':api')
+    testFixturesAnnotationProcessor project(':frontend-java')
 }
 
-// Процессор объявляет только @Kernel/@DeviceFunction; остальные аннотации образцов и тестов он «не заявляет» - это норма.
-tasks.named('compileTestJava') {
+// Процессор объявляет только @Kernel/@DeviceFunction; остальные аннотации образцов он «не заявляет» - это норма.
+tasks.named('compileTestFixturesJava') {
     options.compilerArgs += ['-Xlint:-processing']
 }

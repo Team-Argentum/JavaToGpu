@@ -2,4 +2,39 @@ description = 'Кодген IR -> OpenCL C. Чистая функция emit(IrM
 
 dependencies {
     api project(':ir')
+
+    // Только тесты (production-граф проверяет verifyModuleBoundaries и этих связей не видит):
+    //  * фикстуры ir - модули, собранные вручную;
+    //  * образцы-ядра (Java-методы @Kernel, собранные фронтендом в IR) - из фикстур ir-interpreter;
+    //  * ir-interpreter - эталон для сверки результатов исполнения.
+    testImplementation testFixtures(project(':ir'))
+    testImplementation project(':api')
+    testImplementation project(':ir-interpreter')
+    testImplementation testFixtures(project(':ir-interpreter'))
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'device' // тесты на реальном драйвере - отдельной задачей deviceTest
+    }
+    // Golden-файлы читаются прямо из исходников, чтобы режим обновления мог их перезаписать:
+    //   ./gradlew :codegen-opencl:test -PgoldenUpdate   - перегенерировать golden (изменения смотреть глазами!)
+    systemProperty 'golden.dir', file('src/test/resources/golden').absolutePath
+    systemProperty 'golden.update', providers.gradleProperty('goldenUpdate').isPresent() ? 'true' : 'false'
+}
+
+// Тесты, которым нужен настоящий OpenCL-драйвер: сгенерированный C компилируется и исполняется на устройстве,
+// результат сверяется с ir-interpreter. Без драйвера пропускаются (Assumptions), в обычную сборку не входят.
+tasks.register('deviceTest', Test) {
+    group = 'verification'
+    description = 'Тесты кодогенератора на реальном OpenCL-устройстве (тег device).'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'device'
+    }
+    testLogging {
+        showStandardStreams = true
+    }
+    shouldRunAfter tasks.named('test')
 }
