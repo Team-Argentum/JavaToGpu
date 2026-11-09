@@ -39,7 +39,8 @@ class KernelsTest {
         for (int i = 0; i < size; i++) {
             left[i] = i - 8;
             right[i] = 0.5f;
-            expected[i] = i - 7.5f;
+            // math(a, 0.5) = (a > 0 ? a : 0) + 0.5 + CONST для этих конечных значений.
+            expected[i] = (left[i] > 0 ? 2 * left[i] : left[i]) + 1f + Kernels.CONST;
         }
         float[] output = new float[size];
         Kernels.vectorAdd(left, right, output);
@@ -55,7 +56,7 @@ class KernelsTest {
                         new float[]{0f, -4f, Float.MIN_VALUE, Float.MAX_VALUE, Float.NaN, Float.POSITIVE_INFINITY},
                         new float[]{0f, 1.5f, Float.MIN_VALUE, Float.MAX_VALUE, 1f, Float.NEGATIVE_INFINITY},
                         new float[6]})
-                .expected(null, null, new float[]{0f, -2.5f, 2 * Float.MIN_VALUE, Float.POSITIVE_INFINITY, Float.NaN, Float.NaN})
+                .expected(null, null, new float[]{50f, 49f, 50f, Float.POSITIVE_INFINITY, Float.NaN, Float.NaN})
                 .only(JVM, INTERPRETER)
                 .build();
         GpuAssert.Report report = GpuAssert.sameResult(Kernels.class, "vectorAdd", sample);

@@ -20,7 +20,7 @@ public final class Main {
     }
 
     /**
-     * Складывает массивы на OpenCL-устройстве либо через JVM-fallback и сверяет все элементы.
+     * Вычисляет экспериментальное vectorAdd на OpenCL-устройстве либо через JVM-fallback и сверяет все элементы.
      *
      * @param args необязательное положительное количество элементов, по умолчанию 1024
      * @throws IllegalArgumentException если аргументов больше одного или размер не является положительным целым
@@ -68,13 +68,13 @@ public final class Main {
             }
 
 
-//            for (int i = 0; i < size; i++) {
-//                // Целые до 255 и половины представляются в float точно.
-//                float expected = left[i] + right[i];
-//                if (output[i] != expected) {
-//                    throw new IllegalStateException("Mismatch at " + i + ": expected " + expected + ", got " + output[i]);
-//                }
-//            }
+            for (int i = 0; i < size; i++) {
+                // Для заданных входов a >= 0 и b = 0.5 формула ядра равна 2*a + 1 + CONST точно в float.
+                float expected = 2 * left[i] + 1f + Kernels.CONST;
+                if (output[i] != expected) {
+                    throw new IllegalStateException("Mismatch at " + i + ": expected " + expected + ", got " + output[i]);
+                }
+            }
             System.out.printf("vectorAdd: OK (%d elements)%n", size);
             System.out.println("First results: " + Arrays.toString(Arrays.copyOf(output, Math.min(size, 8))));
         } finally {

@@ -21,7 +21,7 @@ class KernelsDeviceTest {
     void vectorAdd_device_matchesJvmAndInterpreter(GpuContext context) {
         KernelSample sample = KernelSample.named("vector-add")
                 .args(() -> new Object[]{new float[]{1f, -2f, 0f, 4f}, new float[]{0.5f, 2f, -1f, 8f}, new float[4]})
-                .expected(null, null, new float[]{1.5f, 0f, -1f, 12f})
+                .expected(null, null, new float[]{53f, 52f, 48f, 74f})
                 .build();
         GpuAssert.Report report = GpuAssert.sameResult(Kernels.class, "vectorAdd", sample, context);
         assertTrue(report.ranOn(KernelSample.Leg.DEVICE), report.toString());

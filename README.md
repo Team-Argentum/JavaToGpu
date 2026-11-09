@@ -2,8 +2,13 @@
 
 Пишешь GPU-код на Java (подмножество, не произвольный код) — библиотека преобразует его в корректный код под видеокарту и запускает.
 
-**Статус: переразработка с нуля (M0).** Прежняя реализация (`JavaToGpu 0.1.0-alpha.5`) сохранена в git-теге `legacy-alpha5`.
+**Статус: M0–M13 реализованы; M14 — подготовка документации и alpha.** Текущая версия сборки — `0.2.0-SNAPSHOT`;
+доступна локальная Maven-публикация. Внешняя площадка и координаты alpha ещё не утверждены.
+Прежняя реализация (`JavaToGpu 0.1.0-alpha.5`) сохранена в git-теге `legacy-alpha5`.
 Архитектура, принятые решения и план — в [`REWORK_ARCHITECTURE.md`](REWORK_ARCHITECTURE.md). Исходный концепт языка — в [`OldCodeConcept`](OldCodeConcept).
+
+[Руководство пользователя](docs/USER_GUIDE.md) · [Самостоятельный пример подключения](examples/standalone/README.md).
+[Результаты проверки подготовки alpha](reports/alpha-readiness-2026-11-09.md).
 
 ## Модули
 
@@ -25,9 +30,13 @@
 
 ## Быстрый старт
 
+Для проверки без внешней публикации выполните `./gradlew publishLocal`: библиотеки и marker Gradle-плагина
+появятся в `build/local-maven`. Подключение обоих Maven-репозиториев (для плагина и библиотек) показано
+в [самостоятельном примере](examples/standalone/README.md). Сам Gradle потребителя должен работать на **JDK 25**.
+
 ```groovy
 plugins {
-    id 'io.github.deussixik.javatogpu'
+    id 'io.github.deussixik.javatogpu' version '0.2.0-SNAPSHOT'
 }
 ```
 
@@ -49,11 +58,13 @@ Sine.computeSine(input, output);   // OpenCL-устройство, а если �
 
 Размер запуска по умолчанию — длина первого массива; другой задаётся блоком
 `try (var s = JavaToGpu.launch(LaunchConfig.of2D(w, h))) { ... }`, свой контекст — `JavaToGpu.use(ctx)`.
+В примере с `@WorkGroup(x = 256)` длина запуска должна быть кратна 256.
 Подробности — `REWORK_ARCHITECTURE.md`, разделы 3.4–3.8 и 5.19.
 
 ## Сборка
 
-Нужен **JDK 25** (Gradle подберёт его через toolchain; сам Gradle можно запускать на 21+).
+Нужен **JDK 25**. Сборку самого репозитория можно запускать Gradle на 21+ с установленным JDK 25 для toolchain.
+При подключении опубликованного Gradle-плагина **JVM Gradle тоже должна быть 25+**: плагин и weaver загружаются в неё.
 
 ```
 ./gradlew build
@@ -66,7 +77,7 @@ Sine.computeSine(input, output);   // OpenCL-устройство, а если �
 При сборке annotation processor создаёт IR, а weaver подменяет тела `@Kernel`-методов.
 
 ```powershell
-.\gradlew.bat :app:run                       # сложение 1024 элементов и проверка результата
+.\gradlew.bat :app:run                       # экспериментальные ядра на 1024 элементах и проверка vectorAdd
 .\gradlew.bat :app:run --args="65536"        # свой размер массивов
 .\gradlew.bat :app:test                      # тесты без OpenCL-драйвера
 .\gradlew.bat :app:deviceTest                # сверка JVM / IR / OpenCL, без устройства пропуск

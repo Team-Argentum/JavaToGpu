@@ -1,0 +1,44 @@
+// Репозиторий принадлежит сборке: публикация не меняет ~/.m2 и не обращается к внешней площадке.
+def publishedModules = ['api', 'ir', 'ir-interpreter', 'codegen-opencl', 'runtime',
+                        'frontend-java', 'weaver', 'gradle-plugin', 'test-support']
+def localRepository = rootProject.layout.buildDirectory.dir('local-maven')
+
+def publishLocal = tasks.register('publishLocal') {
+    group = 'publishing'
+    description = 'Publishes the libraries and plugin marker to build/local-maven for standalone consumers.'
+}
+
+configure(publishedModules.collect { project(":${it}") }) {
+    apply plugin: 'maven-publish'
+
+    java {
+        withSourcesJar()
+    }
+
+    publishing {
+        repositories {
+            maven {
+                name = 'localSmoke'
+                url = localRepository
+            }
+        }
+        // java-gradle-plugin создаёт pluginMaven и marker сам.
+        if (project.name != 'gradle-plugin') {
+            publications {
+                mavenJava(MavenPublication) {
+                    from components.java
+                }
+            }
+        }
+    }
+
+    // Фикстуры используются внутри репозитория; публичной зависимостью alpha они не являются.
+    plugins.withId('java-test-fixtures') {
+        components.java.withVariantsFromConfiguration(configurations.testFixturesApiElements) { skip() }
+        components.java.withVariantsFromConfiguration(configurations.testFixturesRuntimeElements) { skip() }
+    }
+
+    publishLocal.configure {
+        dependsOn tasks.matching { it.name == 'publishAllPublicationsToLocalSmokeRepository' }
+    }
+}

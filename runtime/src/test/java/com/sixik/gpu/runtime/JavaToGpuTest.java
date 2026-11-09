@@ -394,6 +394,63 @@ class JavaToGpuTest {
         }
     }
 
+    /**
+     * Проверяет NEVER без контекста: повторные вызовы не исполняют JVM-тело и не повторяют поиск устройства.
+     *
+     * @param dir каталог компиляции ядра
+     * @throws Exception при ошибке сборки или загрузки фикстуры
+     */
+    @Test
+    void noDeviceWithNever_doesNotRunJvmOrRetryDiscovery(@TempDir Path dir) throws Exception {
+        URLClassLoader[] holder = new URLClassLoader[1];
+        FakeDeviceApi nothing = new FakeDeviceApi();
+        JavaToGpu.configureDefault(b -> b.api(nothing).ignoreEnvironment().fallback(GpuContext.Fallback.NEVER));
+        try {
+            Class<?> demo = woven(dir, holder);
+            float[] out = {123f};
+            assertEquals(Optional.empty(), JavaToGpu.defaultContext());
+            int calls = nothing.journal().size();
+            for (int attempt = 0; attempt < 2; attempt++) {
+                GpuException error = assertThrows(GpuException.class,
+                        () -> call(demo, "scale", new float[]{2}, out, 3f));
+                assertEquals("RT-D01", error.diagnostics().get(0).code());
+                assertArrayEquals(new float[]{123f}, out, "the JVM body must not write the output");
+                assertEquals(calls, nothing.journal().size());
+            }
+        } finally {
+            holder[0].close();
+        }
+    }
+
+    /**
+     * Проверяет сброс строгой политики и её изоляцию от явного scoped-контекста.
+     *
+     * @param dir каталог компиляции ядра
+     * @throws Exception при ошибке сборки или загрузки фикстуры
+     */
+    @Test
+    void failedStrictDefault_doesNotOverrideScopedContextAndResets(@TempDir Path dir) throws Exception {
+        URLClassLoader[] holder = new URLClassLoader[1];
+        JavaToGpu.configureDefault(b -> b.api(new FakeDeviceApi()).ignoreEnvironment().fallback(GpuContext.Fallback.NEVER));
+        try {
+            Class<?> demo = woven(dir, holder);
+            assertEquals(Optional.empty(), JavaToGpu.defaultContext());
+            FakeDeviceApi rejected = FakeDeviceApi.withGpu().rejectBuildWhen(source -> true, "test rejection");
+            float[] out = new float[1];
+            try (GpuContext ctx = context(rejected, new ArrayList<>(), GpuContext.Fallback.ALLOWED);
+                 var scope = JavaToGpu.use(ctx)) {
+                call(demo, "scale", new float[]{2}, out, 3f);
+                assertArrayEquals(new float[]{6f}, out);
+            }
+            JavaToGpu.resetDefault();
+            JavaToGpu.configureDefault(b -> b.api(new FakeDeviceApi()).ignoreEnvironment());
+            call(demo, "scale", new float[]{2}, out, 4f);
+            assertArrayEquals(new float[]{8f}, out, "reset must restore the default ALLOWED policy");
+        } finally {
+            holder[0].close();
+        }
+    }
+
     // ---- размер запуска и ошибки ---------------------------------------------------------------
 
     @Test

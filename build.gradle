@@ -148,3 +148,6 @@ tasks.register('verifyModuleBoundaries') {
 tasks.named('check') {
     dependsOn 'verifyModuleBoundaries'
 }
+
+// Локальная публикация для самостоятельного примера и проверки Maven-метаданных.
+apply from: 'gradle/publishing.gradle'

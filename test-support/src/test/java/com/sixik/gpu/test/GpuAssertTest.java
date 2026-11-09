@@ -63,6 +63,18 @@ class GpuAssertTest {
                 public static void plain(@Global int[] out) {
                     out[Gpu.getGlobalId(0)] = 7;
                 }
+
+                @Kernel
+                public static void preciseVariant(@Global double[] out, @Global double[] in) {
+                    int g = Gpu.getGlobalId(0);
+                    out[g] = Gpu.sqrt(in[g]);
+                }
+
+                @Kernel(required = "INT64_ATOMICS", fallback = "preciseVariant")
+                public static void variantSine(@Global double[] out, @Global double[] in) {
+                    int g = Gpu.getGlobalId(0);
+                    out[g] = Gpu.sin(in[g]);
+                }
             }
             """;
 
@@ -73,7 +85,7 @@ class GpuAssertTest {
     void build(@TempDir Path dir) throws Exception {
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
-        assertEquals(5, Weaver.weaveTree(dir).kernels());
+        assertEquals(7, Weaver.weaveTree(dir).kernels());
         loader = new URLClassLoader(new URL[]{dir.toUri().toURL()}, getClass().getClassLoader());
         kernels = loader.loadClass("demo.Kernels");
     }
@@ -192,6 +204,19 @@ class GpuAssertTest {
             // явный допуск образца строже: 0 ULP
             KernelSample strict = KernelSample.named("strict").args(() -> new Object[]{new float[16], ramp(16)}).ulps(0).build();
             assertThrows(AssertionFailedError.class, () -> GpuAssert.sameResult(kernels, "divide", strict, ctx));
+        }
+    }
+
+    /** Выбранный double-sqrt требует 0 ULP, хотя исходное ядро использует sin с допуском 4 ULP. */
+    @Test
+    void selectedFallbackVariant_doesNotInheritTheMainKernelsTolerance() {
+        FakeDeviceApi api = new FakeDeviceApi(FakeDeviceApi.Spec.gpu().withExtensions("cl_khr_fp64"))
+                .onKernel("k0", launch -> launch.buffer(0).putDouble(0, Double.MIN_VALUE));
+        try (GpuContext ctx = open(api)) {
+            KernelSample sample = KernelSample.named("selected sqrt").args(() -> new Object[]{new double[1], new double[1]}).build();
+            AssertionFailedError error = assertThrows(AssertionFailedError.class,
+                    () -> GpuAssert.sameResult(kernels, "variantSine", sample, ctx));
+            assertTrue(error.getMessage().contains("tolerance 0 ULP"), error.getMessage());
         }
     }
 

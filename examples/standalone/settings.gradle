@@ -1,0 +1,13 @@
+pluginManagement {
+    repositories {
+        maven { url = providers.gradleProperty('gpuRepository').getOrElse('../../build/local-maven') }
+        mavenCentral()
+    }
+}
+
+// Плагин и weaver скомпилированы для Java 25 и загружаются в JVM самого Gradle.
+if (!JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_25)) {
+    throw new GradleException('Standalone example: run Gradle on JDK 25 (set JAVA_HOME); a toolchain alone cannot load the plugin.')
+}
+
+rootProject.name = 'gpu-standalone'

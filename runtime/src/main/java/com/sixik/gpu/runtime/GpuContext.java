@@ -289,6 +289,15 @@ public final class GpuContext implements AutoCloseable {
         }
 
         /**
+         * Политика фасада до создания устройства: нужна и при неудаче {@link #tryBuild()}.
+         *
+         * @return настроенная политика fallback
+         */
+        Fallback fallback() {
+            return fallback;
+        }
+
+        /**
          * Создаёт контекст; отсутствие драйвера или устройства - значение, а не исключение.
          *
          * @return контекст либо {@code RT-D01} (устройств нет), {@code RT-D03} (ошибка драйвера)

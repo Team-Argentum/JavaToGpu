@@ -11,13 +11,15 @@ public final class Kernels {
     private Kernels() {
     }
 
+    /** Безразмерная добавка helper-функции, равная 50. */
     @Constant
     public static final int CONST = 50;
 
     /**
-     * Складывает по одному элементу двух массивов на каждый work-item.
+     * Складывает элементы двух массивов с результатом экспериментальной device-функции math.
      *
-     * <p>Формула: {@code output[i] = left[i] + right[i]}, где {@code i} — глобальный
+     * <p>Формула: {@code output[i] = (a + b) + (a * s + b + CONST)}, где
+     * {@code a = left[i]}, {@code b = right[i]}, {@code s = a > 0 ? 1 : 0}, а {@code i} — глобальный
      * индекс work-item по оси X. Размер запуска по умолчанию равен длине {@code left}.
      * Значения массивов безразмерные; сложение следует правилам IEEE 754 для {@code float}.
      *

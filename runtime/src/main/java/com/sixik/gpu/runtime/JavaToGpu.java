@@ -66,6 +66,8 @@ public final class JavaToGpu {
     private static final Object LOCK = new Object();
     private static GpuContext defaultContext;
     private static List<Diagnostic> defaultFailure;
+    /** Политика последней попытки создания default-контекста; доступ только под LOCK, включая отсутствие устройства. */
+    private static GpuContext.Fallback defaultFallback = GpuContext.Fallback.ALLOWED;
     private static Consumer<GpuContext.Builder> defaultConfig = b -> {
     };
     private static boolean hookInstalled;
@@ -175,10 +177,14 @@ public final class JavaToGpu {
             }
             GpuContext.Builder builder = GpuContext.builder();
             defaultConfig.accept(builder);
+            defaultFallback = builder.fallback();
             Result<GpuContext> r = builder.tryBuild();
             if (!r.isOk()) {
                 defaultFailure = r.diagnostics();
-                LOG.log(System.Logger.Level.WARNING, "GPU unavailable, kernels will run on the JVM: {0}", describe(defaultFailure));
+                String message = defaultFallback == GpuContext.Fallback.ALLOWED
+                        ? "GPU unavailable, kernels will run on the JVM: {0}"
+                        : "GPU unavailable, JVM fallback is forbidden: {0}";
+                LOG.log(System.Logger.Level.WARNING, message, describe(defaultFailure));
                 return Optional.empty();
             }
             defaultContext = r.value();
@@ -200,6 +206,7 @@ public final class JavaToGpu {
             toClose = defaultContext;
             defaultContext = null;
             defaultFailure = null;
+            defaultFallback = GpuContext.Fallback.ALLOWED;
             defaultConfig = b -> {
             };
         }
@@ -247,6 +254,7 @@ public final class JavaToGpu {
         } else {
             synchronized (LOCK) {
                 reason = defaultFailure == null ? List.of() : defaultFailure;
+                policy = defaultFallback;
             }
         }
 

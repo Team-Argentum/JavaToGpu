@@ -32,12 +32,25 @@ jar {
 // Тестовому проекту TestKit нужны jar'ы библиотек: они кладутся в flatDir (зависимости плагин добавляет сам).
 def libraryModules = ['api', 'ir', 'codegen-opencl', 'runtime', 'frontend-java']
 def libraryJars = libraryModules.collect { m -> project(":${m}").tasks.named('jar') }
+def consumerModules = libraryModules + ['gradle-plugin', 'weaver', 'ir-interpreter', 'test-support']
 tasks.named('test') {
+    dependsOn rootProject.tasks.named('publishLocal')
+    // dependsOn задаёт порядок, но не инвалидирует тест при изменении чужого JAR/POM.
+    inputs.files(consumerModules.collect { m -> project(":${m}").tasks.named('jar').flatMap { it.archiveFile } })
+            .withPropertyName('publishedConsumerJars').withNormalizer(ClasspathNormalizer)
+    inputs.files(consumerModules.collect { m -> project(":${m}").buildFile }
+            + [rootProject.buildFile, rootProject.file('gradle/publishing.gradle')])
+            .withPropertyName('publicationBuildScripts')
+    inputs.dir(rootProject.file('examples/standalone/src')).withPropertyName('standaloneSources')
+    inputs.files(rootProject.file('examples/standalone/settings.gradle'), rootProject.file('examples/standalone/build.gradle'))
+            .withPropertyName('standaloneBuild')
     libraryJars.each { dependsOn(it) }
     def libs = libraryJars.collect { jar -> jar.flatMap { it.archiveFile } }
     def libVersion = project.version.toString()
     doFirst {
         systemProperty 'gpu.libs', libs.collect { it.get().asFile.absolutePath }.join(File.pathSeparator)
         systemProperty 'gpu.version', libVersion
+        systemProperty 'gpu.standalone', rootProject.file('examples/standalone').absolutePath
+        systemProperty 'gpu.repository', rootProject.layout.buildDirectory.dir('local-maven').get().asFile.absolutePath
     }
 }

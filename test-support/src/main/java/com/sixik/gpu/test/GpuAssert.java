@@ -6,6 +6,7 @@ import com.sixik.gpu.ir.Builtins;
 import com.sixik.gpu.ir.Diagnostic;
 import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Op;
+import com.sixik.gpu.ir.Operands;
 import com.sixik.gpu.ir.Result;
 import com.sixik.gpu.ir.Types;
 import com.sixik.gpu.ir.Validator;
@@ -48,9 +49,11 @@ import java.util.Map;
  * <h2>Правила сравнения</h2>
  * <p>Эталон - JVM (или интерпретатор, если JVM пропущена); с {@code expected} эталон сверяется с ним тоже. Целые и логика
  * сравниваются точно. Вещественные: интерпретатор против эталона - в {@code ulps} образца (по умолчанию 0: те же
- * алгоритмы, побитово); устройство против эталона - в {@code ulps} образца либо в допуске, вычисленном из IR: наибольший
- * ULP-допуск использованных builtins (таблица 8.3) и 3 ULP, если есть вещественное деление или остаток (в OpenCL деление
- * не точное). Исключение JVM (выход за границы, деление на ноль) означает, что интерпретатор <b>обязан</b> отказать;
+ * алгоритмы, побитово); устройство против эталона - в {@code ulps} образца либо в эвристическом допуске из IR: наибольший
+ * ULP-допуск достижимых builtins для фактического типа результата (таблица 8.3) и 3 ULP, если есть вещественное деление
+ * или остаток. Это допуск отдельных операций, а не доказанная граница ошибки всего ядра: накопление ошибки и вычитание
+ * близких значений могут увеличить расстояние результата. Для таких образцов задавайте обоснованный
+ * {@link KernelSample.Builder#ulps(int) явный допуск}. Исключение JVM (выход за границы, деление на ноль) означает, что интерпретатор <b>обязан</b> отказать;
  * устройство тогда не запускается - поведение не определено.</p>
  */
 public final class GpuAssert {
@@ -200,6 +203,9 @@ public final class GpuAssert {
                             + diagnostics(compiled.diagnostics()));
                 }
             } else {
+                if (sample.ulps() < 0) {
+                    deviceUlps = autoUlps(module, compiled.value().function());
+                }
                 Object[] args = sample.args();
                 Result<LaunchStats> r = device.launch(compiled.value(), range.toLaunchConfig(), args);
                 if (!r.isOk()) {
@@ -303,27 +309,59 @@ public final class GpuAssert {
     }
 
     /**
-     * Допуск вещественных между устройством и JVM из IR: наибольший ULP-допуск использованных builtins (таблица 8.3)
-     * и {@link #DEVICE_DIVISION_ULPS} при вещественном делении или остатке.
+     * Выбирает эвристический допуск последнего ядра модуля и достижимых device-функций.
+     * Это максимум допусков отдельных операций, а не оценка распространения ошибки по программе.
      *
      * @param m модуль ядра
      * @return допуск в ULP, не меньше 0
      */
     static int autoUlps(IrModule m) {
+        return autoUlps(m, m.functionCount() - 1);
+    }
+
+    /**
+     * Выбирает допуск фактически скомпилированного варианта ядра. Обходит тела по операндам и вызовам;
+     * неиспользуемые fallback-варианты не влияют на сравнение. Для вектора используется тип его компоненты.
+     *
+     * @param m модуль с валидным IR
+     * @param function индекс выбранного ядра
+     * @return максимум применимых допусков операций, не меньше 0; не является границей ошибки результата
+     */
+    static int autoUlps(IrModule m, int function) {
+        boolean[] seen = new boolean[m.nodeCount()];
+        int[] stack = new int[m.nodeCount()];
+        int top = 0;
+        int root = m.fBody(function);
+        stack[top++] = root;
+        seen[root] = true;
         int max = 0;
-        for (int n = 0; n < m.nodeCount(); n++) {
+        while (top > 0) {
+            int n = stack[--top];
             int op = m.op(n);
-            if (op == Op.INTRINSIC && Builtins.isValid(m.a(n))) {
-                max = Math.max(max, Math.max(Builtins.ulp(m.a(n)), Builtins.ulp64(m.a(n))));
-            } else if ((op == Op.DIV || op == Op.REM) && isFloating(m, m.type(n))) {
+            int type = m.type(n);
+            int scalar = m.typeKind(type) == Types.KIND_VEC ? m.typeA(type) : type;
+            if (op == Op.INTRINSIC && Types.isFloat(scalar) && Builtins.isValid(m.a(n))) {
+                int ulps = scalar == Types.F64 ? Builtins.ulp64(m.a(n)) : Builtins.ulp(m.a(n));
+                max = Math.max(max, ulps);
+            } else if ((op == Op.DIV || op == Op.REM) && Types.isFloat(scalar)) {
                 max = Math.max(max, DEVICE_DIVISION_ULPS);
+            }
+            if (op == Op.CALL && m.fBodyKind(m.a(n)) == IrModule.BODY_IR) {
+                int body = m.fBody(m.a(n));
+                if (!seen[body]) {
+                    seen[body] = true;
+                    stack[top++] = body;
+                }
+            }
+            for (int k = 0; k < Operands.count(m, n); k++) {
+                int child = Operands.get(m, n, k);
+                if (!seen[child]) {
+                    seen[child] = true;
+                    stack[top++] = child;
+                }
             }
         }
         return max;
-    }
-
-    private static boolean isFloating(IrModule m, int t) {
-        return Types.isFloat(t) || (m.typeKind(t) == Types.KIND_VEC && Types.isFloat(m.typeA(t)));
     }
 
     private static String describe(Throwable t) {
