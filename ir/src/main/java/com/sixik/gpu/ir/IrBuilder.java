@@ -97,10 +97,10 @@ public final class IrBuilder {
      */
     public int vec(int scalar, int lanes) {
         if (!Types.isScalar(scalar) || scalar == Types.BOOL) {
-            throw new IllegalArgumentException("vec: недопустимый скаляр " + scalar);
+            throw new IllegalArgumentException("vec: invalid scalar " + scalar);
         }
         if (!Types.isValidLanes(lanes)) {
-            throw new IllegalArgumentException("vec: недопустимое число компонент " + lanes);
+            throw new IllegalArgumentException("vec: invalid lane count " + lanes);
         }
         return findOrAddType(Types.KIND_VEC, scalar, lanes);
     }
@@ -261,7 +261,7 @@ public final class IrBuilder {
      */
     public int constInt(int type, long value) {
         if (!Types.isInteger(type)) {
-            throw new IllegalArgumentException("constInt: не целый тип " + type);
+            throw new IllegalArgumentException("constInt: not an integer type " + type);
         }
         if (Types.bits(type) == 64) {
             return node(Op.CONST_INT, type, addConst(value), 0, 0);
@@ -326,7 +326,7 @@ public final class IrBuilder {
     public int param(int index) {
         requireFunction();
         if (index < 0 || index >= curParams.length) {
-            throw new IllegalArgumentException("param: индекс " + index + " вне 0.." + (curParams.length - 1));
+            throw new IllegalArgumentException("param: index " + index + " outside 0.." + (curParams.length - 1));
         }
         return node(Op.PARAM, curParams[index], index, 0, 0);
     }
@@ -406,7 +406,7 @@ public final class IrBuilder {
         if (Op.isArithBinary(op) || Op.isBitwiseBinary(op) || Op.isShift(op)) {
             return node(op, typeOf(a), a, b, 0);
         }
-        throw new IllegalArgumentException("binary: опкод " + Op.nameOf(op) + " не бинарный");
+        throw new IllegalArgumentException("binary: opcode " + Op.nameOf(op) + " is not binary");
     }
 
     /** @param a операнд @return {@code -a} */
@@ -462,7 +462,7 @@ public final class IrBuilder {
         int t = typeOf(base);
         int k = kindOf(t);
         if (k != Types.KIND_ARRAY && k != Types.KIND_PTR) {
-            throw new IllegalArgumentException("elemPtr: операнд n" + base + " не массив и не указатель");
+            throw new IllegalArgumentException("elemPtr: operand n" + base + " is neither an array nor a pointer");
         }
         return node(Op.ELEM_PTR, ptr(typeA(t), typeB(t)), base, index, 0);
     }
@@ -477,7 +477,7 @@ public final class IrBuilder {
     public int fieldPtr(int ptr, int field) {
         int t = typeOf(ptr);
         if (kindOf(t) != Types.KIND_PTR || kindOf(typeB(t)) != Types.KIND_STRUCT) {
-            throw new IllegalArgumentException("fieldPtr: операнд n" + ptr + " не указатель на struct");
+            throw new IllegalArgumentException("fieldPtr: operand n" + ptr + " is not a pointer to a struct");
         }
         int fieldType = lists.get(types[IrModule.T_B].get(typeB(t)) + field);
         return node(Op.FIELD_PTR, ptr(typeA(t), fieldType), ptr, field, 0);
@@ -487,7 +487,7 @@ public final class IrBuilder {
     public int load(int ptr) {
         int t = typeOf(ptr);
         if (kindOf(t) != Types.KIND_PTR) {
-            throw new IllegalArgumentException("load: операнд n" + ptr + " не указатель");
+            throw new IllegalArgumentException("load: operand n" + ptr + " is not a pointer");
         }
         return node(Op.LOAD, typeB(t), ptr, 0, 0);
     }
@@ -613,7 +613,7 @@ public final class IrBuilder {
         }
         int ret = Builtins.resultType(snapshotTypes(), builtinId, argTypes, args.length);
         if (ret < 0) {
-            throw new IllegalArgumentException("intrinsic: аргументы не подходят к builtin "
+            throw new IllegalArgumentException("intrinsic: arguments do not fit builtin "
                     + (Builtins.isValid(builtinId) ? Builtins.name(builtinId) : "#" + builtinId));
         }
         return node(Op.INTRINSIC, ret, builtinId, list(args), args.length);
@@ -724,7 +724,7 @@ public final class IrBuilder {
      */
     public int beginFunction(int kind, int retType, int... paramTypes) {
         if (cur >= 0) {
-            throw new IllegalStateException("предыдущая функция не завершена");
+            throw new IllegalStateException("the previous function is not finished");
         }
         cur = funcs[IrModule.F_KIND].size();
         curParams = paramTypes.clone();
@@ -748,7 +748,7 @@ public final class IrBuilder {
 
     private void requireFunction() {
         if (cur < 0) {
-            throw new IllegalStateException("нет текущей функции: вызовите beginFunction");
+            throw new IllegalStateException("no current function: call beginFunction");
         }
     }
 
@@ -906,7 +906,7 @@ public final class IrBuilder {
      */
     public IrModule build() {
         if (cur >= 0) {
-            throw new IllegalStateException("функция не завершена");
+            throw new IllegalStateException("function is not finished");
         }
         int[][] t = new int[IrModule.T_COLS][];
         for (int c = 0; c < IrModule.T_COLS; c++) {

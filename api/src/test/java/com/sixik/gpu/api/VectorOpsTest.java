@@ -32,7 +32,7 @@ class VectorOpsTest {
     void withReplacesOneLaneAndLeavesTheOriginal() {
         Float4 v = new Float4(1, 2, 3, 4);
         assertEquals(new Float4(1, 9, 3, 4), v.withY(9f));
-        assertEquals(new Float4(1, 2, 3, 4), v, "вектор неизменяем");
+        assertEquals(new Float4(1, 2, 3, 4), v, "vector is immutable");
         assertEquals(new Float8(0, 0, 0, 0, 0, 0, 0, 5), Float8.splat(0f).withS7(5f));
         assertEquals(new Float16(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0), Float16.splat(0f).withSA(7f));
     }
@@ -58,7 +58,7 @@ class VectorOpsTest {
         assertEquals(new Float4(0.25f, -0.25f, -7, Float.NaN), a.div(b));
         assertEquals(new Float4(1, -2, 0f, Float.NaN), a.rem(b));
         assertEquals(new Float4(-1, 2, -3.5f, Float.NaN), a.neg());
-        assertEquals(new Float4(3, 0, 5.5f, Float.NaN), a.add(2f), "скаляр размножается");
+        assertEquals(new Float4(3, 0, 5.5f, Float.NaN), a.add(2f), "scalar is broadcast");
         assertEquals(new Float4(2, -4, 7, Float.NaN), a.mul(2f));
     }
 
@@ -78,7 +78,7 @@ class VectorOpsTest {
         assertEquals(new Int4(0, 0, 1, -1), a.rem(b));
         assertEquals(new Int4(Integer.MIN_VALUE + 1, Integer.MIN_VALUE, -7, 7), a.neg());
         assertEquals(new Int4(0, 0, 3, 3), new Int4(0, 0, 7, 7).div(new Int4(1, 1, 2, 2)));
-        assertThrows(ArithmeticException.class, () -> a.div(new Int4(1, 1, 0, 1)), "деление на ноль как в Java");
+        assertThrows(ArithmeticException.class, () -> a.div(new Int4(1, 1, 0, 1)), "division by zero as in Java");
     }
 
     @Test
@@ -117,7 +117,7 @@ class VectorOpsTest {
                 Class<?> c = Class.forName("com.sixik.gpu.api.types." + s + n);
                 for (String op : new String[]{"add", "sub", "mul", "div", "rem"}) {
                     long count = List.of(c.getDeclaredMethods()).stream().filter(m -> m.getName().equals(op)).count();
-                    assertEquals(2, count, c.getSimpleName() + "." + op + " (вектор и скаляр)");
+                    assertEquals(2, count, c.getSimpleName() + "." + op + " (vector and scalar)");
                 }
                 long withers = List.of(c.getDeclaredMethods()).stream().filter(m -> m.getName().startsWith("with")).count();
                 assertEquals(n, withers, c.getSimpleName());

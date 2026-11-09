@@ -33,7 +33,7 @@ final class Json {
         Object v = p.value();
         p.skip();
         if (p.pos != text.length()) {
-            throw p.error("лишний текст после значения");
+            throw p.error("trailing text after the value");
         }
         return v;
     }
@@ -49,7 +49,7 @@ final class Json {
                 col++;
             }
         }
-        return new IllegalArgumentException("JSON, строка " + line + ", столбец " + col + ": " + what);
+        return new IllegalArgumentException("JSON, line " + line + ", column " + col + ": " + what);
     }
 
     private void skip() {
@@ -60,7 +60,7 @@ final class Json {
 
     private Object value() {
         if (pos >= text.length()) {
-            throw error("неожиданный конец текста");
+            throw error("unexpected end of text");
         }
         char c = text.charAt(pos);
         switch (c) {
@@ -80,13 +80,13 @@ final class Json {
                 if (c == '-' || (c >= '0' && c <= '9')) {
                     return number();
                 }
-                throw error("неожиданный символ '" + c + "'");
+                throw error("unexpected character '" + c + "'");
         }
     }
 
     private Object literal(String word, Object value) {
         if (!text.startsWith(word, pos)) {
-            throw error("ожидалось " + word);
+            throw error("expected " + word);
         }
         pos += word.length();
         return value;
@@ -103,14 +103,14 @@ final class Json {
         while (true) {
             skip();
             if (peek() != '"') {
-                throw error("ожидалось имя поля");
+                throw error("expected a field name");
             }
             String key = string();
             skip();
             expect(':');
             skip();
             if (map.put(key, value()) != null) {
-                throw error("повторное поле '" + key + "'");
+                throw error("duplicate field '" + key + "'");
             }
             skip();
             if (peek() == ',') {
@@ -148,7 +148,7 @@ final class Json {
         StringBuilder sb = new StringBuilder();
         while (true) {
             if (pos >= text.length()) {
-                throw error("строка не закрыта");
+                throw error("unterminated string");
             }
             char c = text.charAt(pos++);
             if (c == '"') {
@@ -159,7 +159,7 @@ final class Json {
                 continue;
             }
             if (pos >= text.length()) {
-                throw error("обрыв экранирования");
+                throw error("truncated escape");
             }
             char e = text.charAt(pos++);
             switch (e) {
@@ -171,16 +171,16 @@ final class Json {
                 case 't' -> sb.append('\t');
                 case 'u' -> {
                     if (pos + 4 > text.length()) {
-                        throw error("обрыв \\u");
+                        throw error("truncated \\u");
                     }
                     try {
                         sb.append((char) Integer.parseInt(text.substring(pos, pos + 4), 16));
                     } catch (NumberFormatException ex) {
-                        throw error("плохой \\u");
+                        throw error("bad \\u");
                     }
                     pos += 4;
                 }
-                default -> throw error("неизвестное экранирование \\" + e);
+                default -> throw error("unknown escape \\" + e);
             }
         }
     }
@@ -214,7 +214,7 @@ final class Json {
             return Double.parseDouble(s);
         } catch (NumberFormatException e) {
             pos = start;
-            throw error("плохое число '" + s + "'");
+            throw error("bad number '" + s + "'");
         }
     }
 
@@ -224,7 +224,7 @@ final class Json {
 
     private void expect(char c) {
         if (peek() != c) {
-            throw error("ожидалось '" + c + "'");
+            throw error("expected '" + c + "'");
         }
         pos++;
     }

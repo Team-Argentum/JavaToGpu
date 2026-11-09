@@ -40,7 +40,7 @@ final class Support {
             int f = fwork[--fsize];
             checkSignature(m, f, f == entry, out);
             if (m.fBodyKind(f) != IrModule.BODY_IR || m.fBody(f) < 0) {
-                out.add(unsupported(f, -1, "функция f" + f + " с нативным телом (не v1)"));
+                out.add(unsupported(f, -1, "function f" + f + " with a native body (not v1)"));
                 continue;
             }
             int nsize = 0;
@@ -75,17 +75,17 @@ final class Support {
         for (int i = 0; i < m.fParamCount(f); i++) {
             int pt = m.fParamType(f, i);
             if (kernel && m.typeKind(pt) == Types.KIND_ARRAY && Types.space(m, pt) == com.sixik.gpu.ir.AddressSpace.LOCAL) {
-                out.add(unsupported(f, -1, "параметр " + i + ": __local-массив в параметрах ядра - вне v1 (локальный массив объявляется в теле ядра)"));
+                out.add(unsupported(f, -1, "parameter " + i + ": __local array in kernel parameters is outside v1 (the local array is declared in the kernel body)"));
             }
             String why = unsupportedType(m, m.fParamType(f, i));
             if (why != null) {
-                out.add(unsupported(f, -1, "параметр " + i + " функции f" + f + ": " + why));
+                out.add(unsupported(f, -1, "parameter " + i + " of function f" + f + ": " + why));
             }
         }
         for (int l = 0; l < m.fLocalCount(f); l++) {
             String why = unsupportedType(m, m.fLocalType(f, l));
             if (why != null) {
-                out.add(unsupported(f, -1, "локаль " + l + " функции f" + f + ": " + why));
+                out.add(unsupported(f, -1, "local " + l + " of function f" + f + ": " + why));
             }
         }
     }
@@ -94,10 +94,10 @@ final class Support {
         int op = m.op(n);
         switch (op) {
             case Op.SPEC_CONST ->
-                    out.add(unsupported(f, n, "spec_const зарезервирован под AutoTune (post-v1)"));
+                    out.add(unsupported(f, n, "spec_const is reserved for AutoTune (post-v1)"));
             case Op.INTRINSIC -> {
                 if (!Machine.supportsBuiltin(m.a(n))) {
-                    out.add(unsupported(f, n, "builtin #" + m.a(n) + " не поддерживается интерпретатором"));
+                    out.add(unsupported(f, n, "builtin #" + m.a(n) + " is not supported by the interpreter"));
                 }
             }
             default -> {
@@ -106,7 +106,7 @@ final class Support {
         }
         String why = unsupportedType(m, m.type(n));
         if (why != null) {
-            out.add(unsupported(f, n, "узел " + Op.nameOf(op) + ": " + why));
+            out.add(unsupported(f, n, "node " + Op.nameOf(op) + ": " + why));
         }
     }
 
@@ -114,7 +114,7 @@ final class Support {
     private static String unsupportedType(IrModule m, int t) {
         int kind = m.typeKind(t);
         if (kind == Types.KIND_IMAGE || kind == Types.KIND_SAMPLER) {
-            return "images и samplers не входят в v1";
+            return "images and samplers are not part of v1";
         }
         return null;
     }

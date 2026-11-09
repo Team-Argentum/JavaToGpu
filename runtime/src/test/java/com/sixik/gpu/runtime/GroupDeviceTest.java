@@ -125,7 +125,7 @@ class GroupDeviceTest {
     void reductionAndHistogramRunOnTheDeviceByAnOrdinaryCall(@TempDir Path dir) throws Exception {
         List<GpuEvent> events = new ArrayList<>();
         JavaToGpu.configureDefault(b -> b.listener(events::add).fallback(GpuContext.Fallback.NEVER));
-        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "нет OpenCL-устройства");
+        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "no OpenCL device");
         URLClassLoader[] holder = new URLClassLoader[1];
         try {
             Class<?> groups = load(dir, holder);
@@ -142,7 +142,7 @@ class GroupDeviceTest {
             }
             int[] partial = new int[groupsCount];
             call(groups, "reduceSum", in, partial);
-            assertArrayEquals(expected, partial, "сумма каждой группы из 64: local-массив + 6 барьеров");
+            assertArrayEquals(expected, partial, "sum of each group of 64: local array + 6 barriers");
 
             int[] data = new int[32 * 100];
             for (int i = 0; i < data.length; i++) {
@@ -154,21 +154,21 @@ class GroupDeviceTest {
                 expectedBins[v & 15]++;
             }
             call(groups, "histogram", data, bins);
-            assertArrayEquals(expectedBins, bins, "атомики в local, затем слияние в global");
+            assertArrayEquals(expectedBins, bins, "atomics in local, then merge into global");
         } finally {
             if (holder[0] != null) {
                 holder[0].close();
             }
         }
-        assertTrue(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.KERNEL), "ядра выполнены на устройстве");
+        assertTrue(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.KERNEL), "the kernels ran on the device");
         assertFalse(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.FALLBACK));
     }
 
     @Test
     void tooMuchLocalMemoryIsRejectedWithAClearError(@TempDir Path dir) throws Exception {
         JavaToGpu.configureDefault(b -> b.fallback(GpuContext.Fallback.NEVER));
-        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "нет OpenCL-устройства");
-        Assumptions.assumeTrue(JavaToGpu.defaultContext().get().device().localMemory() < 4L << 20, "нужен обозримый предел local-памяти");
+        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "no OpenCL device");
+        Assumptions.assumeTrue(JavaToGpu.defaultContext().get().device().localMemory() < 4L << 20, "a reasonable local-memory limit is needed");
         URLClassLoader[] holder = new URLClassLoader[1];
         try {
             Class<?> groups = load(dir, holder);

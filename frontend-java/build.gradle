@@ -1,4 +1,4 @@
-description = 'Java-фронтенд: annotation processor на javac Tree API, пишет IR.'
+description = 'Java frontend: an annotation processor on the javac Tree API, writes IR.'
 
 dependencies {
     implementation project(':api')

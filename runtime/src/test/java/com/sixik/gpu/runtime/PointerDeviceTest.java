@@ -105,7 +105,7 @@ class PointerDeviceTest {
     void pointersAndConstantTableRunOnTheDevice(@TempDir Path dir) throws Exception {
         List<GpuEvent> events = new ArrayList<>();
         JavaToGpu.configureDefault(b -> b.listener(events::add).fallback(GpuContext.Fallback.NEVER));
-        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "нет OpenCL-устройства");
+        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "no OpenCL device");
 
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
@@ -136,21 +136,21 @@ class PointerDeviceTest {
             float[] out = new float[n];
             call(ptrs, "run", out, data, table);
 
-            assertArrayEquals(expectedOut, out, "результат ядра совпал с JVM-эталоном точно (+ и * в float точны)");
+            assertArrayEquals(expectedOut, out, "the kernel result matched the JVM reference exactly (+ and * in float are exact)");
             assertArrayEquals(expectedData, data,
-                    "запись через указатель в исходный массив возвращена на хост (режим доступа через локаль-указатель)");
-            assertEquals(1.5f, table[0], "константная таблица не изменилась");
+                    "the write through the pointer into the source array was returned to the host (access mode via a local pointer)");
+            assertEquals(1.5f, table[0], "the constant table did not change");
         }
-        assertTrue(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.KERNEL), "ядро выполнено на устройстве");
+        assertTrue(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.KERNEL), "the kernel ran on the device");
         assertFalse(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.FALLBACK));
     }
 
     @Test
     void constantTableLargerThanTheDeviceLimitIsRejectedWithAClearError(@TempDir Path dir) throws Exception {
         JavaToGpu.configureDefault(b -> b.fallback(GpuContext.Fallback.NEVER));
-        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "нет OpenCL-устройства");
+        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "no OpenCL device");
         long limit = JavaToGpu.defaultContext().get().device().maxConstantBuffer();
-        Assumptions.assumeTrue(limit > 0 && limit < (1L << 28), "нужен обозримый предел __constant");
+        Assumptions.assumeTrue(limit > 0 && limit < (1L << 28), "a reasonable __constant limit is needed");
 
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());

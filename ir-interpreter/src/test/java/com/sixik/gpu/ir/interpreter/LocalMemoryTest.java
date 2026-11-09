@@ -36,7 +36,7 @@ class LocalMemoryTest {
             Validator.Report report = Validator.validate(module(k));
             assertTrue(report.diagnostics().isEmpty(), k + ": " + report.diagnostics());
         }
-        assertTrue(Validator.validate(module("reduceSum")).functions()[1].usesGroupSync(), "ядро с barrier помечено uses_group_sync");
+        assertTrue(Validator.validate(module("reduceSum")).functions()[1].usesGroupSync(), "a kernel with barrier is marked uses_group_sync");
         assertTrue(Validator.validate(module("counters")).functions()[0].usesGroupSync() == false);
     }
 
@@ -161,7 +161,7 @@ class LocalMemoryTest {
     void groupedKernelsReportStepsOfAllWorkItems() {
         int[] in = new int[64];
         long steps = run("reduceSum", NdRange.of1D(64), in, new int[1]).value().steps();
-        assertTrue(steps > 64 * 10, "шаги всех 64 work-item-ов группы суммируются: " + steps);
+        assertTrue(steps > 64 * 10, "steps of all 64 work-items of the group are summed: " + steps);
     }
 
     @Test

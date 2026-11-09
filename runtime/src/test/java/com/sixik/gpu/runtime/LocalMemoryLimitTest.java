@@ -33,7 +33,7 @@ class LocalMemoryLimitTest {
         b.beginFunction(IrModule.KERNEL, Types.VOID);
         int tile = b.declareLocal(b.array(AddressSpace.LOCAL, v3));
         b.endFunction(b.block(b.localArrayDecl(tile, b.constI32(4))));
-        assertEquals(4 * 16L, GpuContext.localMemoryBytes(b.build(), 0), "float3 занимает 16 байт, как в OpenCL C");
+        assertEquals(4 * 16L, GpuContext.localMemoryBytes(b.build(), 0), "float3 takes 16 bytes, as in OpenCL C");
     }
 
     @Test
@@ -53,7 +53,7 @@ class LocalMemoryLimitTest {
             assertEquals("RT-D04", tooBig.diagnostics().get(0).code());
             assertTrue(tooBig.diagnostics().get(0).message().contains("65536"), tooBig.diagnostics().toString());
             assertTrue(tooBig.diagnostics().get(0).message().contains("49152"), tooBig.diagnostics().toString());
-            assertEquals(0, fake.builds(), "драйвер не вызывался");
+            assertEquals(0, fake.builds(), "the driver was not called");
 
             Result<CompiledKernel> fits = ctx.compile(kernelWithLocal(Types.I32, 12 * 1024)); // ровно 48 КиБ
             assertTrue(fits.isOk(), fits.diagnostics().toString());

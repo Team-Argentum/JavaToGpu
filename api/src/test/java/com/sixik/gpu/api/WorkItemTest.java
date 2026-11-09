@@ -50,9 +50,9 @@ class WorkItemTest {
     void bindingEndsAfterRunEvenOnException() {
         var ctx = WorkItemContext.of1D(4, 1);
         assertThrows(IllegalStateException.class, () -> WorkItem.run(ctx, () -> {
-            throw new IllegalStateException("сбой ядра");
+            throw new IllegalStateException("kernel failure");
         }));
-        assertFalse(WorkItem.isBound(), "привязка снята после исключения");
+        assertFalse(WorkItem.isBound(), "binding cleared after the exception");
     }
 
     @Test
@@ -62,7 +62,7 @@ class WorkItemTest {
         WorkItem.run(outer, () -> {
             assertEquals(10, Gpu.getGlobalSize(0));
             WorkItem.run(inner, () -> assertEquals(20, Gpu.getGlobalSize(0)));
-            assertEquals(10, Gpu.getGlobalSize(0), "внешний контекст восстановлен");
+            assertEquals(10, Gpu.getGlobalSize(0), "outer context restored");
         });
     }
 
@@ -79,7 +79,7 @@ class WorkItemTest {
                 Thread.currentThread().interrupt();
             }
         });
-        assertEquals(0, otherThreadBound.get(), "привязка не наследуется другим потоком");
+        assertEquals(0, otherThreadBound.get(), "binding is not inherited by another thread");
     }
 
     @Test

@@ -14,9 +14,9 @@ class FeaturesTest {
         for (String name : new String[]{"FP64", "INT64_ATOMICS", "INT64_EXT_ATOMICS", "FP16", "IMAGES"}) {
             int bit = Features.fromName(name);
             assertNotEquals(0, bit, name);
-            assertEquals(1, Integer.bitCount(bit), name + " - ровно один бит");
-            assertEquals(0, all & bit, name + " не пересекается с остальными");
-            assertEquals(name, Features.describe(bit), "описание обратно имени");
+            assertEquals(1, Integer.bitCount(bit), name + " is exactly one bit");
+            assertEquals(0, all & bit, name + " does not overlap with the others");
+            assertEquals(name, Features.describe(bit), "the description is the inverse of the name");
             all |= bit;
         }
     }
@@ -25,7 +25,7 @@ class FeaturesTest {
     void unknownNamesRequireNothing() {
         assertEquals(0, Features.fromName("SIMD"));
         assertEquals(0, Features.fromName(""));
-        assertEquals(0, Features.fromName("fp64"), "имена чувствительны к регистру, как в аннотации");
+        assertEquals(0, Features.fromName("fp64"), "names are case-sensitive, as in the annotation");
     }
 
     @Test

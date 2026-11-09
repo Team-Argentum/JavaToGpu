@@ -56,13 +56,13 @@ public final class SampleKernels {
         for (Method m : cls.getDeclaredMethods()) {
             if (m.getName().equals(method)) {
                 if (found != null) {
-                    throw new IllegalStateException("в образце несколько методов " + method);
+                    throw new IllegalStateException("the sample has several methods " + method);
                 }
                 found = m;
             }
         }
         if (found == null) {
-            throw new IllegalStateException("нет метода " + method + " в " + cls.getName());
+            throw new IllegalStateException("no method " + method + " in " + cls.getName());
         }
         String descriptor = MethodType.methodType(found.getReturnType(), found.getParameterTypes())
                 .toMethodDescriptorString();
@@ -72,7 +72,7 @@ public final class SampleKernels {
                 return new Kernel(cls, found, read(row[3]));
             }
         }
-        throw new IllegalStateException("в kernels.idx нет ядра " + cls.getName() + "." + method + descriptor);
+        throw new IllegalStateException("no kernel in kernels.idx " + cls.getName() + "." + method + descriptor);
     }
 
     /**
@@ -97,7 +97,7 @@ public final class SampleKernels {
     private static List<String[]> index() {
         try (InputStream in = SampleKernels.class.getResourceAsStream(INDEX)) {
             if (in == null) {
-                throw new IllegalStateException("нет " + INDEX + ": образцы не обработаны процессором frontend-java");
+                throw new IllegalStateException("no " + INDEX + ": the samples were not processed by the frontend-java processor");
             }
             List<String[]> rows = new ArrayList<>();
             for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
@@ -114,11 +114,11 @@ public final class SampleKernels {
     private static IrModule read(String id) {
         try (InputStream in = SampleKernels.class.getResourceAsStream("/META-INF/gpu/ir/" + id + ".gir")) {
             if (in == null) {
-                throw new IllegalStateException("нет IR-ресурса " + id);
+                throw new IllegalStateException("no IR resource " + id);
             }
             Result<IrModule> r = IrBinary.read(in.readAllBytes());
             if (!r.isOk()) {
-                throw new IllegalStateException("IR не читается: " + r.diagnostics());
+                throw new IllegalStateException("IR is unreadable: " + r.diagnostics());
             }
             return r.value();
         } catch (IOException e) {

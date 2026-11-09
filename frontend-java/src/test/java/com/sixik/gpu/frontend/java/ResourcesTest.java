@@ -55,10 +55,10 @@ class ResourcesTest {
         assertEquals("([FI[J[Z)V", entries.get(1).descriptor());
         for (KernelResources.IndexEntry e : entries) {
             byte[] ir = r.resources().get(KernelResources.irPath(e.kernelId()));
-            assertTrue(ir != null, "для " + e.method() + " нет IR-ресурса");
+            assertTrue(ir != null, "for " + e.method() + " has no IR resource");
             assertEquals(e.kernelId(), IrBinary.kernelId(IrBinary.read(ir).value()));
         }
-        assertEquals(text, KernelResources.formatIndex(entries), "формат индекса канонический");
+        assertEquals(text, KernelResources.formatIndex(entries), "the index format is canonical");
     }
 
     @Test
@@ -92,7 +92,7 @@ class ResourcesTest {
                 }
                 """);
         assertTrue(r.success(), r.describe());
-        assertEquals(1, r.modules().size(), "одинаковый IR записывается один раз");
+        assertEquals(1, r.modules().size(), "identical IR is written once");
         List<KernelResources.IndexEntry> entries = KernelResources.parseIndex(
                 new String(r.resources().get(KernelResources.INDEX), StandardCharsets.UTF_8));
         assertEquals(2, entries.size());
@@ -104,9 +104,9 @@ class ResourcesTest {
         FrontendHarness.Outcome r = FrontendHarness.compile(new GpuProcessor(), List.of(), SmokeTest.COMPUTE_SINE);
         assertTrue(r.success(), r.describe());
         byte[] cls = r.resources().get("demo/Sine.class");
-        assertTrue(cls != null && cls.length > 0, "class-файл записан: " + r.resources().keySet());
+        assertTrue(cls != null && cls.length > 0, "class file written: " + r.resources().keySet());
         assertTrue(new String(cls, StandardCharsets.ISO_8859_1).contains("computeSine"),
-                "оригинальный метод остаётся в class-файле (его позже подменит weaver)");
+                "the original method stays in the class file (the weaver replaces it later)");
         assertEquals(1, r.modules().size());
         assertTrue(r.resources().containsKey(KernelResources.INDEX));
     }
@@ -115,7 +115,7 @@ class ResourcesTest {
     void processorIsDiscoveredThroughServiceLoader() {
         FrontendHarness.Outcome r = FrontendHarness.compileDiscovering(SmokeTest.COMPUTE_SINE);
         assertTrue(r.success(), r.describe());
-        assertEquals(1, r.modules().size(), "javac нашёл процессор по META-INF/services: " + r.describe());
+        assertEquals(1, r.modules().size(), "javac found the processor via META-INF/services: " + r.describe());
         assertTrue(r.resources().containsKey(KernelResources.INDEX));
     }
 
@@ -174,8 +174,8 @@ class ResourcesTest {
                 """);
         assertFalse(r.success());
         long count = r.errorCodes().stream().filter(c -> c.equals("GPU0106")).count();
-        assertEquals(1, count, "ошибка в общей функции выдаётся один раз: " + r.errorCodes());
-        assertTrue(r.resources().isEmpty(), "оба ядра зависят от неверной функции: IR нет");
+        assertEquals(1, count, "an error in a shared function is reported once: " + r.errorCodes());
+        assertTrue(r.resources().isEmpty(), "both kernels depend on the invalid function: no IR");
     }
 
     @Test
@@ -185,7 +185,7 @@ class ResourcesTest {
                 new KernelResources.IndexEntry("a.A", "z", "(I)V", "11"),
                 new KernelResources.IndexEntry("a.A", "y", "(I)V", "33"));
         String text = KernelResources.formatIndex(entries);
-        assertEquals("a.A\ty\t(I)V\t33\na.A\tz\t(I)V\t11\nb.B\tm\t()V\t22\n", text, "сортировка: класс, метод, дескриптор");
+        assertEquals("a.A\ty\t(I)V\t33\na.A\tz\t(I)V\t11\nb.B\tm\t()V\t22\n", text, "sorting: class, method, descriptor");
         assertEquals(KernelResources.parseIndex(text).size(), 3);
         assertThrows(IllegalArgumentException.class, () -> KernelResources.parseIndex("a\tb\tc\n"));
         assertEquals("META-INF/gpu/ir/abc.gir", KernelResources.irPath("abc"));

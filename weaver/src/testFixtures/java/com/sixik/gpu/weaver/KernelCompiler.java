@@ -51,7 +51,7 @@ public final class KernelCompiler {
     public static String classpath() {
         String cp = System.getProperty("gpu.test.classpath");
         if (cp == null) {
-            throw new IllegalStateException("не задано системное свойство gpu.test.classpath (см. build.gradle модуля)");
+            throw new IllegalStateException("system property gpu.test.classpath is not set (see the module's build.gradle)");
         }
         return cp;
     }
@@ -108,7 +108,7 @@ public final class KernelCompiler {
         Matcher p = PACKAGE.matcher(source);
         Matcher t = TYPE.matcher(source);
         if (!t.find()) {
-            throw new IllegalArgumentException("в исходнике нет объявления типа");
+            throw new IllegalArgumentException("no type declaration in the source");
         }
         return (p.find() ? p.group(1) + "." : "") + t.group(1);
     }

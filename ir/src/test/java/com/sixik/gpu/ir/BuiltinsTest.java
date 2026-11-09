@@ -19,7 +19,7 @@ class BuiltinsTest {
     void tableIsLoadedAndVersioned() {
         assertTrue(Builtins.VERSION >= 1);
         assertTrue(Builtins.count() >= 15);
-        assertEquals(0, Builtins.idOf("getGlobalId"), "id стабилен: на него ссылается бинарный IR");
+        assertEquals(0, Builtins.idOf("getGlobalId"), "the id is stable: binary IR refers to it");
         assertEquals(-1, Builtins.idOf("noSuchBuiltin"));
     }
 
@@ -51,7 +51,7 @@ class BuiltinsTest {
         assertTrue(Builtins.has(Builtins.idOf("barrier"), Builtins.SYNC));
         assertTrue(Builtins.has(Builtins.idOf("barrierGlobal"), Builtins.SYNC));
         assertFalse(Builtins.has(atomic, Builtins.SYNC));
-        assertFalse(Builtins.has(atomic, Builtins.EXT), "add и sub есть в базовом наборе 64-битных атомиков");
+        assertFalse(Builtins.has(atomic, Builtins.EXT), "add and sub are in the base set of 64-bit atomics");
         for (String ext : new String[]{"atomicMin", "atomicMax", "atomicAnd", "atomicOr", "atomicXor"}) {
             assertTrue(Builtins.has(Builtins.idOf(ext), Builtins.EXT), ext);
             assertTrue(Builtins.has(Builtins.idOf(ext), Builtins.ATOMIC), ext);
@@ -63,16 +63,16 @@ class BuiltinsTest {
     void ulpTolerances() {
         assertEquals(4, Builtins.ulp(Builtins.idOf("sin")));
         assertEquals(0, Builtins.ulp(Builtins.idOf("fma")));
-        assertEquals(-1, Builtins.ulp(Builtins.idOf("max")), "для max допуска нет - сравнивать точно");
+        assertEquals(-1, Builtins.ulp(Builtins.idOf("max")), "max has no tolerance - compare exactly");
     }
 
     @Test
     void ulp64DefaultsToUlpAndCanDiffer() {
         int sin = Builtins.idOf("sin");
-        assertEquals(Builtins.ulp(sin), Builtins.ulp64(sin), "без ulp64= допуск double равен допуску float");
+        assertEquals(Builtins.ulp(sin), Builtins.ulp64(sin), "without ulp64= the double tolerance equals the float tolerance");
         int sqrt = Builtins.idOf("sqrt");
         assertEquals(3, Builtins.ulp(sqrt), "sqrt float: 3 ULP");
-        assertEquals(0, Builtins.ulp64(sqrt), "sqrt double: корректное округление");
+        assertEquals(0, Builtins.ulp64(sqrt), "sqrt double: correct rounding");
         assertEquals(-1, Builtins.ulp64(Builtins.idOf("max")));
     }
 
@@ -92,8 +92,8 @@ class BuiltinsTest {
     @Test
     void concreteSignature() {
         assertEquals(Types.I32, result("getGlobalId", Types.I32));
-        assertEquals(-1, result("getGlobalId", Types.F32), "аргумент должен быть i32");
-        assertEquals(-1, result("getGlobalId"), "число аргументов");
+        assertEquals(-1, result("getGlobalId", Types.F32), "the argument must be i32");
+        assertEquals(-1, result("getGlobalId"), "argument count");
         assertEquals(Types.I32, result("getWorkDim"));
     }
 
@@ -101,7 +101,7 @@ class BuiltinsTest {
     void genericFloatSignature() {
         assertEquals(Types.F32, result("sin", Types.F32));
         assertEquals(Types.F64, result("sin", Types.F64));
-        assertEquals(-1, result("sin", Types.I32), "sin только для вещественных");
+        assertEquals(-1, result("sin", Types.I32), "sin only for floating types");
     }
 
     @Test
@@ -129,11 +129,11 @@ class BuiltinsTest {
         int pf = b.ptr(AddressSpace.GLOBAL, Types.F32);
         assertEquals(Types.I32, result("atomicAdd", pg, Types.I32));
         assertEquals(Types.U32, result("atomicAdd", pl, Types.U32));
-        assertEquals(-1, result("atomicAdd", pp, Types.I32), "atomic только global/local");
+        assertEquals(-1, result("atomicAdd", pp, Types.I32), "atomic only global/local");
         assertEquals(-1, result("atomicAdd", pc, Types.I32));
-        assertEquals(-1, result("atomicAdd", pf, Types.F32), "atomic только для целых");
-        assertEquals(-1, result("atomicAdd", pg, Types.U32), "значение должно совпасть с pointee");
-        assertEquals(-1, result("atomicAdd", Types.I32, Types.I32), "первый аргумент должен быть указателем");
+        assertEquals(-1, result("atomicAdd", pf, Types.F32), "atomic only for integers");
+        assertEquals(-1, result("atomicAdd", pg, Types.U32), "the value must match pointee");
+        assertEquals(-1, result("atomicAdd", Types.I32, Types.I32), "the first argument must be a pointer");
     }
 
     @Test

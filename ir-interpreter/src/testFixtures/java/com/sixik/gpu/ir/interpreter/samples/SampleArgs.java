@@ -179,10 +179,10 @@ public final class SampleArgs {
      */
     public static String objectDifference(Object expected, Object actual, int ulps) {
         if (expected == null || actual == null) {
-            return expected == actual ? null : "null против значения";
+            return expected == actual ? null : "null versus a value";
         }
         if (expected.getClass() != actual.getClass()) {
-            return "разные классы";
+            return "different classes";
         }
         for (java.lang.reflect.Field f : expected.getClass().getDeclaredFields()) {
             int mod = f.getModifiers();
@@ -194,14 +194,14 @@ public final class SampleArgs {
                 Object y = f.get(actual);
                 String why;
                 if (x instanceof Float fx) {
-                    why = sameFloat(fx, (Float) y, ulps) ? null : "поле " + f.getName() + ": " + fx + " / " + y;
+                    why = sameFloat(fx, (Float) y, ulps) ? null : "field " + f.getName() + ": " + fx + " / " + y;
                 } else if (x instanceof Double dx) {
-                    why = sameDouble(dx, (Double) y, ulps) ? null : "поле " + f.getName() + ": " + dx + " / " + y;
+                    why = sameDouble(dx, (Double) y, ulps) ? null : "field " + f.getName() + ": " + dx + " / " + y;
                 } else if (x == null || x instanceof Number || x instanceof Boolean || x instanceof Character) {
-                    why = java.util.Objects.equals(x, y) ? null : "поле " + f.getName() + ": " + x + " / " + y;
+                    why = java.util.Objects.equals(x, y) ? null : "field " + f.getName() + ": " + x + " / " + y;
                 } else {
                     String inner = objectDifference(x, y, ulps);
-                    why = inner == null ? null : "поле " + f.getName() + ": " + inner;
+                    why = inner == null ? null : "field " + f.getName() + ": " + inner;
                 }
                 if (why != null) {
                     return why;

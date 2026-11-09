@@ -44,7 +44,7 @@ class RuntimeDeviceTest {
     @BeforeAll
     static void open() {
         Result<GpuContext> r = GpuContext.builder().listener(EVENTS::add).tryBuild();
-        Assumptions.assumeTrue(r.isOk(), "нет OpenCL-устройства: " + r.diagnostics());
+        Assumptions.assumeTrue(r.isOk(), "no OpenCL device: " + r.diagnostics());
         ctx = r.value();
         System.out.println("OpenCL device: " + ctx.device().describe() + ", driver " + ctx.device().driverVersion());
     }
@@ -71,12 +71,12 @@ class RuntimeDeviceTest {
         LaunchStats stats = ctx.run(Fixtures.computeSine(), LaunchConfig.of1D(n), in, out);
         for (int i = 0; i < n; i++) {
             float expected = (float) Math.sin(inBefore[i]) + 2f;
-            assertTrue(ulps(expected, out[i]) <= 4, "i=" + i + ": ожидалось " + expected + ", получено " + out[i]);
+            assertTrue(ulps(expected, out[i]) <= 4, "i=" + i + ": expected " + expected + ", got " + out[i]);
         }
         assertEquals(n * 4L * 2, stats.bytesUp());
         assertEquals(n * 4L, stats.bytesDown());
         assertTrue(stats.kernelNanos() > 0);
-        org.junit.jupiter.api.Assertions.assertArrayEquals(inBefore, in, "входной массив не тронут");
+        org.junit.jupiter.api.Assertions.assertArrayEquals(inBefore, in, "the input array is untouched");
     }
 
     @Test
@@ -241,7 +241,7 @@ class RuntimeDeviceTest {
                 if (Float.floatToRawIntBits(fx) != Float.floatToRawIntBits(fy)
                         && (ulps == 0 || fx == 0f || fy == 0f || ulps(fx, fy) > ulps)
                         && !(Float.isNaN(fx) && Float.isNaN(fy))) {
-                    fail(name + "[" + i + "]: ожидалось " + fx + ", получено " + fy);
+                    fail(name + "[" + i + "]: expected " + fx + ", got " + fy);
                 }
             } else if (x instanceof Double dx && y instanceof Double dy) {
                 boolean nan = Double.isNaN(dx) && Double.isNaN(dy);
@@ -249,7 +249,7 @@ class RuntimeDeviceTest {
                 long by = Double.doubleToRawLongBits(dy);
                 long dist = Math.abs((bx >= 0 ? bx : Long.MIN_VALUE - bx) - (by >= 0 ? by : Long.MIN_VALUE - by));
                 if (!nan && bx != by && (ulps == 0 || dx == 0d || dy == 0d || dist > ulps)) {
-                    fail(name + "[" + i + "]: ожидалось " + dx + ", получено " + dy);
+                    fail(name + "[" + i + "]: expected " + dx + ", got " + dy);
                 }
             } else if (x != null && !x.getClass().getName().startsWith("java.")) {
                 String why = SampleArgs.objectDifference(x, y, ulps);

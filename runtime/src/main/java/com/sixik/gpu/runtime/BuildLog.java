@@ -37,7 +37,7 @@ final class BuildLog {
         if (log == null || log.isBlank()) {
             if (failed) {
                 out.add(new Diagnostic("RT-C01", Diagnostic.Severity.ERROR, function, -1,
-                        "драйвер отверг исходник, build log пуст"));
+                        "the driver rejected the source, the build log is empty"));
             }
             return out;
         }
@@ -51,7 +51,7 @@ final class BuildLog {
                 boolean warning = m.group(3).equals("warning");
                 code = warning ? "RT-C02" : "RT-C01";
                 severity = warning ? Diagnostic.Severity.WARNING : Diagnostic.Severity.ERROR;
-                current = new StringBuilder("строка ").append(m.group(1)).append(':').append(m.group(2)).append(": ")
+                current = new StringBuilder("line ").append(m.group(1)).append(':').append(m.group(2)).append(": ")
                         .append(m.group(4));
             } else if (current != null && !raw.isBlank()) {
                 current.append('\n').append(raw.stripTrailing());

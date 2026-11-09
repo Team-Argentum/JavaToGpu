@@ -50,8 +50,8 @@ class LocalMemoryLoweringTest {
 
     private static void rejects(String code, String members) {
         FrontendHarness.Outcome r = compile(members);
-        assertFalse(r.success(), "ожидалась ошибка " + code + "\n" + r.describe());
-        assertTrue(r.errorCodes().contains(code), code + " не выдан; выданы: " + r.errorCodes() + "\n" + r.describe());
+        assertFalse(r.success(), "expected error " + code + "\n" + r.describe());
+        assertTrue(r.errorCodes().contains(code), code + " was not reported; reported: " + r.errorCodes() + "\n" + r.describe());
     }
 
     @Test
@@ -98,7 +98,7 @@ class LocalMemoryLoweringTest {
         assertEquals(1, count(m, Op.LOCAL_ARRAY_DECL));
         for (int i = 0; i < m.nodeCount(); i++) {
             if (m.op(i) == Op.BARRIER) {
-                assertTrue(m.a(i) == 1 || m.a(i) == 3, "флаги барьера: local и local+global");
+                assertTrue(m.a(i) == 1 || m.a(i) == 3, "barrier flags: local and local+global");
             }
             if (m.op(i) == Op.INTRINSIC) {
                 assertFalse(Builtins.has(m.a(i), Builtins.SYNC));
@@ -141,7 +141,7 @@ class LocalMemoryLoweringTest {
                     Gpu.atomicAdd(ConstantIntPtr.of(c, 0), 1);
                 }
                 """);
-        assertFalse(r.success(), "в constant атомиков нет: перегрузка отсутствует, javac отвергает вызов");
+        assertFalse(r.success(), "there are no atomics in constant: the overload is missing, javac rejects the call");
     }
 
     // ---- IR-B01 --------------------------------------------------------------------------------
@@ -159,9 +159,9 @@ class LocalMemoryLoweringTest {
     @Test
     void barrierUnderDivergentControlIsAWarning() {
         FrontendHarness.Outcome r = compile(DIVERGENT);
-        assertTrue(r.success(), "по умолчанию IR-B01 - предупреждение: " + r.describe());
+        assertTrue(r.success(), "by default IR-B01 is a warning: " + r.describe());
         assertTrue(r.gpu().stream().anyMatch(d -> d.code().equals("GPU0130")), r.describe());
-        assertFalse(r.modules().isEmpty(), "IR записан");
+        assertFalse(r.modules().isEmpty(), "IR written");
     }
 
     @Test
@@ -169,7 +169,7 @@ class LocalMemoryLoweringTest {
         FrontendHarness.Outcome r = compileStrict(DIVERGENT);
         assertFalse(r.success());
         assertTrue(r.errorCodes().contains("GPU0131"), r.describe());
-        assertTrue(r.resources().isEmpty(), "ядро с ошибкой IR не записывается");
+        assertTrue(r.resources().isEmpty(), "a kernel with an IR error is not written");
     }
 
     @Test
@@ -244,6 +244,6 @@ class LocalMemoryLoweringTest {
         for (int t = 0; t < m.typeCount(); t++) {
             found |= m.typeKind(t) == com.sixik.gpu.ir.Types.KIND_PTR && m.typeA(t) == AddressSpace.LOCAL;
         }
-        assertTrue(found, "Ptr<local, i32> в таблице типов");
+        assertTrue(found, "Ptr<local, i32> in the type table");
     }
 }

@@ -55,7 +55,7 @@ class ApiTest {
         EmitOptions named = fast.withSourceName("Kernels.java");
         assertEquals("Kernels.java", named.sourceName());
         assertTrue(named.fastMath());
-        assertFalse(EmitOptions.DEBUG.fastMath(), "исходная константа не меняется");
+        assertFalse(EmitOptions.DEBUG.fastMath(), "source constant is unchanged");
         assertNull(EmitOptions.DEBUG.sourceName());
     }
 
@@ -75,7 +75,7 @@ class ApiTest {
         args.add(new KernelArg(KernelArg.SCALAR, 0, 6, -1, "n"));
         Artifact art = new Artifact("src", "k", args, 1, "", Target.GENERIC, EmitOptions.RELEASE);
         args.add(new KernelArg(KernelArg.SCALAR, 1, 6, -1, "m"));
-        assertEquals(1, art.args().size(), "список аргументов не зависит от исходного");
+        assertEquals(1, art.args().size(), "argument list is independent of the source");
         assertThrows(UnsupportedOperationException.class, () -> art.args().add(null));
     }
 }

@@ -33,8 +33,8 @@ class CompareTest {
 
     @Test
     void lengthsAndTypesMustMatch() {
-        assertTrue(Compare.difference(new int[2], new int[3], 0).contains("длина 3 вместо 2"));
-        assertTrue(Compare.difference(new int[2], new long[2], 0).contains("разные типы"));
+        assertTrue(Compare.difference(new int[2], new int[3], 0).contains("length 3 instead of 2"));
+        assertTrue(Compare.difference(new int[2], new long[2], 0).contains("different array types"));
         assertNotNull(Compare.difference(new float[1], new float[2], 0));
         assertNotNull(Compare.difference(new double[1], new double[2], 0));
         assertNull(Compare.difference(null, null, 0));
@@ -44,7 +44,7 @@ class CompareTest {
 
     @Test
     void scalarsAreNotCompared() {
-        assertNull(Compare.difference(1, 2, 0), "скаляры передаются по значению");
+        assertNull(Compare.difference(1, 2, 0), "scalars are passed by value");
     }
 
     @Test
@@ -57,16 +57,16 @@ class CompareTest {
         assertFalse(Compare.sameFloat(x, next(x, 4), 3));
         assertFalse(Compare.sameFloat(x, next(x, -4), 3));
         String why = Compare.difference(new float[]{x}, new float[]{next(x, 4)}, 3);
-        assertTrue(why.contains("расстояние 4 ULP, допуск 3"), why);
+        assertTrue(why.contains("distance 4 ULP, tolerance 3"), why);
     }
 
     @Test
     void ulpDistanceIsContinuousAcrossZero() {
         float tiny = Float.MIN_VALUE;
-        assertTrue(Compare.sameFloat(tiny, -tiny, 2), "от +min до -min два шага через ноль");
+        assertTrue(Compare.sameFloat(tiny, -tiny, 2), "from +min to -min is two steps through zero");
         assertFalse(Compare.sameFloat(tiny, -tiny, 1));
-        assertTrue(Compare.sameFloat(0f, -0f, 1), "знак нуля при ненулевом допуске не различается");
-        assertFalse(Compare.sameFloat(0f, -0f, 0), "при допуске 0 - побитовое равенство");
+        assertTrue(Compare.sameFloat(0f, -0f, 1), "the sign of zero is not distinguished with a nonzero tolerance");
+        assertFalse(Compare.sameFloat(0f, -0f, 0), "with tolerance 0 - bitwise equality");
         assertTrue(Compare.sameDouble(Double.MIN_VALUE, -Double.MIN_VALUE, 2));
         assertFalse(Compare.sameDouble(0.0, -0.0, 0));
         assertTrue(Compare.sameDouble(0.0, -0.0, 1));
@@ -99,7 +99,7 @@ class CompareTest {
         assertFalse(Compare.sameDouble(x, next(x, -3L), 2));
         assertNotNull(Compare.difference(new double[]{x}, new double[]{next(x, 5L)}, 2));
         assertNull(Compare.difference(new double[]{x}, new double[]{next(x, 2L)}, 2));
-        assertFalse(Compare.sameDouble(Double.MAX_VALUE, -Double.MAX_VALUE, 1_000_000), "расстояние через ноль огромно, без переполнения");
+        assertFalse(Compare.sameDouble(Double.MAX_VALUE, -Double.MAX_VALUE, 1_000_000), "the distance through zero is huge, without overflow");
     }
 
     /** Объект хоста с открытыми полями. */
@@ -122,11 +122,11 @@ class CompareTest {
         assertNull(Compare.difference(new Cell[]{cell(1f, 1f, 7)}, new Cell[]{cell(1f, 1f, 7)}, 0));
         assertNull(Compare.difference(new Cell[]{cell(1f, 1f, 7)}, new Cell[]{cell(next(1f, 2), next(1f, -1), 7)}, 2));
         String w = Compare.difference(new Cell[]{cell(1f, 1f, 7)}, new Cell[]{cell(next(1f, 3), 1f, 7)}, 2);
-        assertTrue(w.contains("поле w") && w.contains("[0]"), w);
+        assertTrue(w.contains("field w") && w.contains("[0]"), w);
         String v = Compare.difference(new Cell[]{cell(1f, 1f, 7)}, new Cell[]{cell(1f, 5f, 7)}, 2);
-        assertTrue(v.contains("поле v"), v);
+        assertTrue(v.contains("field v"), v);
         String t = Compare.difference(new Cell[]{cell(1f, 1f, 7)}, new Cell[]{cell(1f, 1f, 8)}, 100);
-        assertTrue(t.contains("поле tag"), t);
+        assertTrue(t.contains("field tag"), t);
         assertNotNull(Compare.difference(new Cell[]{null}, new Cell[]{cell(1f, 1f, 7)}, 0));
         assertNull(Compare.difference(new Cell[]{null}, new Cell[]{null}, 0));
     }

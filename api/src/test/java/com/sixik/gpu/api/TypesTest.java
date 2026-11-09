@@ -39,8 +39,8 @@ class TypesTest {
         assertNotEquals(new Float2(1f, 2f), new Float2(1f, 3f));
         assertNotEquals(new Float2(1f, 2f), new Int4(1, 2, 0, 0));
         assertNotEquals(new Float2(1f, 2f), null);
-        assertEquals(new Float2(Float.NaN, 0f), new Float2(Float.NaN, 0f), "NaN равен NaN (как Float.equals)");
-        assertNotEquals(new Float2(0f, 0f), new Float2(-0f, 0f), "+0 и -0 различаются (как Float.equals)");
+        assertEquals(new Float2(Float.NaN, 0f), new Float2(Float.NaN, 0f), "NaN equals NaN (like Float.equals)");
+        assertNotEquals(new Float2(0f, 0f), new Float2(-0f, 0f), "+0 and -0 differ (like Float.equals)");
         assertNotEquals(new Double2(0.0, 1.0), new Double2(-0.0, 1.0));
         assertEquals(new Long2(Long.MIN_VALUE, 1), new Long2(Long.MIN_VALUE, 1));
     }
@@ -68,10 +68,10 @@ class TypesTest {
     @Test
     void vectorsAreImmutable() {
         for (Class<?> c : new Class<?>[]{Float2.class, Float4.class, Float16.class, Int4.class, Long2.class, Double2.class}) {
-            assertTrue(Modifier.isFinal(c.getModifiers()), c.getSimpleName() + " должен быть final");
+            assertTrue(Modifier.isFinal(c.getModifiers()), c.getSimpleName() + " must be final");
             for (Field f : c.getDeclaredFields()) {
                 assertTrue(Modifier.isFinal(f.getModifiers()) && Modifier.isPublic(f.getModifiers()),
-                        c.getSimpleName() + "." + f.getName() + " должно быть public final");
+                        c.getSimpleName() + "." + f.getName() + " must be public final");
             }
         }
     }
@@ -87,7 +87,7 @@ class TypesTest {
         assertEquals(7L, new LongPtr(7L).value);
         assertEquals(1.0, new DoublePtr(1.0).value);
         assertEquals("FloatPtr(2.5)", p.toString());
-        assertNotEquals(new FloatPtr(1f), new FloatPtr(1f), "сравнение по ссылке");
+        assertNotEquals(new FloatPtr(1f), new FloatPtr(1f), "compared by reference");
     }
 
     @Test
@@ -97,13 +97,13 @@ class TypesTest {
         assertEquals(1f, p.get(0));
         assertEquals(3f, p.get(2));
         p.set(2, 30f);
-        assertEquals(30f, a[3], "запись видна в исходном массиве");
+        assertEquals(30f, a[3], "the write is visible in the source array");
         GlobalFloatPtr q = p.plus(3);
         assertEquals(4f, q.get(0));
-        assertEquals(1f, p.get(0), "plus не меняет исходный указатель");
+        assertEquals(1f, p.get(0), "plus does not change the original pointer");
         assertEquals(30f, q.plus(-1).get(0));
         assertEquals("GlobalFloatPtr(+1)", p.toString());
-        assertThrows(ArrayIndexOutOfBoundsException.class, () -> p.get(4), "на JVM выход за массив - исключение");
+        assertThrows(ArrayIndexOutOfBoundsException.class, () -> p.get(4), "on the JVM, out-of-bounds access throws");
     }
 
     @Test
@@ -119,7 +119,7 @@ class TypesTest {
     @Test
     void constantPointerHasNoWriteMethod() {
         for (java.lang.reflect.Method m : ConstantFloatPtr.class.getDeclaredMethods()) {
-            assertFalse(m.getName().startsWith("set"), "в constant нельзя писать: " + m);
+            assertFalse(m.getName().startsWith("set"), "cannot write to constant: " + m);
         }
     }
 

@@ -242,8 +242,8 @@ class AluTest {
     @Test
     void integerToIntegerExtendsBySourceSignAndTruncates() {
         assertEquals(-1L, Alu.convert(Types.I32, Types.I64, -1));
-        assertEquals(0xFFFFFFFFL, Alu.convert(Types.U32, Types.I64, -1), "U32 расширяется нулями");
-        assertEquals(-1L, Alu.convert(Types.I32, Types.U64, -1), "I32 -> U64 расширяется по знаку (как в C)");
+        assertEquals(0xFFFFFFFFL, Alu.convert(Types.U32, Types.I64, -1), "U32 is zero-extended");
+        assertEquals(-1L, Alu.convert(Types.I32, Types.U64, -1), "I32 -> U64 is sign-extended (as in C)");
         assertEquals(-1, Alu.convert(Types.I64, Types.I32, 0xFFFFFFFFL));
         assertEquals(Integer.MIN_VALUE, Alu.convert(Types.I64, Types.I32, 0x80000000L));
         assertEquals(-128, Alu.convert(Types.I32, Types.I8, 128));
@@ -356,7 +356,7 @@ class AluTest {
         assertEquals(Float.floatToRawIntBits(1f), Alu.bitcast(Types.F32, 0x3F800000));
         assertEquals(Double.doubleToRawLongBits(1d), Alu.bitcast(Types.F64, 0x3FF0000000000000L));
         assertEquals(-1L, Alu.bitcast(Types.U64, -1L));
-        assertEquals(255, Alu.bitcast(Types.U8, -1), "bitcast I8 -> U8 берёт биты");
+        assertEquals(255, Alu.bitcast(Types.U8, -1), "bitcast I8 -> U8 takes the bits");
         assertEquals(-1, Alu.bitcast(Types.I8, 255));
     }
 

@@ -153,7 +153,7 @@ class StressLoweringTest {
         FrontendHarness.Outcome r = FrontendHarness.compile(SOURCE);
         assertTrue(r.success(), r.describe());
         assertTrue(r.gpu().isEmpty(), r.describe());
-        assertEquals(6, r.modules().size(), "по модулю на каждое ядро");
+        assertEquals(6, r.modules().size(), "one module per kernel");
         for (IrModule m : r.modules()) {
             Validator.Report v = Validator.validate(m);
             assertFalse(v.hasErrors(), v.diagnostics().toString());

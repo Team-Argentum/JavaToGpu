@@ -40,11 +40,11 @@ class TimingsTest {
         }
         Timings.Snapshot s = timings.snapshot();
         assertEquals(3, s.of(GpuEvent.Kind.UPLOAD).count());
-        assertEquals(3 * 2 * 1024, s.of(GpuEvent.Kind.UPLOAD).bytes(), "оба массива float[256] загружаются каждый раз");
+        assertEquals(3 * 2 * 1024, s.of(GpuEvent.Kind.UPLOAD).bytes(), "both float[256] arrays are uploaded every time");
         assertEquals(3, s.of(GpuEvent.Kind.KERNEL).count());
         assertTrue(s.of(GpuEvent.Kind.KERNEL).nanos() > 0);
         assertEquals(3, s.of(GpuEvent.Kind.READBACK).count());
-        assertEquals(3 * 1024, s.of(GpuEvent.Kind.READBACK).bytes(), "назад - только записываемый массив");
+        assertEquals(3 * 1024, s.of(GpuEvent.Kind.READBACK).bytes(), "back - only the writable array");
         assertEquals(1, s.of(GpuEvent.Kind.DEVICE_SELECTED).count());
         assertEquals(1, s.of(GpuEvent.Kind.CLOSED).count());
     }
@@ -86,8 +86,8 @@ class TimingsTest {
     @Test
     void variantNoteDoesNotBreakTheClassification() {
         Timings timings = new Timings();
-        timings.onEvent(new GpuEvent(GpuEvent.Kind.COMPILE, "k", 5, 0, "built; вариант f0 вместо f1: устройство не поддерживает FP64"));
-        timings.onEvent(new GpuEvent(GpuEvent.Kind.COMPILE, "k", 0, 0, "cache-hit; вариант f0 вместо f1: x"));
+        timings.onEvent(new GpuEvent(GpuEvent.Kind.COMPILE, "k", 5, 0, "built; variant f0 instead of f1: the device does not support FP64"));
+        timings.onEvent(new GpuEvent(GpuEvent.Kind.COMPILE, "k", 0, 0, "cache-hit; variant f0 instead of f1: x"));
         Timings.Snapshot s = timings.snapshot();
         assertEquals(1, s.built());
         assertEquals(1, s.memoryHits());
@@ -99,7 +99,7 @@ class TimingsTest {
         timings.onEvent(new GpuEvent(GpuEvent.Kind.KERNEL, "k", 100, 0, ""));
         Timings.Snapshot before = timings.snapshot();
         timings.reset();
-        assertEquals(1, before.of(GpuEvent.Kind.KERNEL).count(), "снимок не меняется");
+        assertEquals(1, before.of(GpuEvent.Kind.KERNEL).count(), "the snapshot does not change");
         assertEquals(0, timings.snapshot().of(GpuEvent.Kind.KERNEL).count());
         assertEquals(0, timings.snapshot().of(GpuEvent.Kind.KERNEL).nanos());
     }

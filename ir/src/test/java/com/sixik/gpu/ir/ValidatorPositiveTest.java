@@ -13,8 +13,8 @@ class ValidatorPositiveTest {
     @Test
     void computeSineMatchesArchitectureExample() {
         IrModule m = Fixtures.computeSine();
-        assertEquals(15, m.nodeCount(), "в 5.11 пример состоит из 15 узлов");
-        assertEquals(15 * IrModule.N_COLS * 4, 300, "таблица узлов - 300 байт");
+        assertEquals(15, m.nodeCount(), "in 5.11 the example consists of 15 nodes");
+        assertEquals(15 * IrModule.N_COLS * 4, 300, "the node table is 300 bytes");
         assertEquals(1, m.functionCount());
         assertEquals(Op.BLOCK, m.op(m.fBody(0)));
         assertEquals(14, m.fBody(0));
@@ -44,7 +44,7 @@ class ValidatorPositiveTest {
         assertArrayEquals(new int[]{Validator.ACCESS_READ, Validator.ACCESS_WRITE}, info.paramAccess());
         assertEquals(0, info.requiredFeatures());
         assertFalse(info.usesGroupSync());
-        assertTrue(info.effects(), "store - это эффект");
+        assertTrue(info.effects(), "store is an effect");
         assertTrue(info.readsMemory());
     }
 
@@ -57,11 +57,11 @@ class ValidatorPositiveTest {
 
         assertFalse(pure.effects());
         assertFalse(pure.readsMemory());
-        assertTrue(inc.effects(), "inc пишет по указателю");
+        assertTrue(inc.effects(), "inc writes through a pointer");
         assertTrue(inc.readsMemory());
 
-        assertTrue(kernel.usesGroupSync(), "в kernel есть barrier и local-массив");
-        assertEquals(0, kernel.requiredFeatures(), "double не используется");
+        assertTrue(kernel.usesGroupSync(), "the kernel has a barrier and a local array");
+        assertEquals(0, kernel.requiredFeatures(), "double is not used");
         // параметры: in(READ), idx(READ|WRITE - atomicAdd), items(WRITE), out(WRITE)
         assertArrayEquals(new int[]{
                 Validator.ACCESS_READ,
@@ -84,6 +84,6 @@ class ValidatorPositiveTest {
                 missing.append(Op.nameOf(op)).append(' ');
             }
         }
-        assertEquals("", missing.toString().trim(), "фикстура rich() должна покрывать каталог узлов");
+        assertEquals("", missing.toString().trim(), "the rich() fixture must cover the node catalog");
     }
 }

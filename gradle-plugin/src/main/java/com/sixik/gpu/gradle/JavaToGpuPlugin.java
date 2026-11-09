@@ -115,7 +115,7 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
             compile.getLogger().warn("[javatogpu] {}", problem);
         }
         if (report.kernels() > 0) {
-            compile.getLogger().info("[javatogpu] подменено ядер: {} в {} классах", report.kernels(), report.classes());
+            compile.getLogger().info("[javatogpu] kernels replaced: {} in {} classes", report.kernels(), report.classes());
         }
     }
 }

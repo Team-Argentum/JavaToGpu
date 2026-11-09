@@ -32,7 +32,7 @@ class EmitterTest {
     }
 
     private static String code(Result<Artifact> r) {
-        assertFalse(r.isOk(), "ожидалась ошибка");
+        assertFalse(r.isOk(), "an error was expected");
         assertEquals(1, r.diagnostics().stream().map(Diagnostic::code).distinct().count(), r.diagnostics().toString());
         return r.diagnostics().get(0).code();
     }
@@ -63,7 +63,7 @@ class EmitterTest {
         String src = emit(Fixtures.computeSine(), EmitOptions.DEBUG.withSourceName("Sine.java")).source();
         assertTrue(src.contains("#line 3 \"Sine.java\"\n"));
         assertFalse(emit(Fixtures.computeSine(), EmitOptions.RELEASE.withSourceName("Sine.java")).source()
-                .contains("Sine.java"), "в release имён нет");
+                .contains("Sine.java"), "no names in release");
     }
 
     @Test
@@ -104,7 +104,7 @@ class EmitterTest {
     void sourceHeaderIsAscii() {
         for (SampleKernels.Kernel k : SampleKernels.all()) {
             for (char c : emit(k.module(), EmitOptions.DEBUG).source().toCharArray()) {
-                assertTrue(c < 128, k.label() + ": не ASCII символ " + (int) c);
+                assertTrue(c < 128, k.label() + ": non-ASCII character " + (int) c);
             }
         }
     }
@@ -177,7 +177,7 @@ class EmitterTest {
         SampleKernels.Kernel k = SampleKernels.kernel(ControlKernels.class, "parameters");
         Artifact a = emit(k.module(), EmitOptions.DEBUG);
         List<KernelArg> args = a.args();
-        assertEquals(6, args.size(), "int, long, float, double и массив с длиной");
+        assertEquals(6, args.size(), "int, long, float, double and an array with length");
         assertEquals(KernelArg.SCALAR, args.get(0).kind());
         assertEquals(Types.I32, args.get(0).type());
         assertEquals(Types.I64, args.get(1).type());
@@ -225,7 +225,7 @@ class EmitterTest {
         assertTrue(a.source().contains("int helper("));
         assertFalse(a.source().contains("unused"));
         assertTrue(a.source().indexOf("int helper(") < a.source().indexOf("__kernel void main("),
-                "вызываемая функция печатается раньше вызывающей");
+                "the called function is printed before the caller");
     }
 
     @Test
@@ -299,8 +299,8 @@ class EmitterTest {
         String src = emit(HandModules.control(), EmitOptions.RELEASE).source();
         assertTrue(src.contains("goto cont_1;"));
         assertTrue(src.contains("cont_1:;"));
-        assertTrue(src.contains("do {") && src.contains("} while ("), "do-while остаётся do-while");
-        assertTrue(src.contains("} else if ("), "цепочка else if");
+        assertTrue(src.contains("do {") && src.contains("} while ("), "do-while stays do-while");
+        assertTrue(src.contains("} else if ("), "else if chain");
     }
 
     @Test
@@ -323,7 +323,7 @@ class EmitterTest {
     void shiftCountsAreMasked() {
         String src = emit(HandModules.ops(Types.I32), EmitOptions.RELEASE).source();
         assertTrue(src.contains("(v1 & 31)"), src);
-        assertTrue(src.contains("(uint)v0 << 0;") || src.contains("<< 0)"), "константа 32 -> 0");
+        assertTrue(src.contains("(uint)v0 << 0;") || src.contains("<< 0)"), "constant 32 -> 0");
         String wide = emit(HandModules.ops(Types.I64), EmitOptions.RELEASE).source();
         assertTrue(wide.contains("(v1 & 63)"), wide);
     }
@@ -334,7 +334,7 @@ class EmitterTest {
         assertTrue(src.contains("convert_int_sat"));
         assertTrue(src.contains("convert_ulong_sat"));
         assertTrue(src.contains("isnan(x) ? 0 :"));
-        assertTrue(src.contains("(char)gpu_f32_to_i32("), "float -> byte: насыщение до int, затем сужение");
+        assertTrue(src.contains("(char)gpu_f32_to_i32("), "float -> byte: saturation to int, then narrowing");
         assertTrue(src.contains("(ushort)gpu_f32_to_i32("));
     }
 
@@ -409,8 +409,8 @@ class EmitterTest {
         Result<Artifact> r = OpenClEmitter.emit(outsideV1(), Target.GENERIC);
         assertFalse(r.isOk());
         assertTrue(r.diagnostics().stream().allMatch(d -> d.code().equals("CG-U01")), r.diagnostics().toString());
-        assertTrue(r.diagnostics().size() >= 3, "все нарушения за один проход: " + r.diagnostics());
-        assertTrue(r.diagnostics().toString().contains("вне v1"), r.diagnostics().toString());
+        assertTrue(r.diagnostics().size() >= 3, "all violations in one pass: " + r.diagnostics());
+        assertTrue(r.diagnostics().toString().contains("outside v1"), r.diagnostics().toString());
     }
 
     @Test
@@ -438,7 +438,7 @@ class EmitterTest {
         assertTrue(src.contains("barrier(CLK_LOCAL_MEM_FENCE);"), src);
         assertTrue(src.contains("barrier(CLK_GLOBAL_MEM_FENCE);"), src);
         assertTrue(src.contains("barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);"), src);
-        assertTrue(src.contains("[0] = 8;"), "длина local-массива - константа: " + src);
+        assertTrue(src.contains("[0] = 8;"), "local array length is a constant: " + src);
     }
 
     @Test
@@ -498,7 +498,7 @@ class EmitterTest {
         assertTrue(src.contains("void inc(__private float* p)"), src);
         assertTrue(src.contains("*p = *p + 1.0f;"), src);
         assertTrue(src.contains("inc(&x);"), src);
-        assertTrue(src.contains("[0] = x;"), "load(local_addr(x)) печатается как x, без '*&': " + src);
+        assertTrue(src.contains("[0] = x;"), "load(local_addr(x)) is printed as x, without '*&': " + src);
     }
 
     @Test
@@ -518,7 +518,7 @@ class EmitterTest {
         Result<Artifact> r = OpenClEmitter.emit(b.build(), 1, Target.GENERIC, EmitOptions.DEBUG);
         assertTrue(r.isOk(), r.diagnostics().toString());
         String src = r.value().source();
-        assertTrue(src.contains("(*c).tag = 5;"), "*c.tag означало бы *(c.tag): " + src);
+        assertTrue(src.contains("(*c).tag = 5;"), "*c.tag would mean *(c.tag): " + src);
         assertTrue(src.contains("[1].w = 2.0f;"), src);
     }
 
@@ -529,7 +529,7 @@ class EmitterTest {
         b.endFunction(b.block());
         Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
         assertEquals("CG-U01", code(r));
-        assertTrue(r.diagnostics().toString().contains("используйте массив"), r.diagnostics().toString());
+        assertTrue(r.diagnostics().toString().contains("use an array"), r.diagnostics().toString());
     }
 
     @Test
@@ -547,21 +547,21 @@ class EmitterTest {
     void vectorsAndStructsAreEmittedAsOpenClTypes() {
         String vec = emit(HandModules.vectorsF32(), EmitOptions.RELEASE).source();
         assertTrue(vec.contains("float4 v0 = (float4)(p0[0], p0[1], p0[2], p0[3]);"), vec);
-        assertTrue(vec.contains(".wzyx"), "swizzle буквами для float4");
-        assertTrue(vec.contains(".s00112233"), "s-обозначение для результата из 8 компонент");
-        assertTrue(vec.contains("gpu_set_float4_1("), "замена компоненты - функция");
-        assertTrue(vec.contains("gpu_max_float4("), "max/min float-векторов с семантикой Java");
-        assertTrue(vec.contains("gpu_conv_float4_int4("), "float -> int над вектором насыщающее, с NaN -> 0");
-        assertTrue(vec.contains("as_int4("), "bitcast вектора");
+        assertTrue(vec.contains(".wzyx"), "swizzle with letters for float4");
+        assertTrue(vec.contains(".s00112233"), "s-notation for an 8-lane result");
+        assertTrue(vec.contains("gpu_set_float4_1("), "lane replacement is a function");
+        assertTrue(vec.contains("gpu_max_float4("), "max/min of float vectors with Java semantics");
+        assertTrue(vec.contains("gpu_conv_float4_int4("), "float -> int on a vector is saturating, with NaN -> 0");
+        assertTrue(vec.contains("as_int4("), "vector bitcast");
 
         String ints = emit(HandModules.vectorsI32(), EmitOptions.RELEASE).source();
-        assertTrue(ints.contains("as_int4(as_uint4("), "знаковая арифметика векторов - в беззнаковом типе: " + ints);
-        assertTrue(ints.contains("gpu_div_int4(") && ints.contains("gpu_rem_long2("), "деление - покомпонентно через функцию");
+        assertTrue(ints.contains("as_int4(as_uint4("), "signed vector arithmetic in an unsigned type: " + ints);
+        assertTrue(ints.contains("gpu_div_int4(") && ints.contains("gpu_rem_long2("), "division is lane-wise via a function");
 
         String structs = emit(HandModules.structs(), EmitOptions.DEBUG).source();
         assertTrue(structs.contains("typedef struct {\n    float x;\n    float y;\n    float4 v;\n    int id;\n} Particle;"), structs);
-        assertTrue(structs.indexOf("} Particle;") < structs.indexOf("} Body;"), "вложенный тип определён раньше");
-        assertTrue(structs.contains("Particle ps[3];"), "массив struct объявлен без {0}");
+        assertTrue(structs.indexOf("} Particle;") < structs.indexOf("} Body;"), "the nested type is defined earlier");
+        assertTrue(structs.contains("Particle ps[3];"), "array of structs is declared without {0}");
         assertTrue(structs.contains("gpu_zero_Particle()"), structs);
     }
 
@@ -578,9 +578,9 @@ class EmitterTest {
                 b.store(b.elemPtr(b.param(0), b.localGet(g)), b.binary(Op.MUL, b.load(b.elemPtr(b.param(0), b.localGet(g))), b.param(1)))));
         Artifact a = emit(b.build(), EmitOptions.DEBUG);
         assertEquals(KernelArg.ARRAY_PTR, a.args().get(0).kind());
-        assertEquals(v4, a.args().get(0).type(), "элемент массива - вектор");
+        assertEquals(v4, a.args().get(0).type(), "array element is a vector");
         assertEquals(KernelArg.SCALAR, a.args().get(2).kind());
-        assertEquals(v4, a.args().get(2).type(), "вектор по значению");
+        assertEquals(v4, a.args().get(2).type(), "vector by value");
         assertTrue(a.source().contains("__global float4* items, int items_len, float4 scale"), a.source());
     }
 
@@ -592,7 +592,7 @@ class EmitterTest {
         b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), b.constF32(1f))));
         Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
         assertEquals("CG-U01", code(r));
-        assertTrue(r.diagnostics().toString().contains("вне v1"), r.diagnostics().toString());
+        assertTrue(r.diagnostics().toString().contains("outside v1"), r.diagnostics().toString());
     }
 
     @Test
@@ -652,7 +652,7 @@ class EmitterTest {
         assertEquals(OpenClEmitter.emit(plain, Target.GENERIC).value().source(),
                 OpenClEmitter.emit(tuned, Target.GENERIC).value().source());
         assertFalse(java.util.Arrays.equals(com.sixik.gpu.ir.IrBinary.write(plain), com.sixik.gpu.ir.IrBinary.write(tuned)),
-                "атрибуты остаются в IR и входят в хэш");
+                "attributes stay in the IR and are part of the hash");
         assertEquals(IrModule.INLINE_ALWAYS, tuned.fInline(0));
         assertEquals(3, tuned.fOpt(0));
     }

@@ -25,7 +25,7 @@ public record Target(String backend, String vendor, String deviceClass, int feat
      */
     public Target {
         if (backend == null || vendor == null || deviceClass == null) {
-            throw new IllegalArgumentException("backend, vendor и deviceClass не могут быть null");
+            throw new IllegalArgumentException("backend, vendor and deviceClass must not be null");
         }
     }
 

@@ -84,8 +84,8 @@ class VariantSelectionTest {
         List<GpuEvent> events = new ArrayList<>();
         try (GpuContext ctx = open(device(ATOMICS), events)) {
             Result<CompiledKernel> r = ctx.compile(chain());
-            assertEquals(1, r.value().function(), "f2 требует FP64, f1 - только INT64_ATOMICS");
-            assertTrue(detail(events).contains("вариант f1 вместо f2"), detail(events));
+            assertEquals(1, r.value().function(), "f2 requires FP64, f1 only INT64_ATOMICS");
+            assertTrue(detail(events).contains("variant f1 instead of f2"), detail(events));
             assertTrue(detail(events).contains("FP64"), detail(events));
         }
     }
@@ -96,7 +96,7 @@ class VariantSelectionTest {
         try (GpuContext ctx = open(device(""), events)) {
             Result<CompiledKernel> r = ctx.compile(chain());
             assertEquals(0, r.value().function());
-            assertTrue(detail(events).contains("вариант f0 вместо f2"), detail(events));
+            assertTrue(detail(events).contains("variant f0 instead of f2"), detail(events));
         }
     }
 
@@ -107,7 +107,7 @@ class VariantSelectionTest {
             IrModule m = chain();
             CompiledKernel viaMain = ctx.compile(m, 2, com.sixik.gpu.codegen.opencl.EmitOptions.RELEASE).value();
             CompiledKernel direct = ctx.compile(m, 0, com.sixik.gpu.codegen.opencl.EmitOptions.RELEASE).value();
-            assertSame(viaMain, direct, "запрос основного ядра и запрос варианта - одна запись кэша");
+            assertSame(viaMain, direct, "the main kernel request and the variant request are one cache entry");
             assertEquals(new CacheStats(1, 1, 1), ctx.cacheStats());
             assertTrue(detail(events).startsWith("cache-hit"), detail(events));
         }
@@ -123,7 +123,7 @@ class VariantSelectionTest {
             assertFalse(r.isOk());
             assertEquals("RT-D02", r.diagnostics().get(0).code());
             assertTrue(r.diagnostics().get(0).message().contains("FP64"), r.diagnostics().toString());
-            assertFalse(r.diagnostics().get(0).message().contains("fallback"), "варианта нет и о нём не говорим");
+            assertFalse(r.diagnostics().get(0).message().contains("fallback"), "there is no variant and we do not mention it");
         }
     }
 
@@ -162,7 +162,7 @@ class VariantSelectionTest {
         try (GpuContext withFp64 = open(device(FP64), new ArrayList<>());
              GpuContext without = open(device(""), new ArrayList<>())) {
             assertEquals(1, withFp64.compile(m).value().function());
-            assertEquals(0, without.compile(m).value().function(), "вычисленная нехватка тоже ведёт к варианту");
+            assertEquals(0, without.compile(m).value().function(), "a computed shortfall also leads to a variant");
         }
     }
 
@@ -180,6 +180,6 @@ class VariantSelectionTest {
     void featureNamesMapToMasks() {
         assertEquals(Features.FP64, Features.fromName("FP64"));
         assertEquals(Features.INT64_EXT_ATOMICS, Features.fromName("INT64_EXT_ATOMICS"));
-        assertEquals(0, Features.fromName("SIMD"), "неизвестное имя ничего не требует");
+        assertEquals(0, Features.fromName("SIMD"), "an unknown name requires nothing");
     }
 }

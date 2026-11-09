@@ -59,7 +59,7 @@ class WovenKernelDeviceTest {
         List<GpuEvent> events = new ArrayList<>();
         // строгий режим: если ядро не уйдёт на устройство, тест упадёт, а не пройдёт на JVM-fallback
         JavaToGpu.configureDefault(b -> b.listener(events::add).fallback(GpuContext.Fallback.NEVER));
-        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "нет OpenCL-устройства");
+        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "no OpenCL device");
 
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
@@ -95,10 +95,10 @@ class WovenKernelDeviceTest {
                 }
             });
             for (int i = 0; i < n; i++) {
-                assertTrue(ulps(jvm[i], out[i]) <= 4, "JVM и устройство разошлись на i=" + i);
+                assertTrue(ulps(jvm[i], out[i]) <= 4, "the JVM and the device diverged at i=" + i);
             }
         }
-        assertTrue(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.KERNEL), "ядро выполнено на устройстве");
+        assertTrue(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.KERNEL), "the kernel ran on the device");
         assertFalse(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.FALLBACK));
     }
 

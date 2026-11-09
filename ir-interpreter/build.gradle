@@ -3,7 +3,7 @@ plugins {
     id 'java-test-fixtures'
 }
 
-description = 'Эталонный CPU-интерпретатор IR для дифференциальных тестов.'
+description = 'Reference CPU interpreter of the IR for differential tests.'
 
 dependencies {
     api project(':ir')

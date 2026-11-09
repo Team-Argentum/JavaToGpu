@@ -72,7 +72,7 @@ class AttributesLoweringTest {
         FrontendHarness.Outcome b = FrontendHarness.compile(ATTRS.replace("{\"INT64_ATOMICS\", \"FP64\"}",
                 "{\"FP64\", \"INT64_ATOMICS\", \"FP64\"}"));
         assertTrue(a.success() && b.success(), a.describe() + b.describe());
-        assertEquals(kernelIds(a), kernelIds(b), "порядок и повторы в required не влияют на хэш");
+        assertEquals(kernelIds(a), kernelIds(b), "order and repeats in required do not affect the hash");
     }
 
     @Test
@@ -107,14 +107,14 @@ class AttributesLoweringTest {
     @Test
     void hashIgnoresDebugInformation() {
         String plain = SmokeTest.COMPUTE_SINE;
-        String noisy = plain.replace("int id =", "\n\n        /* комментарий */ int idx =").replace("[id]", "[idx]");
+        String noisy = plain.replace("int id =", "\n\n        /* comment */ int idx =").replace("[id]", "[idx]");
         FrontendHarness.Outcome a = FrontendHarness.compile(plain);
         FrontendHarness.Outcome b = FrontendHarness.compile(noisy);
         assertTrue(a.success() && b.success(), a.describe() + b.describe());
         IrModule ma = a.module();
         IrModule mb = b.module();
-        assertEquals(IrBinary.kernelId(ma), IrBinary.kernelId(mb), "имена, комментарии и позиции не меняют kernelId");
-        assertNotEquals(Golden.dumpAll(a), Golden.dumpAll(b), "отладочные данные при этом различаются");
+        assertEquals(IrBinary.kernelId(ma), IrBinary.kernelId(mb), "names, comments and positions do not change kernelId");
+        assertNotEquals(Golden.dumpAll(a), Golden.dumpAll(b), "debug data differs in this case");
     }
 
     @Test

@@ -20,7 +20,7 @@ class NamesTest {
         assertEquals("a_b_c", Names.sanitize("a-b c"));
         assertEquals("_1abc", Names.sanitize("1abc"));
         assertEquals("_", Names.sanitize(""));
-        assertEquals("n__x", Names.sanitize("__x"), "двойное подчёркивание в начале зарезервировано C");
+        assertEquals("n__x", Names.sanitize("__x"), "leading double underscore is reserved by C");
         assertEquals("n_________", Names.sanitize("кириллица"));
     }
 
@@ -77,6 +77,6 @@ class NamesTest {
         n.unique("a", "v0");
         Names c = n.copy();
         assertEquals("a_1", c.unique("a", "v1"));
-        assertEquals("a_1", n.unique("a", "v1"), "копия не заняла имя в оригинале");
+        assertEquals("a_1", n.unique("a", "v1"), "the copy did not take the name in the original");
     }
 }

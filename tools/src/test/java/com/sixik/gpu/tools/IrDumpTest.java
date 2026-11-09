@@ -35,7 +35,7 @@ class IrDumpTest {
     @Test
     void releaseDumpDoesNotDependOnDebugSection() {
         assertEquals(IrDump.dump(Fixtures.computeSine()), IrDump.dump(Fixtures.computeSineWithoutDebug()),
-                "дамп без отладки одинаков, как и хэш модуля");
+                "a dump without debug info is the same, like the module hash");
     }
 
     @Test

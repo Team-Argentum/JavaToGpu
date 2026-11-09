@@ -69,7 +69,7 @@ class ConstantMemoryTest {
             float[] table = {1, 2, 3, 4};
             float[] out = new float[4];
             LaunchStats stats = ctx.run(tableKernel(), LaunchConfig.of1D(4), table, out);
-            assertEquals(4 * 4L, stats.bytesDown(), "возвращается только записанный out: константная таблица не читается назад");
+            assertEquals(4 * 4L, stats.bytesDown(), "only the written out is returned: the constant table is not read back");
             assertEquals(2f, out[0]);
             assertEquals(8f, out[3]);
             assertEquals(1f, table[0]);
@@ -85,10 +85,10 @@ class ConstantMemoryTest {
             Result<LaunchStats> r = ctx.launch(k.value(), LaunchConfig.of1D(32), new float[32], new float[32]);
             assertFalse(r.isOk());
             assertEquals("RT-A04", r.diagnostics().get(0).code());
-            assertTrue(r.diagnostics().get(0).message().contains("128 байт"), r.diagnostics().toString());
+            assertTrue(r.diagnostics().get(0).message().contains("128 bytes"), r.diagnostics().toString());
             assertTrue(r.diagnostics().get(0).message().contains("64"), r.diagnostics().toString());
-            assertEquals(0, fake.enqueues(), "ядро не запускалось");
-            assertEquals(0, fake.liveBuffers(), "и буферы под таблицу не создавались");
+            assertEquals(0, fake.enqueues(), "the kernel was not launched");
+            assertEquals(0, fake.liveBuffers(), "and no buffers were created for the table");
             // ровно по границе - допустимо
             assertTrue(ctx.launch(k.value(), LaunchConfig.of1D(16), new float[16], new float[16]).isOk());
         }

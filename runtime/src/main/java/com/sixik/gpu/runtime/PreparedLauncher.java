@@ -130,7 +130,7 @@ public final class PreparedLauncher implements AutoCloseable {
         try {
             if (ctx.closed) {
                 staging.close();
-                return GpuContext.failure("RT-X02", "контекст закрыт");
+                return GpuContext.failure("RT-X02", "context is closed");
             }
             for (int i = 0; i < n; i++) {
                 if (m.typeKind(m.fParamType(f, i)) != Types.KIND_ARRAY) {
@@ -162,7 +162,7 @@ public final class PreparedLauncher implements AutoCloseable {
                 ctx.api.release(DeviceApi.HandleKind.BUFFER, s.handle);
             }
             staging.close();
-            return GpuContext.failure("RT-X01", "ошибка драйвера при подготовке запуска: " + e.getMessage());
+            return GpuContext.failure("RT-X01", "driver error while preparing the launch: " + e.getMessage());
         } finally {
             ctx.lock.unlock();
         }
@@ -195,12 +195,12 @@ public final class PreparedLauncher implements AutoCloseable {
     public PreparedLauncher set(int param, Object value) {
         requireOpen();
         if (param < 0 || param >= args.length) {
-            throw new GpuException(List.of(GpuContext.error("RT-A01", "у ядра " + args.length + " параметров, номер " + param)));
+            throw new GpuException(List.of(GpuContext.error("RT-A01", "the kernel has " + args.length + " parameters, index " + param)));
         }
         if (slotOf[param] != null) {
-            throw new GpuException(List.of(GpuContext.error("RT-A02", "аргумент " + param
-                    + " - массив хоста с буфером этого запуска: заменить его нельзя, подготовьте новый запуск или "
-                    + "передайте GpuBuffer")));
+            throw new GpuException(List.of(GpuContext.error("RT-A02", "argument " + param
+                    + " is a host array with this launch's buffer: it cannot be replaced, prepare a new launch or "
+                    + "pass a GpuBuffer")));
         }
         List<Diagnostic> problems = new ArrayList<>();
         ctx.checkArgument(kernel, param, value, problems);
@@ -247,22 +247,22 @@ public final class PreparedLauncher implements AutoCloseable {
      */
     public Result<LaunchStats> launch(LaunchConfig config) {
         if (config == null) {
-            throw new IllegalArgumentException("config обязателен");
+            throw new IllegalArgumentException("config is required");
         }
         if (closed || ctx.closed) {
-            return GpuContext.failure("RT-X02", closed ? "запуск закрыт" : "контекст закрыт");
+            return GpuContext.failure("RT-X02", closed ? "the launch is closed" : "context is closed");
         }
         List<Diagnostic> problems = new ArrayList<>();
         long[] local = ctx.checkLaunch(kernel, config, problems);
         for (Slot s : slots) {
             if (Marshal.length(s.array) != s.length) {
-                problems.add(GpuContext.error("RT-A02", "длина массива хоста изменилась с " + s.length + " до "
-                        + Marshal.length(s.array) + ": буфер подготовленного запуска создан под прежнюю"));
+                problems.add(GpuContext.error("RT-A02", "host array length changed from " + s.length + " to "
+                        + Marshal.length(s.array) + ": the prepared launch buffer was created for the previous length"));
             }
         }
         for (int i = 0; i < args.length; i++) {
             if (args[i] instanceof GpuBuffer b && b.isClosed()) {
-                problems.add(GpuContext.error("RT-A02", "аргумент " + i + ": буфер закрыт"));
+                problems.add(GpuContext.error("RT-A02", "argument " + i + ": the buffer is closed"));
             }
         }
         if (!problems.isEmpty()) {
@@ -271,12 +271,12 @@ public final class PreparedLauncher implements AutoCloseable {
         ctx.lock.lock();
         try {
             if (ctx.closed) {
-                return GpuContext.failure("RT-X02", "контекст закрыт");
+                return GpuContext.failure("RT-X02", "context is closed");
             }
             return execute(config, local);
         } catch (DeviceApiException e) {
             kernel.boundTo = null;
-            return GpuContext.failure("RT-X01", "ошибка драйвера при запуске: " + e.getMessage());
+            return GpuContext.failure("RT-X01", "driver error during launch: " + e.getMessage());
         } finally {
             ctx.lock.unlock();
         }
@@ -345,7 +345,7 @@ public final class PreparedLauncher implements AutoCloseable {
 
     private void requireOpen() {
         if (closed) {
-            throw new GpuException(List.of(GpuContext.error("RT-X02", "запуск закрыт")));
+            throw new GpuException(List.of(GpuContext.error("RT-X02", "the launch is closed")));
         }
     }
 

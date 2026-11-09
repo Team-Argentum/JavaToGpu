@@ -106,7 +106,7 @@ public final class JavaToGpu {
      */
     public static Scope use(GpuContext ctx) {
         if (ctx == null) {
-            throw new IllegalArgumentException("ctx обязателен");
+            throw new IllegalArgumentException("ctx is required");
         }
         return push(CONTEXTS.get(), ctx);
     }
@@ -119,7 +119,7 @@ public final class JavaToGpu {
      */
     public static Scope launch(LaunchConfig config) {
         if (config == null) {
-            throw new IllegalArgumentException("config обязателен");
+            throw new IllegalArgumentException("config is required");
         }
         return push(CONFIGS.get(), config);
     }
@@ -136,7 +136,7 @@ public final class JavaToGpu {
                 }
                 closed = true;
                 if (stack.peek() != value) {
-                    throw new IllegalStateException("области JavaToGpu закрываются не в порядке открытия");
+                    throw new IllegalStateException("JavaToGpu scopes are closed out of opening order");
                 }
                 stack.pop();
             }
@@ -152,7 +152,7 @@ public final class JavaToGpu {
     public static void configureDefault(Consumer<GpuContext.Builder> config) {
         synchronized (LOCK) {
             if (defaultContext != null || defaultFailure != null) {
-                throw new IllegalStateException("контекст по умолчанию уже создан: настройте его до первого вызова ядра");
+                throw new IllegalStateException("the default context is already created: configure it before the first kernel call");
             }
             defaultConfig = config == null ? b -> {
             } : config;
@@ -178,7 +178,7 @@ public final class JavaToGpu {
             Result<GpuContext> r = builder.tryBuild();
             if (!r.isOk()) {
                 defaultFailure = r.diagnostics();
-                LOG.log(System.Logger.Level.WARNING, "GPU недоступен, ядра будут выполняться на JVM: {0}", describe(defaultFailure));
+                LOG.log(System.Logger.Level.WARNING, "GPU unavailable, kernels will run on the JVM: {0}", describe(defaultFailure));
                 return Optional.empty();
             }
             defaultContext = r.value();
@@ -329,12 +329,12 @@ public final class JavaToGpu {
                 }
             }
         } catch (IOException e) {
-            throw fail("RT-F02", "индекс ядер не читается: " + e.getMessage());
+            throw fail("RT-F02", "kernel index is unreadable: " + e.getMessage());
         }
         if (ids.size() != 1) {
             throw fail("RT-F02", ids.isEmpty()
-                    ? "ядро " + owner.getName() + "." + method + " не найдено в META-INF/gpu/kernels.idx"
-                    : "ядро " + owner.getName() + "." + method + " неоднозначно: " + ids);
+                    ? "kernel " + owner.getName() + "." + method + " not found in META-INF/gpu/kernels.idx"
+                    : "kernel " + owner.getName() + "." + method + " is ambiguous: " + ids);
         }
         return ids.iterator().next();
     }
@@ -352,8 +352,8 @@ public final class JavaToGpu {
         String path = IR_PREFIX + kernelId + ".gir";
         try (InputStream in = loader.getResourceAsStream(path)) {
             if (in == null) {
-                throw fail("RT-F02", "нет IR-ресурса " + path + " для ядра " + owner.getName()
-                        + ": проект собран без annotation processor'а frontend-java?");
+                throw fail("RT-F02", "no IR resource " + path + " for kernel " + owner.getName()
+                        + ": was the project built without the frontend-java annotation processor?");
             }
             Result<IrModule> r = IrBinary.read(in.readAllBytes());
             if (!r.isOk()) {
@@ -362,7 +362,7 @@ public final class JavaToGpu {
             MODULES.get(owner).put(kernelId, r.value());
             return r.value();
         } catch (IOException e) {
-            throw fail("RT-F02", "IR-ресурс " + path + " не читается: " + e.getMessage());
+            throw fail("RT-F02", "IR resource " + path + " is unreadable: " + e.getMessage());
         }
     }
 
@@ -376,7 +376,7 @@ public final class JavaToGpu {
                 return LaunchConfig.of1D(1);
             }
         }
-        throw fail("RT-L02", "размер запуска нельзя определить: у ядра нет массивов в аргументах, задайте его через "
+        throw fail("RT-L02", "the launch size cannot be determined: the kernel has no array arguments, specify it via "
                 + "JavaToGpu.launch(LaunchConfig...)");
     }
 
@@ -388,8 +388,8 @@ public final class JavaToGpu {
                                  Object[] args) {
         int kernel = module.functionCount() - 1;
         if (Validator.validate(module).functions()[kernel].usesGroupSync()) {
-            throw fail("RT-F01", "ядро " + owner.getName() + "." + method
-                    + " использует barrier или local-память: на JVM оно не выполняется, нужно устройство");
+            throw fail("RT-F01", "kernel " + owner.getName() + "." + method
+                    + " uses barrier or local memory: it does not run on the JVM, a device is required");
         }
         MethodHandle body = JVM_BODIES.get(owner).computeIfAbsent(kernelId, k -> jvmBody(owner, method, args.length));
         int dim = config.dim();
@@ -398,14 +398,14 @@ public final class JavaToGpu {
         for (int d = 0; d < 3; d++) {
             long g = d < dim ? config.global(d) : 1;
             if (g > Integer.MAX_VALUE) {
-                throw fail("RT-L01", "размер NDRange по оси " + d + " (" + g + ") не помещается в int: fallback на JVM невозможен");
+                throw fail("RT-L01", "NDRange size on axis " + d + " (" + g + ") does not fit in int: JVM fallback is impossible");
             }
             global[d] = (int) g;
             int req = module.fReqWorkGroup(kernel, d);
             long given = d < dim ? config.local(d) : 1;
             local[d] = req > 0 ? req : (given > 0 ? (int) given : 1);
             if (global[d] % local[d] != 0) {
-                throw fail("RT-L01", "ось " + d + ": размер NDRange " + global[d] + " не делится на размер группы " + local[d]);
+                throw fail("RT-L01", "axis " + d + ": NDRange size " + global[d] + " is not divisible by the group size " + local[d]);
             }
         }
         WorkItemContext ctx = new WorkItemContext(dim, global, local);
@@ -446,14 +446,14 @@ public final class JavaToGpu {
             }
         }
         if (found == null) {
-            throw fail("RT-F03", "у класса " + owner.getName() + " нет метода " + name
-                    + ": weave-шаг не выполнен (подключите плагин или запустите weaver после компиляции)");
+            throw fail("RT-F03", "class " + owner.getName() + " has no method " + name
+                    + ": weave step not performed (attach the plugin or run the weaver after compilation)");
         }
         try {
             found.setAccessible(true);
             return MethodHandles.lookup().unreflect(found).asSpreader(Object[].class, argCount);
         } catch (IllegalAccessException e) {
-            throw fail("RT-F03", "метод " + name + " недоступен: " + e.getMessage());
+            throw fail("RT-F03", "method " + name + " is unavailable: " + e.getMessage());
         }
     }
 
@@ -470,6 +470,6 @@ public final class JavaToGpu {
         for (Diagnostic d : diagnostics) {
             parts.add(d.code() + ": " + d.message());
         }
-        return parts.isEmpty() ? "причина не указана" : String.join("; ", parts);
+        return parts.isEmpty() ? "no reason given" : String.join("; ", parts);
     }
 }

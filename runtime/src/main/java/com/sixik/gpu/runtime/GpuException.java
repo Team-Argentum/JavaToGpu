@@ -30,7 +30,7 @@ public final class GpuException extends RuntimeException {
 
     private static String describe(List<Diagnostic> diagnostics) {
         if (diagnostics.isEmpty()) {
-            return "ошибка рантайма";
+            return "runtime error";
         }
         StringBuilder sb = new StringBuilder();
         for (Diagnostic d : diagnostics) {

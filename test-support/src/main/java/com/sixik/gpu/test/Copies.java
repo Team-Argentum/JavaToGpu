@@ -77,8 +77,8 @@ final class Copies {
             }
             return copy;
         } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("не удалось скопировать аргумент " + c.getName()
-                    + ": нужен открытый конструктор без аргументов и открытые поля (@Struct)", e);
+            throw new IllegalArgumentException("failed to copy argument " + c.getName()
+                    + ": a public no-arg constructor and public fields (@Struct) are required", e);
         }
     }
 }

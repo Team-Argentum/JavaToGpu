@@ -279,24 +279,24 @@ final class Aggregates {
         List<String> out = new ArrayList<>();
         String name = te.getSimpleName().toString();
         if (!te.getTypeParameters().isEmpty()) {
-            out.add(name + " не должен быть обобщённым");
+            out.add(name + " must not be generic");
         }
         if (te.getNestingKind().isNested() && !te.getModifiers().contains(Modifier.STATIC)) {
-            out.add(name + " - внутренний (нестатический) класс");
+            out.add(name + " is an inner (non-static) class");
         }
         List<VariableElement> fs = fields(te);
         if (fs.isEmpty()) {
-            out.add(name + " не имеет открытых нестатических полей");
+            out.add(name + " has no public non-static fields");
         }
         for (VariableElement f : fs) {
             if (f.getModifiers().contains(Modifier.FINAL)) {
-                out.add("поле " + f.getSimpleName() + " объявлено final: хост записывает результат в поля");
+                out.add("field " + f.getSimpleName() + " is declared final: the host writes the result into fields");
             }
             if (!fieldKindOk(f.asType())) {
-                out.add("поле " + f.getSimpleName() + " типа " + f.asType()
-                        + ": допустимы int, long, float, double, векторы и другие @Struct");
+                out.add("field " + f.getSimpleName() + " of type " + f.asType()
+                        + ": allowed are int, long, float, double, vectors and other @Struct");
             } else if (isStruct(f.asType()) && element(f.asType()) == te) {
-                out.add("struct содержит сам себя в поле " + f.getSimpleName());
+                out.add("struct contains itself in field " + f.getSimpleName());
             }
         }
         boolean noArg = false;
@@ -315,7 +315,7 @@ final class Aggregates {
             }
         }
         if (!noArg) {
-            out.add("нужен открытый конструктор без аргументов (хост создаёт объекты при возврате результата)");
+            out.add("a public no-arg constructor is required (the host creates objects when returning a result)");
         }
         for (ExecutableElement c : ctors) {
             if (!c.getParameters().isEmpty()) {
@@ -342,26 +342,26 @@ final class Aggregates {
         String name = te.getSimpleName().toString();
         List<? extends VariableElement> ps = c.getParameters();
         if (ps.size() != fs.size()) {
-            return "конструктор " + name + " с " + ps.size() + " параметрами: допустим конструктор по всем " + fs.size() + " полям";
+            return "constructor " + name + " with " + ps.size() + " parameters: only a constructor over all " + fs.size() + " fields is allowed";
         }
         for (int i = 0; i < ps.size(); i++) {
             if (!sameType(ps.get(i).asType(), fs.get(i).asType())) {
-                return "параметр " + (i + 1) + " конструктора " + name + " должен иметь тип поля " + fs.get(i).getSimpleName();
+                return "parameter " + (i + 1) + " of constructor " + name + " must have the field type " + fs.get(i).getSimpleName();
             }
         }
         MethodTree mt = trees.getTree(c);
         if (mt == null || mt.getBody() == null) {
-            return "исходник конструктора " + name + " недоступен: его нельзя проверить";
+            return "source of the constructor " + name + " is unavailable: it cannot be checked";
         }
         List<? extends StatementTree> body = mt.getBody().getStatements();
         // допускается явный вызов super() первым стейтментом
         int from = !body.isEmpty() && body.get(0).toString().replace(" ", "").startsWith("super(") ? 1 : 0;
         if (body.size() - from != fs.size()) {
-            return "конструктор " + name + " должен только присваивать параметры полям по порядку";
+            return "constructor " + name + " must only assign parameters to fields in order";
         }
         for (int i = 0; i < fs.size(); i++) {
             if (!isFieldAssign(body.get(from + i), fs.get(i).getSimpleName().toString(), ps.get(i).getSimpleName().toString())) {
-                return "конструктор " + name + ": " + (i + 1) + "-й стейтмент должен быть 'this." + fs.get(i).getSimpleName()
+                return "constructor " + name + ": statement " + (i + 1) + " must be 'this." + fs.get(i).getSimpleName()
                         + " = " + ps.get(i).getSimpleName() + ";'";
             }
         }
@@ -372,10 +372,10 @@ final class Aggregates {
         String name = te.getSimpleName().toString();
         MethodTree mt = trees.getTree(m);
         if (mt == null || mt.getBody() == null) {
-            return "исходник " + name + ".copy() недоступен: его нельзя проверить";
+            return "source of " + name + ".copy() is unavailable: it cannot be checked";
         }
         List<? extends StatementTree> body = mt.getBody().getStatements();
-        String bad = name + ".copy() должен быть 'return new " + name + "(this.поле, ...)' по всем полям в порядке объявления";
+        String bad = name + ".copy() must be 'return new " + name + "(this.field, ...)' over all fields in declaration order";
         if (body.size() != 1 || !(body.get(0) instanceof ReturnTree rt) || rt.getExpression() == null) {
             return bad;
         }
@@ -392,7 +392,7 @@ final class Aggregates {
             // вложенный struct копируется глубоко: поле-ссылка делило бы объект между оригиналом и копией
             boolean ok = isStruct(fs.get(i).asType()) ? isOwnFieldCopy(arg, field) : isOwnField(arg, field);
             if (!ok) {
-                return bad + " (поля-struct копируются как this.поле.copy())";
+                return bad + " (struct fields are copied as this.field.copy())";
             }
         }
         return null;

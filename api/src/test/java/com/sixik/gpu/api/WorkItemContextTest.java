@@ -65,11 +65,11 @@ class WorkItemContextTest {
         assertThrows(IllegalArgumentException.class, () -> new WorkItemContext(0, new int[]{1, 1, 1}, new int[]{1, 1, 1}));
         assertThrows(IllegalArgumentException.class, () -> new WorkItemContext(4, new int[]{1, 1, 1}, new int[]{1, 1, 1}));
         assertThrows(IllegalArgumentException.class, () -> new WorkItemContext(1, new int[]{1, 1}, new int[]{1, 1, 1}));
-        assertThrows(IllegalArgumentException.class, () -> WorkItemContext.of1D(0, 1), "размер 0");
-        assertThrows(IllegalArgumentException.class, () -> WorkItemContext.of1D(10, 0), "локальный размер 0");
-        assertThrows(IllegalArgumentException.class, () -> WorkItemContext.of1D(10, 4), "не кратно");
+        assertThrows(IllegalArgumentException.class, () -> WorkItemContext.of1D(0, 1), "size 0");
+        assertThrows(IllegalArgumentException.class, () -> WorkItemContext.of1D(10, 0), "local size 0");
+        assertThrows(IllegalArgumentException.class, () -> WorkItemContext.of1D(10, 4), "not a multiple");
         assertThrows(IllegalArgumentException.class,
-                () -> new WorkItemContext(1, new int[]{4, 2, 1}, new int[]{2, 1, 1}), "ось вне workDim больше 1");
+                () -> new WorkItemContext(1, new int[]{4, 2, 1}, new int[]{2, 1, 1}), "axis outside workDim is greater than 1");
     }
 
     @Test
@@ -77,9 +77,9 @@ class WorkItemContextTest {
         var ctx = WorkItemContext.of1D(10, 5);
         assertThrows(IllegalArgumentException.class, () -> ctx.setGlobalId(10, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> ctx.setGlobalId(-1, 0, 0));
-        assertThrows(IllegalArgumentException.class, () -> ctx.setGlobalId(0, 1, 0), "ось 1 имеет размер 1");
+        assertThrows(IllegalArgumentException.class, () -> ctx.setGlobalId(0, 1, 0), "axis 1 has size 1");
         ctx.setGlobalId(9, 0, 0);
-        assertEquals(9, ctx.globalId(0), "последний допустимый индекс");
+        assertEquals(9, ctx.globalId(0), "last valid index");
     }
 
     @Test
@@ -87,6 +87,6 @@ class WorkItemContextTest {
         int[] global = {4, 1, 1};
         var ctx = new WorkItemContext(1, global, new int[]{2, 1, 1});
         global[0] = 100;
-        assertEquals(4, ctx.globalSize(0), "изменение массива вызывающего не влияет на контекст");
+        assertEquals(4, ctx.globalSize(0), "modifying the caller's array does not affect the context");
     }
 }

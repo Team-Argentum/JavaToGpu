@@ -80,7 +80,7 @@ final class DiskCache {
      */
     DiskCache(Path dir, long maxBytes) {
         if (dir == null || maxBytes <= 0) {
-            throw new IllegalArgumentException("нужен каталог и положительный предел размера");
+            throw new IllegalArgumentException("a directory and a positive size limit are required");
         }
         this.dir = dir;
         this.maxBytes = maxBytes;

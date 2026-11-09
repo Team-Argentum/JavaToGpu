@@ -118,7 +118,7 @@ final class Marshal {
             case Long x -> x;
             case Float x -> Float.floatToRawIntBits(x);
             case Double x -> Double.doubleToRawLongBits(x);
-            default -> throw new IllegalArgumentException("не скаляр: " + value);
+            default -> throw new IllegalArgumentException("not a scalar: " + value);
         };
     }
 
@@ -172,7 +172,7 @@ final class Marshal {
             case long[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_LONG, 0, n);
             case float[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_FLOAT, 0, n);
             case double[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_DOUBLE, 0, n);
-            default -> throw new IllegalArgumentException("неподдержанный массив " + array.getClass());
+            default -> throw new IllegalArgumentException("unsupported array " + array.getClass());
         }
     }
 
@@ -197,7 +197,7 @@ final class Marshal {
             case long[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_LONG, 0, x, 0, n);
             case float[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_FLOAT, 0, x, 0, n);
             case double[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_DOUBLE, 0, x, 0, n);
-            default -> throw new IllegalArgumentException("неподдержанный массив " + array.getClass());
+            default -> throw new IllegalArgumentException("unsupported array " + array.getClass());
         }
     }
 
@@ -214,7 +214,7 @@ final class Marshal {
      */
     static String objectArrayProblem(IrModule m, int elem, Object a) {
         if (!(a instanceof Object[] arr)) {
-            return "ожидается массив объектов (Object[]), передано " + describe(a);
+            return "an array of objects (Object[]) is expected, passed " + describe(a);
         }
         String why = HostObjects.mismatch(m, elem, arr.getClass().getComponentType());
         if (!why.isEmpty()) {
@@ -222,7 +222,7 @@ final class Marshal {
         }
         for (int i = 0; i < arr.length; i++) {
             if (arr[i] == null) {
-                return "элемент " + i + " равен null (на устройстве у него нет значения «нет объекта»)";
+                return "element " + i + " is null (on the device there is no 'no object' value for it)";
             }
         }
         return "";

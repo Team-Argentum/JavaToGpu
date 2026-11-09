@@ -300,7 +300,7 @@ public final class GpuContext implements AutoCloseable {
                 a = OpenClApi.load();
                 owns = true;
                 if (a == null) {
-                    return failure("RT-D01", "библиотека OpenCL не найдена: устройств нет");
+                    return failure("RT-D01", "OpenCL library not found: no devices");
                 }
             }
             try {
@@ -310,8 +310,8 @@ public final class GpuContext implements AutoCloseable {
                 if (chosen.isEmpty()) {
                     closeIfOwned(a, owns);
                     return failure("RT-D01", all.isEmpty()
-                            ? "OpenCL-устройств нет"
-                            : "ни одно из " + all.size() + " устройств не подходит под политику " + p + ": "
+                            ? "no OpenCL devices"
+                            : "none of the " + all.size() + " devices matches the policy " + p + ": "
                             + describeAll(all));
                 }
                 DeviceInfo d = chosen.get();
@@ -325,11 +325,11 @@ public final class GpuContext implements AutoCloseable {
                 }
                 GpuContext gc = new GpuContext(a, owns, d, ctx, q, listener == null ? EventListener.NONE : listener,
                         emitOptions, fallback == null ? Fallback.ALLOWED : fallback, openDiskCache(owns), openSourceDump(), codegenVersion);
-                gc.emit(GpuEvent.Kind.DEVICE_SELECTED, d.describe(), 0, 0, d.platformName() + ", драйвер " + d.driverVersion());
+                gc.emit(GpuEvent.Kind.DEVICE_SELECTED, d.describe(), 0, 0, d.platformName() + ", driver " + d.driverVersion());
                 return Result.ok(gc);
             } catch (DeviceApiException e) {
                 closeIfOwned(a, owns);
-                return failure("RT-D03", "ошибка драйвера при выборе устройства: " + e.getMessage());
+                return failure("RT-D03", "driver error while selecting a device: " + e.getMessage());
             }
         }
 
@@ -465,10 +465,10 @@ public final class GpuContext implements AutoCloseable {
      */
     public Result<CompiledKernel> compile(IrModule module, int kernel, EmitOptions options) {
         if (module == null || options == null) {
-            throw new IllegalArgumentException("module и options обязательны");
+            throw new IllegalArgumentException("module and options are required");
         }
         if (closed) {
-            return failure("RT-X02", "контекст закрыт");
+            return failure("RT-X02", "context is closed");
         }
         StringBuilder variant = new StringBuilder();
         int actual = variantFor(module, kernel, variant);
@@ -515,8 +515,8 @@ public final class GpuContext implements AutoCloseable {
             if ((need & ~device.features()) == 0) {
                 if (f != kernel) {
                     int lacking = (requiredMask(m, kernel) | infos[kernel].requiredFeatures()) & ~device.features();
-                    note.append("; вариант f").append(f).append(" вместо f").append(kernel)
-                            .append(": устройство не поддерживает ").append(Features.describe(lacking));
+                    note.append("; variant f").append(f).append(" instead of f").append(kernel)
+                            .append(": the device does not support ").append(Features.describe(lacking));
                 }
                 return f;
             }
@@ -587,15 +587,15 @@ public final class GpuContext implements AutoCloseable {
         dumpSource(art);
         int missing = (art.requiredFeatures() | requiredMask(m, kernel)) & ~device.features();
         if (missing != 0) {
-            return failure("RT-D02", "устройство " + device.describe() + " не поддерживает " + Features.describe(missing)
-                    + ", а ядро " + art.entry() + " их требует"
-                    + (m.fFallback(kernel) >= 0 ? " (вариант fallback тоже не подошёл)" : ""));
+            return failure("RT-D02", "device " + device.describe() + " does not support " + Features.describe(missing)
+                    + ", but the kernel " + art.entry() + " requires them"
+                    + (m.fFallback(kernel) >= 0 ? " (the fallback variant did not fit either)" : ""));
         }
         long localBytes = localMemoryBytes(m, kernel);
         if (localBytes > device.localMemory()) {
-            return failure("RT-D04", "ядро " + art.entry() + " объявляет " + localBytes + " байт local-памяти, а устройство "
-                    + device.describe() + " даёт на work-group " + device.localMemory() + " (CL_DEVICE_LOCAL_MEM_SIZE); "
-                    + "уменьшите массивы с @Local");
+            return failure("RT-D04", "kernel " + art.entry() + " declares " + localBytes + " bytes of local memory, but the device "
+                    + device.describe() + " provides per work-group " + device.localMemory() + " (CL_DEVICE_LOCAL_MEM_SIZE); "
+                    + "reduce the @Local arrays");
         }
         int[] access = Validator.validate(m).functions()[kernel].paramAccess();
         long program = 0;
@@ -633,7 +633,7 @@ public final class GpuContext implements AutoCloseable {
             if (program != 0) {
                 api.release(DeviceApi.HandleKind.PROGRAM, program);
             }
-            return failure("RT-X01", "ошибка драйвера при компиляции: " + e.getMessage());
+            return failure("RT-X01", "driver error during compilation: " + e.getMessage());
         } finally {
             lock.unlock();
         }
@@ -730,14 +730,14 @@ public final class GpuContext implements AutoCloseable {
     public GpuBuffer allocate(int elementType, long length) {
         boolean numeric = Types.isInteger(elementType) || Types.isFloat(elementType);
         if (!numeric) {
-            throw new GpuException(List.of(error("RT-A03", "недопустимый тип элемента буфера t" + elementType)));
+            throw new GpuException(List.of(error("RT-A03", "invalid buffer element type t" + elementType)));
         }
         if (length < 0) {
-            throw new GpuException(List.of(error("RT-A03", "длина буфера не может быть отрицательной: " + length)));
+            throw new GpuException(List.of(error("RT-A03", "buffer length cannot be negative: " + length)));
         }
         long bytes = length * Marshal.elementSize(elementType);
         if (device.maxAllocation() > 0 && bytes > device.maxAllocation()) {
-            throw new GpuException(List.of(error("RT-A03", "буфер в " + bytes + " байт больше допустимой аллокации устройства ("
+            throw new GpuException(List.of(error("RT-A03", "a buffer of " + bytes + " bytes exceeds the device's maximum allocation ("
                     + device.maxAllocation() + ")")));
         }
         lock.lock();
@@ -747,7 +747,7 @@ public final class GpuContext implements AutoCloseable {
             buffers.add(b);
             return b;
         } catch (DeviceApiException e) {
-            throw new GpuException(List.of(error("RT-X01", "ошибка драйвера при выделении буфера: " + e.getMessage())));
+            throw new GpuException(List.of(error("RT-X01", "driver error while allocating a buffer: " + e.getMessage())));
         } finally {
             lock.unlock();
         }
@@ -763,7 +763,7 @@ public final class GpuContext implements AutoCloseable {
     public GpuBuffer upload(Object hostArray) {
         int type = Marshal.elementTypeOf(hostArray);
         if (type < 0) {
-            throw new GpuException(List.of(error("RT-A03", "не поддержанный массив: " + Marshal.describe(hostArray))));
+            throw new GpuException(List.of(error("RT-A03", "unsupported array: " + Marshal.describe(hostArray))));
         }
         GpuBuffer b = allocate(type, Marshal.length(hostArray));
         try {
@@ -786,7 +786,7 @@ public final class GpuContext implements AutoCloseable {
             }
             emit(GpuEvent.Kind.UPLOAD, b.toString(), System.nanoTime() - t0, bytes, "");
         } catch (DeviceApiException e) {
-            throw new GpuException(List.of(error("RT-X01", "ошибка драйвера при записи буфера: " + e.getMessage())));
+            throw new GpuException(List.of(error("RT-X01", "driver error while writing a buffer: " + e.getMessage())));
         } finally {
             lock.unlock();
         }
@@ -806,7 +806,7 @@ public final class GpuContext implements AutoCloseable {
             }
             emit(GpuEvent.Kind.READBACK, b.toString(), System.nanoTime() - t0, bytes, "");
         } catch (DeviceApiException e) {
-            throw new GpuException(List.of(error("RT-X01", "ошибка драйвера при чтении буфера: " + e.getMessage())));
+            throw new GpuException(List.of(error("RT-X01", "driver error while reading a buffer: " + e.getMessage())));
         } finally {
             lock.unlock();
         }
@@ -814,19 +814,19 @@ public final class GpuContext implements AutoCloseable {
 
     private void checkTransfer(GpuBuffer b, Object array) {
         if (b.owner() != this) {
-            throw new GpuException(List.of(error("RT-A02", "буфер принадлежит другому контексту")));
+            throw new GpuException(List.of(error("RT-A02", "the buffer belongs to another context")));
         }
         if (b.isClosed()) {
-            throw new GpuException(List.of(error("RT-A02", "буфер уже закрыт")));
+            throw new GpuException(List.of(error("RT-A02", "the buffer is already closed")));
         }
         int type = Marshal.elementTypeOf(array);
         if (type < 0 || !Marshal.compatible(b.elementType(), type)) {
-            throw new GpuException(List.of(error("RT-A02", "массив " + Marshal.describe(array)
-                    + " не подходит буферу с элементом t" + b.elementType())));
+            throw new GpuException(List.of(error("RT-A02", "array " + Marshal.describe(array)
+                    + " does not fit a buffer with element t" + b.elementType())));
         }
         if (Marshal.length(array) > b.length()) {
-            throw new GpuException(List.of(error("RT-A02", "массив из " + Marshal.length(array)
-                    + " элементов не помещается в буфер из " + b.length())));
+            throw new GpuException(List.of(error("RT-A02", "an array of " + Marshal.length(array)
+                    + " elements does not fit in a buffer of " + b.length())));
         }
     }
 
@@ -883,13 +883,13 @@ public final class GpuContext implements AutoCloseable {
      */
     public Result<PreparedLauncher> prepare(CompiledKernel kernel, Object... args) {
         if (kernel == null) {
-            throw new IllegalArgumentException("kernel обязателен");
+            throw new IllegalArgumentException("kernel is required");
         }
         if (closed) {
-            return failure("RT-X02", "контекст закрыт");
+            return failure("RT-X02", "context is closed");
         }
         if (kernel.owner() != this) {
-            return failure("RT-A02", "ядро скомпилировано в другом контексте");
+            return failure("RT-A02", "the kernel was compiled in another context");
         }
         Result<PreparedLauncher> r = PreparedLauncher.create(this, kernel, args == null ? new Object[0] : args);
         if (r.isOk()) {
@@ -914,14 +914,14 @@ public final class GpuContext implements AutoCloseable {
      */
     public Result<LaunchStats> launch(CompiledKernel kernel, LaunchConfig config, Object... args) {
         if (kernel == null || config == null) {
-            throw new IllegalArgumentException("kernel и config обязательны");
+            throw new IllegalArgumentException("kernel and config are required");
         }
         Object[] actual = args == null ? new Object[0] : args;
         if (closed) {
-            return failure("RT-X02", "контекст закрыт");
+            return failure("RT-X02", "context is closed");
         }
         if (kernel.owner() != this) {
-            return failure("RT-A02", "ядро скомпилировано в другом контексте");
+            return failure("RT-A02", "the kernel was compiled in another context");
         }
         List<Diagnostic> problems = new ArrayList<>();
         long[] local = checkLaunch(kernel, config, problems);
@@ -935,11 +935,11 @@ public final class GpuContext implements AutoCloseable {
         lock.lock();
         try {
             if (closed) {
-                return failure("RT-X02", "контекст закрыт");
+                return failure("RT-X02", "context is closed");
             }
             return execute(kernel, config, local, actual);
         } catch (DeviceApiException e) {
-            return failure("RT-X01", "ошибка драйвера при запуске: " + e.getMessage());
+            return failure("RT-X01", "driver error during launch: " + e.getMessage());
         } finally {
             lock.unlock();
         }
@@ -957,27 +957,27 @@ public final class GpuContext implements AutoCloseable {
             int req = m.fReqWorkGroup(f, d);
             long given = cfg.local(d);
             if (req > 0 && given != 0 && given != req) {
-                out.add(error("RT-L01", "ось " + d + ": задан размер группы " + given + ", а ядро требует " + req));
+                out.add(error("RT-L01", "axis " + d + ": group size given " + given + ", but the kernel requires " + req));
             }
             local[d] = req > 0 ? req : given;
             any |= local[d] != 0;
             if (local[d] != 0) {
                 product *= local[d];
                 if (cfg.global(d) % local[d] != 0) {
-                    out.add(error("RT-L01", "ось " + d + ": размер NDRange " + cfg.global(d)
-                            + " не делится на размер группы " + local[d]));
+                    out.add(error("RT-L01", "axis " + d + ": NDRange size " + cfg.global(d)
+                            + " is not divisible by the group size " + local[d]));
                 }
             }
         }
         for (int d = dim; d < 3; d++) {
             if (m.fReqWorkGroup(f, d) > 1) {
-                out.add(error("RT-L01", "ядро требует размер группы " + m.fReqWorkGroup(f, d) + " по оси " + d
-                        + ", а запуск " + dim + "D"));
+                out.add(error("RT-L01", "the kernel requires group size " + m.fReqWorkGroup(f, d) + " on axis " + d
+                        + ", but the launch has " + dim + "D"));
             }
         }
         long limit = Math.min(device.maxWorkGroupSize(), k.maxWorkGroupSize());
         if (any && limit > 0 && product > limit) {
-            out.add(error("RT-L01", "work-group из " + product + " элементов больше допустимой для ядра (" + limit + ")"));
+            out.add(error("RT-L01", "a work-group of " + product + " items exceeds the kernel's limit (" + limit + ")"));
         }
         return any ? local : null;
     }
@@ -987,7 +987,7 @@ public final class GpuContext implements AutoCloseable {
         int f = k.function();
         int n = m.fParamCount(f);
         if (args.length != n) {
-            out.add(error("RT-A01", "ядро принимает " + n + " аргументов, передано " + args.length));
+            out.add(error("RT-A01", "the kernel takes " + n + " arguments, passed " + args.length));
             return;
         }
         for (int i = 0; i < n; i++) {
@@ -1012,37 +1012,37 @@ public final class GpuContext implements AutoCloseable {
             int elem = Types.elem(m, t);
             if (HostObjects.isAggregate(m, elem)) {
                 if (a instanceof GpuBuffer) {
-                    out.add(error("RT-A02", "аргумент " + i + ": буферы GpuBuffer для массивов векторов и struct "
-                            + "пока не поддержаны, передайте массив объектов"));
+                    out.add(error("RT-A02", "argument " + i + ": GpuBuffer for arrays of vectors and structs "
+                            + "is not supported yet, pass an array of objects"));
                 } else {
                     String why = Marshal.objectArrayProblem(m, elem, a);
                     if (!why.isEmpty()) {
-                        out.add(error("RT-A02", "аргумент " + i + ": " + why));
+                        out.add(error("RT-A02", "argument " + i + ": " + why));
                     }
                 }
             } else if (a instanceof GpuBuffer b) {
                 if (b.owner() != this) {
-                    out.add(error("RT-A02", "аргумент " + i + ": буфер принадлежит другому контексту"));
+                    out.add(error("RT-A02", "argument " + i + ": the buffer belongs to another context"));
                 } else if (b.isClosed()) {
-                    out.add(error("RT-A02", "аргумент " + i + ": буфер закрыт"));
+                    out.add(error("RT-A02", "argument " + i + ": the buffer is closed"));
                 } else if (!Marshal.compatible(elem, b.elementType())) {
-                    out.add(error("RT-A02", "аргумент " + i + ": буфер с элементом t" + b.elementType()
-                            + " не подходит параметру с элементом t" + elem));
+                    out.add(error("RT-A02", "argument " + i + ": buffer with element t" + b.elementType()
+                            + " does not fit a parameter with element t" + elem));
                 } else if (b.length() > Integer.MAX_VALUE) {
-                    out.add(error("RT-A02", "аргумент " + i + ": длина буфера не помещается в int"));
+                    out.add(error("RT-A02", "argument " + i + ": the buffer length does not fit in int"));
                 }
             } else if (!Marshal.accepts(elem, a)) {
-                out.add(error("RT-A02", "аргумент " + i + ": параметру-массиву t" + elem + " не подходит "
+                out.add(error("RT-A02", "argument " + i + ": array parameter t" + elem + " does not fit "
                         + Marshal.describe(a)));
             }
         } else if (HostObjects.isAggregate(m, t)) {
-            String why = a == null ? "ожидается объект вектора или struct, передано null"
+            String why = a == null ? "expected a vector or struct object, passed null"
                     : HostObjects.mismatch(m, t, a.getClass());
             if (!why.isEmpty()) {
-                out.add(error("RT-A02", "аргумент " + i + ": " + why));
+                out.add(error("RT-A02", "argument " + i + ": " + why));
             }
         } else if (!Marshal.scalarMatches(t, a)) {
-            out.add(error("RT-A02", "аргумент " + i + ": скалярному параметру t" + t + " не подходит "
+            out.add(error("RT-A02", "argument " + i + ": scalar parameter t" + t + " does not fit "
                     + Marshal.describe(a)));
         }
     }
@@ -1073,13 +1073,13 @@ public final class GpuContext implements AutoCloseable {
                     : HostObjects.isAggregate(m, elem) ? Marshal.byteSize(m, elem, (Object[]) args[i])
                     : Marshal.byteSize(args[i]);
             if (bytes > device.maxConstantBuffer()) {
-                out.add(error("RT-A04", "аргумент " + i + ": массив @Global(constant = true) занимает " + bytes
-                        + " байт, а устройство допускает в __constant не более " + device.maxConstantBuffer()
-                        + " (CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE); передайте его как обычный @Global-массив"));
+                out.add(error("RT-A04", "argument " + i + ": the @Global(constant = true) array takes " + bytes
+                        + " bytes, but the device allows at most " + device.maxConstantBuffer()
+                        + " in __constant (CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE); pass it as an ordinary @Global array"));
             }
         }
         if (count > device.maxConstantArgs()) {
-            out.add(error("RT-A04", "ядро получает " + count + " аргументов __constant, а устройство допускает не более "
+            out.add(error("RT-A04", "the kernel receives " + count + " __constant arguments, but the device allows at most "
                     + device.maxConstantArgs() + " (CL_DEVICE_MAX_CONSTANT_ARGS)"));
         }
     }
@@ -1265,7 +1265,7 @@ public final class GpuContext implements AutoCloseable {
 
     private void requireOpen() {
         if (closed) {
-            throw new GpuException(List.of(error("RT-X02", "контекст закрыт")));
+            throw new GpuException(List.of(error("RT-X02", "context is closed")));
         }
     }
 

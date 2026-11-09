@@ -111,20 +111,20 @@ public final class Weaver {
                 continue;
             }
             if ((m.access & Opcodes.ACC_STATIC) == 0) {
-                problems.add(where + ": ядро должно быть static");
+                problems.add(where + ": the kernel must be static");
                 continue;
             }
             if ((m.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) {
-                problems.add(where + ": у ядра нет тела");
+                problems.add(where + ": the kernel has no body");
                 continue;
             }
             if (Type.getReturnType(m.desc).getSort() != Type.VOID) {
-                problems.add(where + ": ядро должно возвращать void");
+                problems.add(where + ": the kernel must return void");
                 continue;
             }
             String id = index.kernelId(binaryName, m.name, m.desc);
             if (id == null) {
-                problems.add(where + ": нет в kernels.idx (фронтенд не собрал это ядро)");
+                problems.add(where + ": not in kernels.idx (the frontend did not build this kernel)");
                 continue;
             }
             cls.methods.add(moveBody(m));
@@ -161,7 +161,7 @@ public final class Weaver {
             for (String className : index.classes()) {
                 Path file = root.resolve(className.replace('.', '/') + ".class");
                 if (!Files.isRegularFile(file)) {
-                    problems.add(className + ": class-файл " + file + " не найден рядом с индексом");
+                    problems.add(className + ": class file " + file + " not found next to the index");
                     continue;
                 }
                 Outcome o = weave(Files.readAllBytes(file), index);

@@ -111,7 +111,7 @@ public final class BuiltinsDef {
                 case "vectors" -> {
                     int colon = rest.indexOf(':');
                     if (colon < 0) {
-                        throw error(no, "vectors: ожидалось '<скаляры> : <lanes>'");
+                        throw error(no, "vectors: expected '<scalars> : <lanes>'");
                     }
                     for (String s : words(rest.substring(0, colon))) {
                         requireScalar(s, no);
@@ -120,7 +120,7 @@ public final class BuiltinsDef {
                     for (String l : words(rest.substring(colon + 1))) {
                         int lanes = parseInt(l, no, "lanes");
                         if (!API_LANES.contains(lanes)) {
-                            throw error(no, "vectors: недопустимое число компонент " + lanes);
+                            throw error(no, "vectors: invalid lane count " + lanes);
                         }
                         vectorLanes.add(lanes);
                     }
@@ -135,10 +135,10 @@ public final class BuiltinsDef {
                 case "doc" -> {
                     requireCurrent(cur, no, "doc");
                     if (cur.doc != null) {
-                        throw error(no, "builtin " + cur.name + ": повторный doc");
+                        throw error(no, "builtin " + cur.name + ": duplicate doc");
                     }
                     if (rest.isEmpty()) {
-                        throw error(no, "builtin " + cur.name + ": пустой doc");
+                        throw error(no, "builtin " + cur.name + ": empty doc");
                     }
                     cur.doc = rest;
                 }
@@ -146,11 +146,11 @@ public final class BuiltinsDef {
                     requireCurrent(cur, no, "jvm");
                     int eq = rest.indexOf('=');
                     if (eq < 0) {
-                        throw error(no, "jvm: ожидалось '[типы] = выражение'");
+                        throw error(no, "jvm: expected '[types] = expression'");
                     }
                     String expr = rest.substring(eq + 1).strip();
                     if (expr.isEmpty()) {
-                        throw error(no, "jvm: пустое выражение");
+                        throw error(no, "jvm: empty expression");
                     }
                     String keys = rest.substring(0, eq).strip();
                     List<String> keyList = keys.isEmpty() ? List.of("") : List.of(keys.split("\\s*,\\s*"));
@@ -159,15 +159,15 @@ public final class BuiltinsDef {
                             requireScalar(k, no);
                         }
                         if (cur.jvm.put(k, expr) != null) {
-                            throw error(no, "builtin " + cur.name + ": повторная jvm-реализация для '" + k + "'");
+                            throw error(no, "builtin " + cur.name + ": duplicate jvm implementation for '" + k + "'");
                         }
                     }
                 }
-                default -> throw error(no, "неизвестная директива '" + head + "'");
+                default -> throw error(no, "unknown directive '" + head + "'");
             }
         }
         if (version < 0) {
-            throw error(0, "нет строки version");
+            throw error(0, "missing version line");
         }
 
         List<Builtin> builtins = new ArrayList<>();
@@ -175,13 +175,13 @@ public final class BuiltinsDef {
         Set<String> names = new LinkedHashSet<>();
         for (Draft d : drafts) {
             if (!ids.add(d.id)) {
-                throw error(d.line, "повторный id " + d.id);
+                throw error(d.line, "duplicate id " + d.id);
             }
             if (!names.add(d.name)) {
-                throw error(d.line, "повторное имя " + d.name);
+                throw error(d.line, "duplicate name " + d.name);
             }
             if (d.doc == null) {
-                throw error(d.line, "builtin " + d.name + ": нет doc");
+                throw error(d.line, "builtin " + d.name + ": missing doc");
             }
             builtins.add(d.freeze());
         }
@@ -193,7 +193,7 @@ public final class BuiltinsDef {
     private static Draft parseRow(String line, int no) {
         String[] r = line.split("\\s+", 4);
         if (r.length < 4) {
-            throw error(no, "ожидалось '<id> <name> <flags> <ret> (<args>)'");
+            throw error(no, "expected '<id> <name> <flags> <ret> (<args>)'");
         }
         Draft d = new Draft();
         d.line = no;
@@ -207,14 +207,14 @@ public final class BuiltinsDef {
             } else if (FLAG_NAMES.contains(f)) {
                 d.flags.add(f);
             } else {
-                throw error(no, "неизвестный флаг '" + f + "'");
+                throw error(no, "unknown flag '" + f + "'");
             }
         }
         String sig = r[3].strip();
         int open = sig.indexOf('(');
         int close = sig.lastIndexOf(')');
         if (open < 0 || close < open) {
-            throw error(no, "плохая сигнатура '" + sig + "'");
+            throw error(no, "bad signature '" + sig + "'");
         }
         d.ret = sig.substring(0, open).strip();
         String inner = sig.substring(open + 1, close).strip();
@@ -229,13 +229,13 @@ public final class BuiltinsDef {
 
     private static void requireScalar(String s, int no) {
         if (!API_SCALARS.contains(s)) {
-            throw error(no, "тип '" + s + "' не имеет Java-представления (допустимы " + API_SCALARS + ")");
+            throw error(no, "type '" + s + "' has no Java representation (allowed: " + API_SCALARS + ")");
         }
     }
 
     private static void requireCurrent(Draft cur, int no, String directive) {
         if (cur == null) {
-            throw error(no, directive + " до первой строки builtin");
+            throw error(no, directive + " before the first builtin line");
         }
     }
 
@@ -243,7 +243,7 @@ public final class BuiltinsDef {
         try {
             return Integer.parseInt(s.strip());
         } catch (NumberFormatException e) {
-            throw error(no, what + ": не число '" + s + "'");
+            throw error(no, what + ": not a number '" + s + "'");
         }
     }
 

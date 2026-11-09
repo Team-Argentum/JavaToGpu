@@ -43,7 +43,7 @@ public class DeviceLaunchBenchmarks {
     public void setup() {
         var built = GpuContext.builder().tryBuild();
         if (!built.isOk()) {
-            throw new IllegalStateException("нет OpenCL-устройства: " + built.diagnostics());
+            throw new IllegalStateException("no OpenCL device: " + built.diagnostics());
         }
         ctx = built.value();
         kernel = ctx.compile(FakeLaunchBenchmarks.scaled()).value();

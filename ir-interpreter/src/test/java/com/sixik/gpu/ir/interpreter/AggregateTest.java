@@ -104,7 +104,7 @@ class AggregateTest {
         b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), b.extract(q, 0))));
         Result<Interpreter.Execution> r = run(b.build(), NdRange.of1D(1), (Object) new int[1]);
         assertEquals("IN-R02", r.diagnostics().get(0).code());
-        assertTrue(r.diagnostics().get(0).message().contains("компоненте 1"));
+        assertTrue(r.diagnostics().get(0).message().contains("component 1"));
     }
 
     @Test
@@ -154,7 +154,7 @@ class AggregateTest {
         ok(run(b.build(), NdRange.of1D(2), (Object) data));
         assertEquals(new Float4(2, 4, 6, 8), data[0]);
         assertEquals(new Float4(-2, 0, 1, 16), data[1]);
-        assertEquals(new Float4(1, 2, 3, 4), first, "прежний объект неизменяем");
+        assertEquals(new Float4(1, 2, 3, 4), first, "the previous object is immutable");
     }
 
     @Test
@@ -243,13 +243,13 @@ class AggregateTest {
         Particle p1 = new Particle(10, 20, new Float4(2, 2, 2, 2), -3);
         Particle[] data = {p0, p1};
         ok(run(b.build(), NdRange.of1D(2), (Object) data));
-        assertSame(p0, data[0], "struct обновляется на месте: идентичность объекта сохраняется");
+        assertSame(p0, data[0], "struct is updated in place: object identity is preserved");
         assertEquals(2f, p0.x);
         assertEquals(2f, p0.y);
         assertEquals(10, p0.id);
         assertEquals(11f, p1.x);
         assertEquals(-6, p1.id);
-        assertEquals(new Float4(2, 2, 2, 2), p1.v, "вектор-поле не тронуто");
+        assertEquals(new Float4(2, 2, 2, 2), p1.v, "the vector field is untouched");
     }
 
     @Test
@@ -267,7 +267,7 @@ class AggregateTest {
         assertEquals(102f, res[1].y);
         assertEquals(1f, res[1].x);
         assertEquals(4, res[1].id);
-        assertEquals(2f, in.y, "параметр-значение хоста не изменяется");
+        assertEquals(2f, in.y, "the host's value parameter is not changed");
     }
 
     // ---- ошибки -----------------------------------------------------------------------------------
@@ -283,7 +283,7 @@ class AggregateTest {
 
         Result<Interpreter.Execution> nulls = run(m, NdRange.of1D(1), (Object) new Particle[]{new Particle(), null});
         assertEquals("IN-A02", nulls.diagnostics().get(0).code());
-        assertTrue(nulls.diagnostics().get(0).message().contains("элемент 1"), nulls.diagnostics().toString());
+        assertTrue(nulls.diagnostics().get(0).message().contains("element 1"), nulls.diagnostics().toString());
 
         Result<Interpreter.Execution> wrong = run(m, NdRange.of1D(1), (Object) new Wrong[]{new Wrong()});
         assertEquals("IN-A02", wrong.diagnostics().get(0).code());
@@ -304,7 +304,7 @@ class AggregateTest {
         Result<Interpreter.Execution> r = run(b.build(), NdRange.of1D(1),
                 (Object) new Particle[]{new Particle(), new Particle()});
         assertEquals("IN-R01", r.diagnostics().get(0).code());
-        assertTrue(r.diagnostics().get(0).message().contains("длина 2"), r.diagnostics().get(0).message());
+        assertTrue(r.diagnostics().get(0).message().contains("length 2"), r.diagnostics().get(0).message());
     }
 
     @Test

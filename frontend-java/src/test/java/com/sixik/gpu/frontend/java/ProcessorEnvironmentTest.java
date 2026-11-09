@@ -177,7 +177,7 @@ class ProcessorEnvironmentTest {
         assertTrue(r.gpu().isEmpty(), r.describe());
         assertEquals(IrBinary.kernelId(Fixtures.computeSine()), IrBinary.kernelId(r.module()));
         assertEquals(expectDirectFailure, p.directTreesFails,
-                "Trees.instance на обёртке должен " + (expectDirectFailure ? "" : "не ") + "падать");
+                "Trees.instance on the wrapper must " + (expectDirectFailure ? "" : "not ") + "fail");
     }
 
     @Test
@@ -208,7 +208,7 @@ class ProcessorEnvironmentTest {
         FrontendHarness.Outcome r = FrontendHarness.compile(p, List.of("-proc:only"), SmokeTest.COMPUTE_SINE);
         assertFalse(r.success(), r.describe());
         assertEquals(List.of("GPU0201"), r.errorCodes(), r.describe());
-        assertTrue(r.resources().isEmpty(), "при сбое окружения ничего не записывается");
+        assertTrue(r.resources().isEmpty(), "nothing is written on an environment failure");
     }
 
     @Test
@@ -311,7 +311,7 @@ class ProcessorEnvironmentTest {
     void irValidatorFindingsBecomeGpu0901AndGpu0130() {
         assertTrue(Validator.validate(invalidModule()).hasErrors());
         assertFalse(Validator.validate(warningModule()).hasErrors());
-        assertFalse(Validator.validate(warningModule()).diagnostics().isEmpty(), "предупреждение IR-B01 ожидается");
+        assertFalse(Validator.validate(warningModule()).diagnostics().isEmpty(), "warning IR-B01 is expected");
 
         FrontendHarness.Outcome r = FrontendHarness.compile(new IrHook(), List.of("-proc:only"), SmokeTest.COMPUTE_SINE);
         assertFalse(r.success(), r.describe());
@@ -319,6 +319,6 @@ class ProcessorEnvironmentTest {
         assertTrue(gpu.stream().anyMatch(d -> d.code().equals("GPU0901") && d.kind() == Diagnostic.Kind.ERROR
                 && d.message().contains("IR-V02") && d.message().contains("bad")), r.describe());
         assertTrue(gpu.stream().anyMatch(d -> d.code().equals("GPU0130") && d.kind() == Diagnostic.Kind.WARNING
-                && d.message().contains("расходящимся") && d.message().contains("suspicious")), r.describe());
+                && d.message().contains("divergent") && d.message().contains("suspicious")), r.describe());
     }
 }

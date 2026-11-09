@@ -261,13 +261,13 @@ class DiagnosticsTest {
         for (Case c : CASES) {
             String src = source(c.members());
             FrontendHarness.Outcome r = FrontendHarness.compile(src);
-            assertFalse(r.success(), c.code() + ": компиляция должна завершиться ошибкой\n" + r.describe());
+            assertFalse(r.success(), c.code() + ": compilation must fail with an error\n" + r.describe());
             FrontendHarness.Diag d = r.gpu().stream().filter(x -> x.code().equals(c.code())).findFirst().orElse(null);
-            assertTrue(d != null, c.code() + " не выдан; выданы: " + r.errorCodes() + "\n" + r.describe());
+            assertTrue(d != null, c.code() + " was not reported; reported: " + r.errorCodes() + "\n" + r.describe());
             long expectedLine = markerLine(src);
-            assertEquals(expectedLine, d.line(), c.code() + ": строка диагностики\n" + r.describe());
+            assertEquals(expectedLine, d.line(), c.code() + ": diagnostic line\n" + r.describe());
             assertTrue(d.message().startsWith(c.code() + ":"), d.message());
-            assertTrue(d.message().contains("Подсказка:"), c.code() + ": у ошибки есть подсказка: " + d.message());
+            assertTrue(d.message().contains("Hint:"), c.code() + ": the error has a hint: " + d.message());
         }
     }
 
@@ -280,7 +280,7 @@ class DiagnosticsTest {
                 continue;
             }
             FrontendHarness.Outcome r = FrontendHarness.compile(source(c.members()));
-            assertTrue(r.resources().isEmpty(), c.code() + ": при ошибках IR и индекс не записываются: " + r.resources().keySet());
+            assertTrue(r.resources().isEmpty(), c.code() + ": on errors neither IR nor index is written: " + r.resources().keySet());
         }
     }
 
@@ -303,7 +303,7 @@ class DiagnosticsTest {
         CASES.forEach(c -> covered.add(c.code()));
         covered.addAll(ENVIRONMENT_CODES);
         assertEquals(new TreeSet<>(Diag.codes()), covered,
-                "каждый код таблицы diagnostics.def должен иметь негативный тест, и наоборот");
+                "every code in the diagnostics.def table must have a negative test, and vice versa");
     }
 
     @Test
@@ -321,17 +321,17 @@ class DiagnosticsTest {
         assertFalse(used.isEmpty());
         List<String> unknown = new ArrayList<>(used);
         unknown.removeAll(Diag.codes());
-        assertTrue(unknown.isEmpty(), "коды в исходниках без записи в diagnostics.def: " + unknown);
+        assertTrue(unknown.isEmpty(), "codes in sources without an entry in diagnostics.def: " + unknown);
         List<String> unused = new ArrayList<>(Diag.codes());
         unused.removeAll(used);
-        assertTrue(unused.isEmpty(), "коды таблицы, которые код нигде не выдаёт: " + unused);
+        assertTrue(unused.isEmpty(), "table codes that the code never reports: " + unused);
     }
 
     @Test
     void tableFormatting() {
-        assertEquals("GPU0106: Строки не поддерживаются в GPU-коде. Подсказка: Используйте числовые коды",
+        assertEquals("GPU0106: Strings are not supported in GPU code. Hint: Use numeric codes",
                 Diag.format("GPU0106"));
-        assertEquals("GPU0903: IR ядра k: msg", Diag.format("GPU0903", "k", "msg"), "пустая подсказка не добавляется");
+        assertEquals("GPU0903: IR of kernel k: msg", Diag.format("GPU0903", "k", "msg"), "empty hint is not appended");
         assertTrue(Diag.entry("GPU0901").error());
         assertFalse(Diag.entry("GPU0903").error());
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> Diag.entry("GPU9999"));
@@ -344,6 +344,6 @@ class DiagnosticsTest {
                 return i + 1;
             }
         }
-        throw new AssertionError("в образце нет метки // <-");
+        throw new AssertionError("no // <- marker in the sample");
     }
 }

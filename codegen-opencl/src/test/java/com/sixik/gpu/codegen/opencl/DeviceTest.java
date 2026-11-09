@@ -43,7 +43,7 @@ class DeviceTest {
     @BeforeAll
     static void open() {
         device = ClDevice.open();
-        Assumptions.assumeTrue(device != null, "нет OpenCL-драйвера или устройства");
+        Assumptions.assumeTrue(device != null, "no OpenCL driver or device");
         System.out.println("OpenCL device: " + device.name());
     }
 
@@ -157,7 +157,7 @@ class DeviceTest {
         return java.util.Arrays.stream(HandModules.NUMERIC).boxed();
     }
 
-    @ParameterizedTest(name = "из {0}")
+    @ParameterizedTest(name = "from {0}")
     @MethodSource("numericTypes")
     void conversions(int from) {
         IrModule m = HandModules.conversions(from);
@@ -426,13 +426,13 @@ class DeviceTest {
         int[] sorted = olds.clone();
         java.util.Arrays.sort(sorted);
         for (int i = 0; i < n; i++) {
-            assertEquals(-(n - 1) + i, sorted[i], "прежние значения atomic_sub - перестановка 0, -1, ..., -(n-1)");
+            assertEquals(-(n - 1) + i, sorted[i], "previous values of atomic_sub are a permutation of 0, -1, ..., -(n-1)");
         }
     }
 
     @Test
     void sixtyFourBitAtomicsIncludingExtendedOnes() {
-        Assumptions.assumeTrue(device.extensions().contains("cl_khr_int64_extended_atomics"), "нет 64-битных расширенных атомиков");
+        Assumptions.assumeTrue(device.extensions().contains("cl_khr_int64_extended_atomics"), "no 64-bit extended atomics");
         int n = 300;
         long[] data = new long[n];
         long sum = 0;
@@ -450,7 +450,7 @@ class DeviceTest {
         for (long v : data) {
             written |= v == sums[2];
         }
-        assertTrue(written, "atom_xchg оставил одно из записанных значений");
+        assertTrue(written, "atom_xchg left one of the written values");
     }
 
     @Test
@@ -500,7 +500,7 @@ class DeviceTest {
         Object[] expected = args.get();
         Object[] actual = args.get();
         Result<Interpreter.Execution> ref = Interpreter.run(m, range, expected);
-        assertTrue(ref.isOk(), name + ": интерпретатор отказал: " + ref.diagnostics());
+        assertTrue(ref.isOk(), name + ": interpreter refused: " + ref.diagnostics());
 
         long[] global = new long[range.dim()];
         long[] local = new long[range.dim()];
@@ -528,8 +528,8 @@ class DeviceTest {
                 float[] y = (float[]) a;
                 for (int i = 0; i < x.length; i++) {
                     if (!sameFloat(x[i], y[i], ulps)) {
-                        fail(name + "[" + i + "]: ожидалось " + x[i] + " (" + Integer.toHexString(Float.floatToRawIntBits(x[i]))
-                                + "), получено " + y[i] + " (" + Integer.toHexString(Float.floatToRawIntBits(y[i])) + ")");
+                        fail(name + "[" + i + "]: expected " + x[i] + " (" + Integer.toHexString(Float.floatToRawIntBits(x[i]))
+                                + "), got " + y[i] + " (" + Integer.toHexString(Float.floatToRawIntBits(y[i])) + ")");
                     }
                 }
             }
@@ -537,7 +537,7 @@ class DeviceTest {
                 double[] y = (double[]) a;
                 for (int i = 0; i < x.length; i++) {
                     if (!sameDouble(x[i], y[i], ulps)) {
-                        fail(name + "[" + i + "]: ожидалось " + x[i] + ", получено " + y[i]);
+                        fail(name + "[" + i + "]: expected " + x[i] + ", got " + y[i]);
                     }
                 }
             }

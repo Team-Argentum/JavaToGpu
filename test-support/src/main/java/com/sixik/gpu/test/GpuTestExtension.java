@@ -21,7 +21,7 @@ public final class GpuTestExtension implements BeforeEachCallback, ParameterReso
     public void beforeEach(ExtensionContext context) {
         GPUTest marker = context.getRequiredTestMethod().getAnnotation(GPUTest.class);
         if (marker != null && marker.requireDevice()) {
-            Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "нет OpenCL-устройства");
+            Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "no OpenCL device");
         }
     }
 
@@ -33,8 +33,8 @@ public final class GpuTestExtension implements BeforeEachCallback, ParameterReso
     @Override
     public Object resolveParameter(ParameterContext parameter, ExtensionContext extension) {
         return JavaToGpu.defaultContext().orElseGet(() -> {
-            Assumptions.abort("нет OpenCL-устройства: тест с параметром GpuContext пропущен");
-            throw new ParameterResolutionException("недостижимо");
+            Assumptions.abort("no OpenCL device: test with a GpuContext parameter skipped");
+            throw new ParameterResolutionException("unreachable");
         });
     }
 }

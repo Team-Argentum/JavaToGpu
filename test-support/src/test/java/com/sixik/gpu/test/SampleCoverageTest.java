@@ -74,7 +74,7 @@ class SampleCoverageTest {
                 // JVM пропущена у ядер с барьером/local (reduceSum, transpose, scan, histogram), остальные идут и на ней
                 assertEquals(report.ranOn(Leg.JVM), !report.skipped().containsKey(Leg.JVM), report.toString());
             } else {
-                assertTrue(report.ranOn(Leg.JVM), "ядро без барьера исполняется и на JVM: " + k.label());
+                assertTrue(report.ranOn(Leg.JVM), "a kernel without a barrier also runs on the JVM: " + k.label());
             }
         }));
     }
@@ -82,7 +82,7 @@ class SampleCoverageTest {
     @Test
     void catalogueIsNotEmptyAndSpansAllKinds() {
         List<SampleKernels.Kernel> all = SampleKernels.all();
-        assertTrue(all.size() >= 30, "каталог образцов: " + all.size());
+        assertTrue(all.size() >= 30, "sample catalog: " + all.size());
         Set<String> owners = new TreeSet<>();
         all.forEach(k -> owners.add(k.owner().getSimpleName()));
         assertTrue(owners.containsAll(Set.of("IntKernels", "FloatKernels", "VectorKernels", "StructKernels",
@@ -95,9 +95,9 @@ class SampleCoverageTest {
         SampleKernels.all().stream().filter(SampleCoverageTest::isGroupKernel).forEach(k -> expected.add(k.label()));
         assertFalse(expected.isEmpty());
         assertEquals(expected, new TreeSet<>(LocalSamples.all().keySet()),
-                "для нового ядра LocalKernels нужен образец в LocalSamples");
+                "a new LocalKernels kernel needs a sample in LocalSamples");
         for (KernelSample s : LocalSamples.all().values()) {
-            assertTrue(s.expected() != null, s.name() + ": ядро группы без ожидаемого результата не проверить");
+            assertTrue(s.expected() != null, s.name() + ": a group kernel without an expected result cannot be checked");
         }
     }
 }

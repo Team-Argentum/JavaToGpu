@@ -26,7 +26,7 @@ public final class GenerateApi {
      */
     public static void main(String[] args) throws IOException {
         if (args.length != 2) {
-            throw new IllegalArgumentException("использование: GenerateApi <builtins.def> <каталог вывода>");
+            throw new IllegalArgumentException("usage: GenerateApi <builtins.def> <output directory>");
         }
         Path def = Path.of(args[0]);
         Path out = Path.of(args[1]);
@@ -44,6 +44,6 @@ public final class GenerateApi {
             Files.createDirectories(target.getParent());
             Files.writeString(target, e.getValue(), StandardCharsets.UTF_8);
         }
-        System.out.println("generateApi: " + result.files().size() + " файлов, пропущены builtins: " + result.skipped());
+        System.out.println("generateApi: " + result.files().size() + " files, skipped builtins: " + result.skipped());
     }
 }

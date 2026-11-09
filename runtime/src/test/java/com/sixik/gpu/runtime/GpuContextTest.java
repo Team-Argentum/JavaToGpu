@@ -90,7 +90,7 @@ class GpuContextTest {
     void noDriverIsAValueNotAnException() {
         Result<GpuContext> r = GpuContext.builder().api(new FakeDeviceApi()).ignoreEnvironment().tryBuild();
         assertEquals("RT-D01", code(r));
-        assertTrue(r.diagnostics().get(0).message().contains("устройств нет"));
+        assertTrue(r.diagnostics().get(0).message().contains("no OpenCL devices"));
         GpuException e = assertThrows(GpuException.class,
                 () -> GpuContext.builder().api(new FakeDeviceApi()).ignoreEnvironment().build());
         assertEquals("RT-D01", e.diagnostics().get(0).code());
@@ -105,7 +105,7 @@ class GpuContextTest {
                         .withKind(com.sixik.gpu.runtime.device.DevicePolicy.Kind.GPU)).tryBuild();
         assertEquals("RT-D01", code(r));
         assertTrue(r.diagnostics().get(0).message().contains("Fake CPU"), r.diagnostics().get(0).message());
-        assertEquals(0, fake.liveContexts(), "драйвер не получил лишнего контекста");
+        assertEquals(0, fake.liveContexts(), "the driver got no extra context");
     }
 
     @Test
@@ -113,7 +113,7 @@ class GpuContextTest {
         FakeDeviceApi fake = FakeDeviceApi.withGpu().failNext("createQueue", -6);
         Result<GpuContext> r = GpuContext.builder().api(fake).ignoreEnvironment().tryBuild();
         assertEquals("RT-D03", code(r));
-        assertEquals(0, fake.liveContexts(), "контекст драйвера освобождён при неудаче");
+        assertEquals(0, fake.liveContexts(), "the driver context was released on failure");
     }
 
     @Test
@@ -221,7 +221,7 @@ class GpuContextTest {
             assertEquals("RT-D02", code(r));
             assertTrue(r.diagnostics().get(0).message().contains("FP64"), r.diagnostics().get(0).message());
             assertTrue(r.diagnostics().get(0).message().contains("Fake GPU"));
-            assertEquals(0, fake.builds(), "компиляция даже не начата");
+            assertEquals(0, fake.builds(), "compilation did not even start");
             assertEquals(0, fake.sources().size());
         }
     }
@@ -238,11 +238,11 @@ class GpuContextTest {
             Diagnostic err = r.diagnostics().get(0);
             assertEquals("RT-C01", err.code());
             assertTrue(err.isError());
-            assertTrue(err.message().startsWith("строка 12:5: use of undeclared identifier"), err.message());
-            assertTrue(err.message().contains("foo(1);"), "цитата кода присоединена");
+            assertTrue(err.message().startsWith("line 12:5: use of undeclared identifier"), err.message());
+            assertTrue(err.message().contains("foo(1);"), "the code quote is attached");
             assertEquals("RT-C02", r.diagnostics().get(1).code());
             assertFalse(r.diagnostics().get(1).isError());
-            assertEquals(0, fake.livePrograms(), "программа освобождена после неудачи");
+            assertEquals(0, fake.livePrograms(), "the program was released after the failure");
             // неудача тоже кэшируется: повторять заведомо провальную сборку бессмысленно
             assertEquals("RT-C01", code(ctx.compile(Fixtures.computeSine())));
             assertEquals(1, fake.builds());
@@ -307,18 +307,18 @@ class GpuContextTest {
         float[] inCopy = in.clone();
         try (GpuContext ctx = open(fake, events::add)) {
             LaunchStats stats = ctx.run(Fixtures.computeSine(), LaunchConfig.of1D(256), in, out);
-            assertEquals(2 * 1024, stats.bytesUp(), "передаются все массивы: нетронутые элементы обязаны сохраниться");
-            assertEquals(1024, stats.bytesDown(), "обратно - только записываемый массив");
+            assertEquals(2 * 1024, stats.bytesUp(), "all arrays are passed: untouched elements must be preserved");
+            assertEquals(1024, stats.bytesDown(), "only the writable array is returned");
             assertTrue(stats.kernelNanos() >= 0);
         }
         for (int i = 0; i < in.length; i++) {
             assertEquals((float) Math.sin(inCopy[i]) + 2f, out[i], 0f, "i=" + i);
         }
-        assertArrayEquals(inCopy, in, "входной массив не тронут");
+        assertArrayEquals(inCopy, in, "the input array is untouched");
         assertEquals(2, fake.writes());
         assertEquals(1, fake.reads());
         assertEquals(1, fake.enqueues());
-        assertEquals(0, fake.liveBuffers(), "временные буферы освобождены");
+        assertEquals(0, fake.liveBuffers(), "temporary buffers were released");
         List<GpuEvent.Kind> kinds = events.stream().map(GpuEvent::kind).toList();
         assertEquals(List.of(GpuEvent.Kind.DEVICE_SELECTED, GpuEvent.Kind.COMPILE, GpuEvent.Kind.UPLOAD,
                 GpuEvent.Kind.KERNEL, GpuEvent.Kind.READBACK, GpuEvent.Kind.CLOSED), kinds);
@@ -347,7 +347,7 @@ class GpuContextTest {
     @Test
     void sameArrayPassedTwiceIsOneBuffer() {
         FakeDeviceApi fake = FakeDeviceApi.withGpu().onKernel("k0", l -> {
-            assertEquals(l.buffer(0).array(), l.buffer(2).array(), "один и тот же буфер");
+            assertEquals(l.buffer(0).array(), l.buffer(2).array(), "the same buffer");
             for (int i = 0; i < 4; i++) {
                 l.buffer(2).putFloat(4 * i, l.buffer(0).getFloat(4 * i) * 2f + 3);
             }
@@ -356,7 +356,7 @@ class GpuContextTest {
         try (GpuContext ctx = open(fake)) {
             ctx.run(scalarsKernel(), LaunchConfig.of1D(4), data, data, 3, 2f);
         }
-        assertEquals(1, fake.writes(), "алиасинг сохранён: один массив - один буфер");
+        assertEquals(1, fake.writes(), "aliasing is preserved: one array - one buffer");
         assertArrayEquals(new float[]{5, 7, 9, 11}, data);
     }
 
@@ -371,7 +371,7 @@ class GpuContextTest {
             assertEquals("RT-X01", code(r));
         }
         assertArrayEquals(new float[]{7, 7}, out);
-        assertEquals(0, fake.liveBuffers(), "временные буферы освобождены и после ошибки");
+        assertEquals(0, fake.liveBuffers(), "temporary buffers were released after the error too");
     }
 
     @Test
@@ -408,14 +408,14 @@ class GpuContextTest {
         float[] data = {1, 2, 3, 4};
         try (GpuContext ctx = open(fake)) {
             ctx.run(writeThenReadKernel(), LaunchConfig.of1D(4), data, data);
-            assertArrayEquals(new float[]{6, 7, 8, 9}, data, "запись через первый параметр вернулась на хост");
+            assertArrayEquals(new float[]{6, 7, 8, 9}, data, "the write through the first parameter returned to the host");
             float[] written = new float[4];
             float[] source = {1, 1, 1, 1};
             ctx.run(writeThenReadKernel(), LaunchConfig.of1D(4), written, source);
             assertArrayEquals(new float[]{6, 6, 6, 6}, written);
-            assertArrayEquals(new float[]{1, 1, 1, 1}, source, "только читаемый массив не возвращается");
+            assertArrayEquals(new float[]{1, 1, 1, 1}, source, "a read-only array is not returned");
         }
-        assertEquals(2, fake.reads(), "по одному чтению на запуск");
+        assertEquals(2, fake.reads(), "one read per launch");
     }
 
     // ---- проверка аргументов и размеров ---------------------------------------------------------
@@ -438,7 +438,7 @@ class GpuContextTest {
             assertFalse(r.isOk());
             assertEquals(4, r.diagnostics().size());
             assertTrue(r.diagnostics().stream().allMatch(d -> d.code().equals("RT-A02")));
-            assertTrue(r.diagnostics().get(0).message().contains("аргумент 0"));
+            assertTrue(r.diagnostics().get(0).message().contains("argument 0"));
             assertTrue(r.diagnostics().get(1).message().contains("null"));
             assertTrue(r.diagnostics().get(2).message().contains("Long"));
         }
@@ -457,7 +457,7 @@ class GpuContextTest {
             CompiledKernel sine = ctx.compile(Fixtures.computeSine()).value();
             assertEquals("RT-L01", code(ctx.launch(sine, LaunchConfig.of1D(256, 128), a, a)));
             assertEquals("RT-L01", code(ctx.launch(sine, LaunchConfig.of1D(100), a, a)),
-                    "256 из ядра не делит 100");
+                    "the kernel's 256 does not divide 100");
         }
     }
 
@@ -508,8 +508,8 @@ class GpuContextTest {
             Result<LaunchStats> r = ctx.launch(k, LaunchConfig.of1D(256, 256), input, output);
             // длина 4 < 256, но фейк обходит только n = длина массива: ядро проверяется не здесь
             assertTrue(r.isOk(), r.diagnostics().toString());
-            assertEquals(0, r.value().bytesUp(), "буферы уже на устройстве");
-            assertEquals(0, r.value().bytesDown(), "и остаются там");
+            assertEquals(0, r.value().bytesUp(), "the buffers are already on the device");
+            assertEquals(0, r.value().bytesDown(), "and stay there");
             float[] host = new float[4];
             output.read(host);
             assertEquals((float) Math.sin(2.0) + 2f, host[2], 0f);
@@ -521,8 +521,8 @@ class GpuContextTest {
     void bufferTransfersAreChecked() {
         try (GpuContext ctx = open(sineDevice()); GpuContext other = open(sineDevice())) {
             GpuBuffer b = ctx.allocate(Types.F32, 4);
-            assertThrows(GpuException.class, () -> b.write(new int[4]), "int[] не подходит float-буферу");
-            assertThrows(GpuException.class, () -> b.write(new float[5]), "длиннее буфера");
+            assertThrows(GpuException.class, () -> b.write(new int[4]), "int[] does not fit a float buffer");
+            assertThrows(GpuException.class, () -> b.write(new float[5]), "longer than the buffer");
             assertThrows(GpuException.class, () -> b.read(new double[4]));
             b.write(new float[2]);
             GpuBuffer foreign = other.allocate(Types.F32, 4);
@@ -552,8 +552,8 @@ class GpuContextTest {
         try (GpuContext ctx = open(sineDevice())) {
             assertThrows(GpuException.class, () -> ctx.allocate(Types.BOOL, 4));
             assertThrows(GpuException.class, () -> ctx.allocate(Types.F32, -1));
-            assertThrows(GpuException.class, () -> ctx.allocate(Types.F32, 1L << 40), "больше допустимой аллокации");
-            assertThrows(GpuException.class, () -> ctx.upload("не массив"));
+            assertThrows(GpuException.class, () -> ctx.allocate(Types.F32, 1L << 40), "exceeds the maximum allocation");
+            assertThrows(GpuException.class, () -> ctx.upload("not an array"));
             GpuBuffer zero = ctx.allocate(Types.F32, 0);
             assertEquals(0, zero.length());
             zero.close();
@@ -602,7 +602,7 @@ class GpuContextTest {
         ctx.close();
         ctx.close();
         assertTrue(ctx.isClosed());
-        assertTrue(leaked.isClosed(), "незакрытые буферы закрываются вместе с контекстом");
+        assertTrue(leaked.isClosed(), "unclosed buffers are closed together with the context");
         assertEquals(0, fake.liveBuffers());
         assertEquals(0, fake.livePrograms());
         assertEquals(0, fake.liveKernels());
@@ -625,7 +625,7 @@ class GpuContextTest {
     void listenerExceptionsDoNotBreakComputation() {
         float[] out = new float[4];
         try (GpuContext ctx = open(sineDevice(), e -> {
-            throw new IllegalStateException("наблюдатель сломался");
+            throw new IllegalStateException("the observer broke");
         })) {
             ctx.run(Fixtures.computeSine(), LaunchConfig.of1D(256, 256), new float[]{0, 0, 0, 0}, out);
         }

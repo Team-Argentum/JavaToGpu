@@ -65,7 +65,7 @@ class SupportTest {
             assertTrue(x.isError());
             assertTrue(x.function() >= 0);
         }
-        assertTrue(d.stream().anyMatch(x -> x.node() >= 0), "есть привязка к узлу");
+        assertTrue(d.stream().anyMatch(x -> x.node() >= 0), "there is a binding to the node");
     }
 
     @Test
@@ -77,7 +77,7 @@ class SupportTest {
         List<Diagnostic> d = Support.check(m, 0, Support.reachable(m, 0));
         assertEquals(1, d.size(), d.toString());
         assertEquals("CG-U01", d.get(0).code());
-        assertTrue(d.get(0).node() < 0, "привязка к сигнатуре функции (указатель-параметр ядра)");
+        assertTrue(d.get(0).node() < 0, "binding to the function signature (kernel pointer parameter)");
     }
 
     @Test

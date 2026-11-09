@@ -5,7 +5,7 @@ plugins {
     id 'application'
 }
 
-description = 'Тестовое приложение для разработки и запуска JavaToGpu-ядер.'
+description = 'Test application for developing and running JavaToGpu kernels.'
 
 // Плагин из соседнего gradle-plugin ещё не собран при конфигурации этой сборки.
 // Используем те же frontend и weaver напрямую, без публикации библиотек.
@@ -57,7 +57,7 @@ tasks.named('jmh') {
 
 tasks.register('terrainSweep', JavaExec) {
     group = 'verification'
-    description = 'Однократная генерация полного окна 65x65 чанков; дополнительная проверка масштаба к JMH.'
+    description = 'A single generation of the full 65x65 chunk window; an extra scale check next to JMH.'
     classpath = sourceSets.jmh.runtimeClasspath
     mainClass = 'com.sixik.gpu.app.terrain.TerrainSweep'
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
@@ -103,7 +103,7 @@ tasks.named('test') {
 
 tasks.register('deviceTest', Test) {
     group = 'verification'
-    description = 'Сверяет ядра приложения с реальным OpenCL-устройством; без устройства пропускается.'
+    description = 'Checks the application kernels against a real OpenCL device; skipped without a device.'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform {

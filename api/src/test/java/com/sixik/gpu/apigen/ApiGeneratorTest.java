@@ -43,7 +43,7 @@ class ApiGeneratorTest {
         assertEquals("foo", b.name());
         assertEquals(7, b.id());
         assertEquals(4, b.ulp());
-        assertEquals(4, b.ulp64(), "без ulp64 равен ulp");
+        assertEquals(4, b.ulp64(), "without ulp64 it equals ulp");
         assertEquals("T", b.ret());
         assertEquals(List.of("T:genf"), b.args());
         assertEquals("Описание foo.", b.doc());
@@ -55,7 +55,7 @@ class ApiGeneratorTest {
         var def = BuiltinsDef.parse(HEAD + "1 bar pure,ulp=3,ulp64=0 T (T:genf)\ndoc d\njvm f32,f64 = a\n");
         assertEquals(3, def.builtins().get(0).ulp());
         assertEquals(0, def.builtins().get(0).ulp64());
-        assertEquals("a", def.builtins().get(0).jvm().get("f64"), "ключи через запятую задают одно выражение");
+        assertEquals("a", def.builtins().get(0).jvm().get("f64"), "comma-separated keys define one expression");
     }
 
     @Test
@@ -67,27 +67,27 @@ class ApiGeneratorTest {
 
     @Test
     void rejectsMalformedDefinitions() {
-        assertTrue(parseError("1 a pure i32 ()\ndoc d\n").contains("version"), "нет version");
-        assertTrue(parseError(HEAD + "bogus x\n").contains("bogus"), "неизвестная директива");
-        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\n1 b pure i32 ()\ndoc d\n").contains("повторный id"));
-        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\n2 a pure i32 ()\ndoc d\n").contains("повторное имя"));
-        assertTrue(parseError(HEAD + "1 a weird i32 ()\ndoc d\n").contains("weird"), "неизвестный флаг");
-        assertTrue(parseError(HEAD + "1 a pure i32\ndoc d\n").contains("сигнатура"), "нет скобок");
-        assertTrue(parseError(HEAD + "1 a pure\n").contains("ожидалось"), "мало полей");
-        assertTrue(parseError(HEAD + "1 a pure i32 ()\n").contains("нет doc"), "обязателен doc");
-        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc one\ndoc two\n").contains("повторный doc"));
-        assertTrue(parseError(HEAD + "doc orphan\n").contains("до первой строки"), "doc до builtin");
-        assertTrue(parseError(HEAD + "jvm = 1\n").contains("до первой строки"), "jvm до builtin");
-        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\njvm 1\n").contains("jvm"), "jvm без '='");
-        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\njvm =\n").contains("пустое"), "пустое выражение");
-        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\njvm = 1\njvm = 2\n").contains("повторная"));
-        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\njvm u8 = 1\n").contains("Java-представления"),
-                "ключ jvm вне набора API");
-        assertTrue(parseError("version 1\nvectors f32 : 5\n").contains("5"), "недопустимое число компонент");
-        assertTrue(parseError("version 1\nvectors f32 2\n").contains("vectors"), "нет двоеточия");
-        assertTrue(parseError("version 1\nvectors u32 : 2\n").contains("u32"), "скаляр без Java-представления");
-        assertTrue(parseError("version x\n").contains("version"), "версия не число");
-        assertTrue(parseError(HEAD + "x a pure i32 ()\n").contains("x"), "неизвестная директива вместо id");
+        assertTrue(parseError("1 a pure i32 ()\ndoc d\n").contains("version"), "no version");
+        assertTrue(parseError(HEAD + "bogus x\n").contains("bogus"), "unknown directive");
+        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\n1 b pure i32 ()\ndoc d\n").contains("duplicate id"));
+        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\n2 a pure i32 ()\ndoc d\n").contains("duplicate name"));
+        assertTrue(parseError(HEAD + "1 a weird i32 ()\ndoc d\n").contains("weird"), "unknown flag");
+        assertTrue(parseError(HEAD + "1 a pure i32\ndoc d\n").contains("signature"), "no parentheses");
+        assertTrue(parseError(HEAD + "1 a pure\n").contains("expected"), "too few fields");
+        assertTrue(parseError(HEAD + "1 a pure i32 ()\n").contains("missing doc"), "doc is required");
+        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc one\ndoc two\n").contains("duplicate doc"));
+        assertTrue(parseError(HEAD + "doc orphan\n").contains("before the first builtin line"), "doc before builtin");
+        assertTrue(parseError(HEAD + "jvm = 1\n").contains("before the first builtin line"), "jvm before builtin");
+        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\njvm 1\n").contains("jvm"), "jvm without '='");
+        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\njvm =\n").contains("empty"), "empty expression");
+        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\njvm = 1\njvm = 2\n").contains("duplicate"));
+        assertTrue(parseError(HEAD + "1 a pure i32 ()\ndoc d\njvm u8 = 1\n").contains("Java representation"),
+                "jvm key outside the API set");
+        assertTrue(parseError("version 1\nvectors f32 : 5\n").contains("5"), "invalid lane count");
+        assertTrue(parseError("version 1\nvectors f32 2\n").contains("vectors"), "no colon");
+        assertTrue(parseError("version 1\nvectors u32 : 2\n").contains("u32"), "scalar without a Java representation");
+        assertTrue(parseError("version x\n").contains("version"), "version is not a number");
+        assertTrue(parseError(HEAD + "x a pure i32 ()\n").contains("x"), "unknown directive instead of id");
     }
 
     @Test
@@ -107,8 +107,8 @@ class ApiGeneratorTest {
         assertTrue(src.contains("return new Float2(foo(a.x), foo(a.y));"), src);
         assertTrue(src.contains("return new Float4(foo(a.x), foo(a.y), foo(a.z), foo(a.w));"));
         assertTrue(src.contains("public static Double4 foo(Double4 a)"));
-        assertFalse(src.contains("Int2"), "vectors не включает i32");
-        assertTrue(src.contains("Описание foo."), "doc попадает в Javadoc");
+        assertFalse(src.contains("Int2"), "vectors does not include i32");
+        assertTrue(src.contains("Описание foo."), "doc goes into Javadoc");
         assertTrue(src.contains("@param a первый аргумент"));
     }
 
@@ -123,7 +123,7 @@ class ApiGeneratorTest {
     void nonGenericBuiltinHasSingleOverload() {
         String src = gpu(HEAD + "1 dim pure,uniform i32 ()\ndoc d\njvm = WorkItem.workDim()\n");
         assertTrue(src.contains("public static int dim() {\n        return WorkItem.workDim();"), src);
-        assertEquals(1, src.split("public static ", -1).length - 1, "одна перегрузка");
+        assertEquals(1, src.split("public static ", -1).length - 1, "one overload");
     }
 
     @Test
@@ -132,7 +132,7 @@ class ApiGeneratorTest {
                 + "2 gn pure T (T:genn, T)\ndoc d\njvm f32,f64,i32,i64 = a\n");
         assertTrue(src.contains("public static int gi(int a)"));
         assertTrue(src.contains("public static long gi(long a)"));
-        assertFalse(src.contains("float gi("), "geni не включает float");
+        assertFalse(src.contains("float gi("), "geni does not include float");
         assertTrue(src.contains("public static float gn(float a, float b)"));
         assertTrue(src.contains("public static long gn(long a, long b)"));
     }
@@ -156,9 +156,9 @@ class ApiGeneratorTest {
                 "long atom(GlobalLongPtr a, long b)", "long atom(LocalLongPtr a, long b)"}) {
             assertTrue(src.contains("public static " + sig), sig);
         }
-        assertFalse(src.contains("ConstantIntPtr a"), "в constant атомики недопустимы");
-        assertFalse(src.contains("Int2 atom("), "векторных перегрузок у атомиков нет");
-        assertTrue(src.contains("int old = a.get(0); a.set(0, old + b); return old;"), "блок вставлен как есть");
+        assertFalse(src.contains("ConstantIntPtr a"), "atomics are not allowed in constant");
+        assertFalse(src.contains("Int2 atom("), "atomics have no vector overloads");
+        assertTrue(src.contains("int old = a.get(0); a.set(0, old + b); return old;"), "block inserted as is");
         assertFalse(src.contains("return {"), src);
     }
 
@@ -188,7 +188,7 @@ class ApiGeneratorTest {
         assertTrue(none.getMessage().contains("jvm"), none.getMessage());
         var typedForPlain = assertThrows(IllegalArgumentException.class,
                 () -> gpu(HEAD + "1 ng pure i32 ()\ndoc d\njvm f32 = 1\n"));
-        assertTrue(typedForPlain.getMessage().contains("без типов"), typedForPlain.getMessage());
+        assertTrue(typedForPlain.getMessage().contains("without types"), typedForPlain.getMessage());
     }
 
     @Test
@@ -206,9 +206,9 @@ class ApiGeneratorTest {
         assertTrue(f2.contains("public Float2(float x, float y)"));
         assertTrue(f2.contains("Float.floatToIntBits(x) == Float.floatToIntBits(v.x)"));
         assertTrue(files.containsKey("com/sixik/gpu/api/types/Double4.java"));
-        assertFalse(files.containsKey("com/sixik/gpu/api/types/Float3.java"), "lanes берутся из директивы vectors");
+        assertFalse(files.containsKey("com/sixik/gpu/api/types/Float3.java"), "lanes are taken from the vectors directive");
         assertTrue(files.containsKey("com/sixik/gpu/api/types/FloatPtr.java"));
-        assertFalse(files.containsKey("com/sixik/gpu/api/types/DoublePtr.java"), "pointers только f32");
+        assertFalse(files.containsKey("com/sixik/gpu/api/types/DoublePtr.java"), "pointers only f32");
         assertEquals("s0", ApiGenerator.laneName(8, 0));
         assertEquals("sF", ApiGenerator.laneName(16, 15));
         assertEquals("w", ApiGenerator.laneName(4, 3));
@@ -226,9 +226,9 @@ class ApiGeneratorTest {
         assertTrue(g.contains("public GlobalFloatPtr plus(int n)"), g);
         String c = files.get("com/sixik/gpu/api/types/ConstantFloatPtr.java");
         assertTrue(c.contains("public float get(int i)"), c);
-        assertFalse(c.contains(" set("), "в constant писать нельзя: метода записи нет");
+        assertFalse(c.contains(" set("), "cannot write to constant: there is no write method");
         assertTrue(files.containsKey("com/sixik/gpu/api/types/LocalFloatPtr.java"));
-        assertFalse(files.containsKey("com/sixik/gpu/api/types/GlobalDoublePtr.java"), "pointers только f32");
+        assertFalse(files.containsKey("com/sixik/gpu/api/types/GlobalDoublePtr.java"), "pointers only f32");
     }
 
     @Test
@@ -244,13 +244,13 @@ class ApiGeneratorTest {
     void realTableGeneratesFullApi() throws IOException {
         var def = BuiltinsDef.parse(Files.readString(Path.of(System.getProperty("builtins.def")), StandardCharsets.UTF_8));
         var out = ApiGenerator.generate(def);
-        assertEquals(List.of(), out.skipped(), "с M10 у всех builtins есть Java-представление");
+        assertEquals(List.of(), out.skipped(), "since M10 every builtin has a Java representation");
         // Gpu + 4 скаляра x 5 размеров векторов + 4 класса-ссылки + 4 скаляра x 3 пространства указателей
         assertEquals(1 + 20 + 4 + 12, out.files().size());
         assertEquals(24, def.builtins().size());
         for (var e : out.files().entrySet()) {
             assertTrue(e.getValue().startsWith("// СГЕНЕРИРОВАНО"), e.getKey());
-            assertFalse(e.getValue().contains("\r"), "только \\n: вывод не зависит от ОС");
+            assertFalse(e.getValue().contains("\r"), "only \\n: output does not depend on the OS");
         }
     }
 }

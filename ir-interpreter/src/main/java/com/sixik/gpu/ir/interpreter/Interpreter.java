@@ -94,7 +94,7 @@ public final class Interpreter {
             return Result.failed(report.diagnostics());
         }
         if (function < 0 || function >= m.functionCount() || m.fKind(function) != IrModule.KERNEL) {
-            return fail("IN-A00", function, "функция " + function + " не является ядром модуля");
+            return fail("IN-A00", function, "function " + function + " is not a kernel of the module");
         }
         List<Diagnostic> unsupported = Support.check(m, function);
         if (!unsupported.isEmpty()) {
@@ -109,7 +109,7 @@ public final class Interpreter {
 
         int params = m.fParamCount(function);
         if (args.length != params) {
-            return fail("IN-A01", function, "ядро принимает " + params + " аргументов, передано " + args.length);
+            return fail("IN-A01", function, "the kernel takes " + params + " arguments, passed " + args.length);
         }
         int[] offsets = Machine.paramOffsets(m, function);
         long[] argv = new long[Machine.frameSlots(m, function, offsets)];
@@ -160,19 +160,19 @@ public final class Interpreter {
             int given = range.local(d);
             if (req > 0) {
                 if (given != 0 && given != req) {
-                    out.add(launchError(f, "ось " + d + ": задан размер группы " + given
-                            + ", а ядро требует reqd_work_group_size " + req));
+                    out.add(launchError(f, "axis " + d + ": group size given " + given
+                            + ", but the kernel requires reqd_work_group_size " + req));
                 }
                 local[d] = req;
             } else {
                 local[d] = given != 0 ? given : 1;
             }
             if (d >= range.dim() && local[d] != 1) {
-                out.add(launchError(f, "ось " + d + " вне размерности запуска (" + range.dim()
-                        + "D), но размер группы " + local[d]));
+                out.add(launchError(f, "axis " + d + " is outside the launch dimensionality (" + range.dim()
+                        + "D), but the group size is " + local[d]));
             } else if (range.global(d) % local[d] != 0) {
-                out.add(launchError(f, "ось " + d + ": размер NDRange " + range.global(d)
-                        + " не делится на размер группы " + local[d]));
+                out.add(launchError(f, "axis " + d + ": NDRange size " + range.global(d)
+                        + " is not divisible by the group size " + local[d]));
             }
         }
         return out;
@@ -243,26 +243,26 @@ public final class Interpreter {
             String have = a == null ? "null" : a.getClass().getSimpleName();
             if (m.typeKind(t) == Types.KIND_ARRAY) {
                 if (a == null || !Host.arrayMatches(m, m.typeB(t), a)) {
-                    out.add(argError(f, i, "ожидается " + Host.arrayName(m, m.typeB(t), a) + ", передано " + have));
+                    out.add(argError(f, i, "expected " + Host.arrayName(m, m.typeB(t), a) + ", passed " + have));
                 }
             } else if (Types.isScalar(t)) {
                 if (a == null || !Host.scalarMatches(t, a)) {
-                    out.add(argError(f, i, "ожидается " + Host.scalarName(t) + ", передано " + have));
+                    out.add(argError(f, i, "expected " + Host.scalarName(t) + ", passed " + have));
                 }
             } else if (HostObjects.isAggregate(m, t)) {
                 if (a == null) {
-                    out.add(argError(f, i, "ожидается объект вектора или struct, передано null"));
+                    out.add(argError(f, i, "expected a vector or struct object, passed null"));
                 } else if (!HostObjects.mismatch(m, t, a.getClass()).isEmpty()) {
                     out.add(argError(f, i, HostObjects.mismatch(m, t, a.getClass())));
                 }
             } else {
-                out.add(argError(f, i, "параметры-указатели интерпретатор пока не принимает"));
+                out.add(argError(f, i, "pointer parameters are not accepted by the interpreter yet"));
             }
         }
         return out;
     }
 
     private static Diagnostic argError(int f, int index, String message) {
-        return new Diagnostic("IN-A02", Diagnostic.Severity.ERROR, f, -1, "аргумент " + index + ": " + message);
+        return new Diagnostic("IN-A02", Diagnostic.Severity.ERROR, f, -1, "argument " + index + ": " + message);
     }
 }

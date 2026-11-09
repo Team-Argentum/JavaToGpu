@@ -87,7 +87,7 @@ def forbiddenInPureCore = ['java.nio.file', 'java.io.File', 'java.net.']
 
 tasks.register('verifyModuleBoundaries') {
     group = 'verification'
-    description = 'Проверяет граф зависимостей модулей и запрещённые импорты (REWORK_ARCHITECTURE.md, разд. 4, 11).'
+    description = 'Checks the module dependency graph and forbidden imports (REWORK_ARCHITECTURE.md, sec. 4, 11).'
     doLast {
         def violations = []
         def productionConfigs = ['api', 'implementation', 'compileOnly', 'runtimeOnly', 'annotationProcessor']
@@ -95,7 +95,7 @@ tasks.register('verifyModuleBoundaries') {
         rootProject.subprojects.each { sp ->
             def name = sp.name
             if (!allowedProjectDeps.containsKey(name)) {
-                violations << "модуль '${name}' не описан в allowedProjectDeps (build.gradle)"
+                violations << "module '${name}' is not described in allowedProjectDeps (build.gradle)"
                 return
             }
             productionConfigs.each { cfgName ->
@@ -105,13 +105,13 @@ tasks.register('verifyModuleBoundaries') {
                     if (dep instanceof ProjectDependency) {
                         def target = dep.path.substring(dep.path.lastIndexOf(':') + 1)
                         if (!allowedProjectDeps[name].contains(target)) {
-                            violations << "${name}: запрещённая зависимость от модуля '${target}' (конфигурация ${cfgName})"
+                            violations << "${name}: forbidden dependency on module '${target}' (configuration ${cfgName})"
                         }
                     } else {
                         def group = dep.group ?: ''
                         def ok = (allowedExternalGroups[name] ?: []).any { group.startsWith(it) }
                         if (!ok) {
-                            violations << "${name}: запрещённая внешняя зависимость ${group}:${dep.name} (конфигурация ${cfgName})"
+                            violations << "${name}: forbidden external dependency ${group}:${dep.name} (configuration ${cfgName})"
                         }
                     }
                 }
@@ -129,7 +129,7 @@ tasks.register('verifyModuleBoundaries') {
                             def imported = m.group(1)
                             forbidden.each { prefix ->
                                 if (imported.startsWith(prefix)) {
-                                    violations << "${name}: ${sp.relativePath(f)}:${idx} запрещённый импорт ${imported}"
+                                    violations << "${name}: ${sp.relativePath(f)}:${idx} forbidden import ${imported}"
                                 }
                             }
                         }
@@ -139,9 +139,9 @@ tasks.register('verifyModuleBoundaries') {
         }
 
         if (!violations.isEmpty()) {
-            throw new GradleException("Нарушены границы модулей:\n  - " + violations.join('\n  - '))
+            throw new GradleException("Module boundaries violated:\n  - " + violations.join('\n  - '))
         }
-        println "Границы модулей: ${rootProject.subprojects.size()} модулей, нарушений нет"
+        println "Module boundaries: ${rootProject.subprojects.size()} modules, no violations"
     }
 }
 

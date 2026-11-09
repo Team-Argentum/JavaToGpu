@@ -1,4 +1,4 @@
-description = 'Аннотации, типы (vec/ptr/struct) и builtins GPU-кода. Без нативных зависимостей.'
+description = 'Annotations, types (vec/ptr/struct) and builtins of GPU code. No native dependencies.'
 
 // Gpu.java и типы (векторы, ссылки) генерируются из builtins/builtins.def при сборке и руками не правятся
 // (REWORK_ARCHITECTURE.md, 5.7, O1). Генератор — отдельный source set: он не входит в jar модуля, но доступен
@@ -14,7 +14,7 @@ def generatedDir = layout.buildDirectory.dir('generated/sources/api/java')
 
 def generateApi = tasks.register('generateApi', JavaExec) {
     group = 'build'
-    description = 'Генерирует Gpu.java и типы api из builtins/builtins.def.'
+    description = 'Generates Gpu.java and the api types from builtins/builtins.def.'
     inputs.file(builtinsDef).withPropertyName('builtinsDef')
     inputs.files(sourceSets.generator.runtimeClasspath).withPropertyName('generatorClasspath')
     outputs.dir(generatedDir).withPropertyName('generatedSources')

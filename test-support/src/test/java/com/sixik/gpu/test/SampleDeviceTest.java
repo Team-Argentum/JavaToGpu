@@ -27,14 +27,14 @@ class SampleDeviceTest {
                         : !SampleArgs.notComparableOnDevice(k.label()))
                 .map(k -> DynamicTest.dynamicTest(k.label(), () -> {
                     GpuContext ctx = com.sixik.gpu.runtime.JavaToGpu.defaultContext().orElse(null);
-                    org.junit.jupiter.api.Assumptions.assumeTrue(ctx != null, "нет OpenCL-устройства");
+                    org.junit.jupiter.api.Assumptions.assumeTrue(ctx != null, "no OpenCL device");
                     KernelSample sample = SampleCoverageTest.isGroupKernel(k)
                             ? LocalSamples.all().get(k.label()) : SampleCoverageTest.generic(k);
                     GpuAssert.Report report = GpuAssert.sameResult(k.owner(), k.method().getName(), sample, ctx);
                     // ветвь могла быть пропущена только из-за недостающей возможности устройства (RT-D02)
                     assertTrue(report.ranOn(Leg.DEVICE) || report.skipped().containsKey(Leg.DEVICE), report.toString());
                     if (!report.ranOn(Leg.DEVICE)) {
-                        System.out.println("пропущено на устройстве: " + report);
+                        System.out.println("skipped on the device: " + report);
                     }
                 }));
     }

@@ -8,6 +8,7 @@ import com.sixik.gpu.ir.Operands;
 import com.sixik.gpu.ir.Types;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -46,7 +47,7 @@ final class Support {
                 continue;
             }
             int sp = 0;
-            java.util.Arrays.fill(seen, false);
+            Arrays.fill(seen, false);
             nodes[sp++] = m.fBody(f);
             seen[m.fBody(f)] = true;
             while (sp > 0) {
@@ -88,11 +89,11 @@ final class Support {
                 continue;
             }
             if (m.fBodyKind(f) != IrModule.BODY_IR) {
-                out.add(unsupported(f, -1, "нативное тело функции не поддержано"));
+                out.add(unsupported(f, -1, "native function body is not supported"));
                 continue;
             }
             checkSignature(m, f, f == kernel, out);
-            java.util.Arrays.fill(seen, false);
+            Arrays.fill(seen, false);
             int sp = 0;
             stack[sp++] = m.fBody(f);
             seen[m.fBody(f)] = true;
@@ -135,7 +136,7 @@ final class Support {
                 mark(m, m.fLocalType(f, l), used);
             }
             mark(m, m.fRet(f), used);
-            java.util.Arrays.fill(seen, false);
+            Arrays.fill(seen, false);
             int sp = 0;
             stack[sp++] = m.fBody(f);
             seen[m.fBody(f)] = true;
@@ -176,21 +177,21 @@ final class Support {
         for (int i = 0; i < m.fParamCount(f); i++) {
             int t = m.fParamType(f, i);
             if (!storageOk(m, t)) {
-                out.add(unsupported(f, -1, "параметр " + i + " типа t" + t + " не поддержан"));
+                out.add(unsupported(f, -1, "parameter " + i + " of type t" + t + " is not supported"));
             } else if (kernel && m.typeKind(t) == Types.KIND_PTR) {
-                out.add(unsupported(f, -1, "параметр " + i + ": указатель в параметрах ядра не поддержан, используйте массив"));
+                out.add(unsupported(f, -1, "parameter " + i + ": pointer in kernel parameters is not supported, use an array"));
             } else if (kernel && m.typeKind(t) == Types.KIND_ARRAY && Types.space(m, t) == AddressSpace.LOCAL) {
-                out.add(unsupported(f, -1, "параметр " + i + ": __local-массив в параметрах ядра - вне v1 (локальный массив объявляется в теле ядра)"));
+                out.add(unsupported(f, -1, "parameter " + i + ": __local array in kernel parameters is outside v1 (the local array is declared in the kernel body)"));
             }
         }
         for (int l = 0; l < m.fLocalCount(f); l++) {
             if (!storageOk(m, m.fLocalType(f, l))) {
-                out.add(unsupported(f, -1, "локаль " + l + " типа t" + m.fLocalType(f, l) + " не поддержана"));
+                out.add(unsupported(f, -1, "local " + l + " of type t" + m.fLocalType(f, l) + " is not supported"));
             }
         }
         int ret = m.fRet(f);
         if (ret != Types.VOID && !valueOk(m, ret)) {
-            out.add(unsupported(f, -1, "тип результата t" + ret + " не поддержан"));
+            out.add(unsupported(f, -1, "result type t" + ret + " is not supported"));
         }
     }
 
@@ -252,14 +253,14 @@ final class Support {
         int op = m.op(n);
         String why = null;
         switch (op) {
-            case Op.SPEC_CONST -> why = "spec_const не поддержана";
+            case Op.SPEC_CONST -> why = "spec_const is not supported";
             default -> {
                 int t = m.type(n);
                 boolean ok = t == Types.VOID || valueOk(m, t)
                         || (m.typeKind(t) == Types.KIND_ARRAY && storageOk(m, t))
                         || pointerOk(m, t);
                 if (!ok) {
-                    why = "значение типа t" + t + " не поддержано";
+                    why = "value of type t" + t + " is not supported";
                 }
             }
         }

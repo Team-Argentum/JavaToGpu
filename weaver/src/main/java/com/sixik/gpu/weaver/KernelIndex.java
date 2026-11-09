@@ -39,7 +39,7 @@ public final class KernelIndex {
             }
             String[] f = l.split("\t", -1);
             if (f.length != 4 || f[0].isEmpty() || f[1].isEmpty() || f[2].isEmpty() || f[3].isEmpty()) {
-                throw new IllegalArgumentException("kernels.idx, строка " + lineNo + ": ожидалось четыре поля через табуляцию");
+                throw new IllegalArgumentException("kernels.idx, line " + lineNo + ": expected four tab-separated fields");
             }
             idx.byClass.computeIfAbsent(f[0], k -> new HashMap<>()).put(f[1] + f[2], f[3]);
             idx.size++;

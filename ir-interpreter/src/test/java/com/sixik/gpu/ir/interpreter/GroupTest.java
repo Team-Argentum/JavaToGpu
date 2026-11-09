@@ -35,7 +35,7 @@ class GroupTest {
     }
 
     private static String fails(Result<?> r, String code) {
-        assertFalse(r.isOk(), "ожидалась ошибка " + code);
+        assertFalse(r.isOk(), "expected error " + code);
         assertEquals(code, r.diagnostics().get(0).code(), r.diagnostics().toString());
         return r.diagnostics().get(0).message();
     }
@@ -90,7 +90,7 @@ class GroupTest {
                 b.store(at(b, b.param(0), b.localGet(gid)), b.load(at(b, b.localGet(tile), b.constI32(0))))});
         int[] out = new int[9];
         ok(run(m, NdRange.of1D(9), (Object) out));
-        assertArrayEquals(new int[]{3, 3, 3, 3, 3, 3, 3, 3, 3}, out, "три группы, у каждой своя память и она начинается с нуля");
+        assertArrayEquals(new int[]{3, 3, 3, 3, 3, 3, 3, 3, 3}, out, "three groups, each with its own memory, starting from zero");
     }
 
     @Test
@@ -142,7 +142,7 @@ class GroupTest {
             p3[i] = p2[(i + 1) % 4] + 100;
         }
         assertArrayEquals(p3, out);
-        assertTrue(r.value().steps() >= 4 * 12, "шаги work-item-ов группы учтены");
+        assertTrue(r.value().steps() >= 4 * 12, "steps of the group's work-items are accounted for");
     }
 
     @Test
@@ -213,7 +213,7 @@ class GroupTest {
         IrModule m = kernel(4, (b, gid, lid, tile) -> new int[]{
                 b.ifStmt(b.binary(Op.NE, b.localGet(lid), b.constI32(0)), b.block(b.barrier(1)), -1)});
         String msg = fails(run(m, NdRange.of1D(4), (Object) new int[4]), "IN-R05");
-        assertTrue(msg.contains("не дойдя до барьера"), msg);
+        assertTrue(msg.contains("without reaching barrier"), msg);
     }
 
     @Test
@@ -222,7 +222,7 @@ class GroupTest {
                 b.ifStmt(b.binary(Op.EQ, b.binary(Op.REM, b.localGet(lid), b.constI32(2)), b.constI32(0)),
                         b.block(b.barrier(1)), b.block(b.barrier(1)))});
         String msg = fails(run(m, NdRange.of1D(4), (Object) new int[4]), "IN-R05");
-        assertTrue(msg.contains("разных барьерах"), msg);
+        assertTrue(msg.contains("different barriers"), msg);
     }
 
     @Test
@@ -236,7 +236,7 @@ class GroupTest {
         Result<Interpreter.Execution> r = assertTimeoutPreemptively(Duration.ofSeconds(10),
                 () -> run(m, NdRange.of1D(4), (Object) out));
         fails(r, "IN-R01");
-        assertArrayEquals(new int[4], out, "при ошибке массивы хоста не меняются");
+        assertArrayEquals(new int[4], out, "on an error the host arrays are not changed");
     }
 
     @Test
@@ -298,7 +298,7 @@ class GroupTest {
         assertEquals(-5, l[0], "i64: max(-9, -5)");
         assertEquals(Long.MIN_VALUE, l[1]);
         assertEquals(-2L, u[0], "u64: 2^64-2 > 7");
-        assertEquals(0L, u[1], "u64: 2^64-1 + 1 оборачивается в 0");
+        assertEquals(0L, u[1], "u64: 2^64-1 + 1 wraps to 0");
     }
 
     @Test

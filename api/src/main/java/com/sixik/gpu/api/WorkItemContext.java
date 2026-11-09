@@ -36,22 +36,22 @@ public final class WorkItemContext {
      */
     public WorkItemContext(int workDim, int[] globalSize, int[] localSize) {
         if (workDim < 1 || workDim > AXES) {
-            throw new IllegalArgumentException("workDim должен быть 1..3: " + workDim);
+            throw new IllegalArgumentException("workDim must be 1..3: " + workDim);
         }
         if (globalSize.length != AXES || localSize.length != AXES) {
-            throw new IllegalArgumentException("размеры задаются по трём осям");
+            throw new IllegalArgumentException("sizes are given for three axes");
         }
         this.workDim = workDim;
         for (int d = 0; d < AXES; d++) {
             if (globalSize[d] <= 0 || localSize[d] <= 0) {
-                throw new IllegalArgumentException("размеры должны быть > 0 (ось " + d + ")");
+                throw new IllegalArgumentException("sizes must be > 0 (axis " + d + ")");
             }
             if (d >= workDim && (globalSize[d] != 1 || localSize[d] != 1)) {
-                throw new IllegalArgumentException("ось " + d + " вне workDim=" + workDim + " должна иметь размер 1");
+                throw new IllegalArgumentException("axis " + d + " outside workDim=" + workDim + " must have size 1");
             }
             if (globalSize[d] % localSize[d] != 0) {
                 throw new IllegalArgumentException("globalSize[" + d + "]=" + globalSize[d]
-                        + " не кратен localSize[" + d + "]=" + localSize[d]);
+                        + " is not a multiple of localSize[" + d + "]=" + localSize[d]);
             }
             this.globalSize[d] = globalSize[d];
             this.localSize[d] = localSize[d];
@@ -81,7 +81,7 @@ public final class WorkItemContext {
      */
     public void setGlobalId(int x, int y, int z) {
         if (x < 0 || x >= globalSize[0] || y < 0 || y >= globalSize[1] || z < 0 || z >= globalSize[2]) {
-            throw new IllegalArgumentException("индекс (" + x + "," + y + "," + z + ") вне NDRange ("
+            throw new IllegalArgumentException("index (" + x + "," + y + "," + z + ") outside NDRange ("
                     + globalSize[0] + "," + globalSize[1] + "," + globalSize[2] + ")");
         }
         globalId[0] = x;

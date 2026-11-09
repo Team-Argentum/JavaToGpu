@@ -34,14 +34,14 @@ class JsonAndSampleTest {
         assertEquals(-2L, a.get(1));
         assertEquals(3.5, a.get(2));
         assertEquals(100.0, a.get(3));
-        assertTrue(a.get(4) instanceof Double, "число вне long - double");
+        assertTrue(a.get(4) instanceof Double, "a number outside long is a double");
         assertEquals("x\nyA\"", m.get("s"));
         assertEquals(true, m.get("t"));
         assertEquals(false, m.get("f"));
         assertNull(m.get("n"));
         assertTrue(m.containsKey("n"));
         assertTrue(((Map<?, ?>) m.get("o")).isEmpty());
-        assertEquals(List.of("a", "s", "t", "f", "n", "o"), List.copyOf(m.keySet()), "порядок ключей сохранён");
+        assertEquals(List.of("a", "s", "t", "f", "n", "o"), List.copyOf(m.keySet()), "key order is preserved");
     }
 
     @Test
@@ -49,10 +49,10 @@ class JsonAndSampleTest {
         for (String bad : new String[]{"", "{", "[1,", "{\"a\" 1}", "{\"a\":1,}", "[1 2]", "tru", "\"abc", "{\"a\":1} x",
                 "{\"a\":1,\"a\":2}", "[01x]", "\"\\q\""}) {
             IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> Json.parse(bad), bad);
-            assertTrue(e.getMessage().startsWith("JSON, строка "), e.getMessage());
+            assertTrue(e.getMessage().startsWith("JSON, line "), e.getMessage());
         }
         assertTrue(assertThrows(IllegalArgumentException.class, () -> Json.parse("{\n\n  \"a\": ?}")).getMessage()
-                .contains("строка 3"));
+                .contains("line 3"));
     }
 
     // ---- KernelSample ----------------------------------------------------------------------------
@@ -67,7 +67,7 @@ class JsonAndSampleTest {
         assertNotSame(a[0], b[0]);
         assertArrayEquals(new float[]{1, 2, 3}, (float[]) a[0]);
         ((float[]) a[0])[1] = -1;
-        assertArrayEquals(new float[]{1, 2, 3}, (float[]) b[0], "запись в одну копию не видна в другой");
+        assertArrayEquals(new float[]{1, 2, 3}, (float[]) b[0], "a write to one copy is not visible in the other");
         assertEquals(7, a[2]);
     }
 
@@ -164,7 +164,7 @@ class JsonAndSampleTest {
         assertArrayEquals((float[]) a[1], (float[]) b[1]);
         assertArrayEquals((long[]) a[2], (long[]) b[2]);
         java.util.Random rnd = new java.util.Random(7);
-        assertEquals(rnd.nextInt(), ((int[]) a[0])[0], "формула описана: nextInt()");
+        assertEquals(rnd.nextInt(), ((int[]) a[0])[0], "the formula is described: nextInt()");
         for (float f : (float[]) a[1]) {
             assertTrue(f >= -1f && f < 1f);
         }
@@ -238,7 +238,7 @@ class JsonAndSampleTest {
         assertNotSame(copy[0], original);
         assertNull(copy[1]);
         assertEquals(5f, copy[0].w);
-        assertSame(copy[0].v, original.v, "вектор неизменяем и разделяется");
+        assertSame(copy[0].v, original.v, "the vector is immutable and shared");
         copy[0].w = -1;
         assertEquals(5f, original.w);
         int[][] nested = {{1, 2}};

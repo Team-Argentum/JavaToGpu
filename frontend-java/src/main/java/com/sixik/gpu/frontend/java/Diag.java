@@ -39,7 +39,7 @@ final class Diag {
         Map<String, Entry> table = new LinkedHashMap<>();
         try (InputStream in = Diag.class.getResourceAsStream("diagnostics.def")) {
             if (in == null) {
-                throw new IllegalStateException("diagnostics.def не найден в ресурсах модуля frontend-java");
+                throw new IllegalStateException("diagnostics.def not found in the frontend-java module resources");
             }
             String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             int no = 0;
@@ -52,17 +52,17 @@ final class Diag {
                 String[] head = line.split("\\s+", 3);
                 if (head.length < 3 || !head[0].matches("GPU\\d{4}")
                         || !(head[1].equals("error") || head[1].equals("warning"))) {
-                    throw new IllegalStateException("diagnostics.def:" + no + ": ожидалось '<GPU####> <error|warning> <сообщение> | <подсказка>'");
+                    throw new IllegalStateException("diagnostics.def:" + no + ": expected '<GPU####> <error|warning> <message> | <hint>'");
                 }
                 String[] parts = head[2].split("\\s\\|\\s?", 2);
                 String message = parts[0].strip();
                 String hint = parts.length > 1 ? parts[1].strip() : "";
                 if (table.put(head[0], new Entry(head[0], head[1].equals("error"), message, hint)) != null) {
-                    throw new IllegalStateException("diagnostics.def:" + no + ": повторный код " + head[0]);
+                    throw new IllegalStateException("diagnostics.def:" + no + ": duplicate code " + head[0]);
                 }
             }
         } catch (IOException e) {
-            throw new IllegalStateException("не удалось прочитать diagnostics.def", e);
+            throw new IllegalStateException("failed to read diagnostics.def", e);
         }
         return Collections.unmodifiableMap(table);
     }
@@ -82,7 +82,7 @@ final class Diag {
     static Entry entry(String code) {
         Entry e = TABLE.get(code);
         if (e == null) {
-            throw new IllegalArgumentException("код диагностики " + code + " отсутствует в diagnostics.def");
+            throw new IllegalArgumentException("diagnostic code " + code + " is missing from diagnostics.def");
         }
         return e;
     }
@@ -98,7 +98,7 @@ final class Diag {
         Entry e = entry(code);
         StringBuilder sb = new StringBuilder(code).append(": ").append(substitute(e.message(), args));
         if (!e.hint().isEmpty()) {
-            sb.append(". Подсказка: ").append(substitute(e.hint(), args));
+            sb.append(". Hint: ").append(substitute(e.hint(), args));
         }
         return sb.toString();
     }

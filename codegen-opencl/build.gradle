@@ -1,4 +1,4 @@
-description = 'Кодген IR -> OpenCL C. Чистая функция emit(IrModule, Target).'
+description = 'IR -> OpenCL C codegen. A pure function emit(IrModule, Target).'
 
 dependencies {
     api project(':ir')
@@ -27,7 +27,7 @@ tasks.named('test') {
 // результат сверяется с ir-interpreter. Без драйвера пропускаются (Assumptions), в обычную сборку не входят.
 tasks.register('deviceTest', Test) {
     group = 'verification'
-    description = 'Тесты кодогенератора на реальном OpenCL-устройстве (тег device).'
+    description = 'Codegen tests on a real OpenCL device (tag device).'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform {

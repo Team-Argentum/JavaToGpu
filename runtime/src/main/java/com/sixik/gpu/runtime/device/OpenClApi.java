@@ -107,7 +107,7 @@ public final class OpenClApi implements DeviceApi {
 
     private MethodHandle fn(String symbol, FunctionDescriptor descriptor) {
         MemorySegment address = lib.find(symbol).orElseThrow(
-                () -> new IllegalStateException("в библиотеке OpenCL нет функции " + symbol));
+                () -> new IllegalStateException("the OpenCL library has no function " + symbol));
         return linker.downcallHandle(address, descriptor);
     }
 
@@ -117,7 +117,7 @@ public final class OpenClApi implements DeviceApi {
 
     private static void check(int status, String function) {
         if (status != 0) {
-            throw new DeviceApiException(status, function, "драйвер вернул ошибку");
+            throw new DeviceApiException(status, function, "the driver returned an error");
         }
     }
 
@@ -125,7 +125,7 @@ public final class OpenClApi implements DeviceApi {
         if (t instanceof DeviceApiException e) {
             return e;
         }
-        return new DeviceApiException(-1, function, "вызов не удался: " + t);
+        return new DeviceApiException(-1, function, "call failed: " + t);
     }
 
     // ---- платформы и устройства -----------------------------------------------------------------

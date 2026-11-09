@@ -28,7 +28,7 @@ class DiskCacheDeviceTest {
 
     private static GpuContext open(Path dir, List<GpuEvent> events) {
         Result<GpuContext> r = GpuContext.builder().ignoreEnvironment().diskCache(dir).listener(events::add).tryBuild();
-        Assumptions.assumeTrue(r.isOk(), "нет OpenCL-устройства");
+        Assumptions.assumeTrue(r.isOk(), "no OpenCL device");
         return r.value();
     }
 
@@ -70,13 +70,13 @@ class DiskCacheDeviceTest {
             assertEquals("built", detail(first));
             checkSine(ctx, k.value());
         }
-        Assumptions.assumeTrue(!images(dir).isEmpty(), "драйвер не отдаёт бинарные образы программ");
+        Assumptions.assumeTrue(!images(dir).isEmpty(), "the driver does not provide program binaries");
 
         List<GpuEvent> second = new ArrayList<>();
         try (GpuContext ctx = open(dir, second)) {
             Result<CompiledKernel> k = ctx.compile(Fixtures.computeSine());
             assertTrue(k.isOk(), k.diagnostics().toString());
-            assertEquals("disk-hit", detail(second), "ядро собрано из образа, а не из исходника");
+            assertEquals("disk-hit", detail(second), "the kernel was built from the image, not from source");
             assertEquals(1, ctx.cacheStats().diskHits());
             checkSine(ctx, k.value());
         }
@@ -87,7 +87,7 @@ class DiskCacheDeviceTest {
         try (GpuContext ctx = open(dir, new ArrayList<>())) {
             ctx.compile(Fixtures.computeSine());
         }
-        Assumptions.assumeTrue(!images(dir).isEmpty(), "драйвер не отдаёт бинарные образы программ");
+        Assumptions.assumeTrue(!images(dir).isEmpty(), "the driver does not provide program binaries");
         Path file = images(dir).get(0);
 
         // 1. побитая контрольная сумма

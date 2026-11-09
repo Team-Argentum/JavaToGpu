@@ -172,7 +172,7 @@ class JavaToGpuAggregateTest {
             Object first = ps[0];
             call(bodies, "shift", ps, new Float4(0.5f, 1, 2, 3));
             assertEquals(1, fake.enqueues());
-            assertSame(first, ps[0], "struct обновляется на месте");
+            assertSame(first, ps[0], "the struct is updated in place");
             assertEquals(1.5f, x(ps[0]));
             assertEquals(3.5f, x(ps[2]));
             assertEquals(new Float4(0.5f, 11, 2, 4), v(ps[0]));

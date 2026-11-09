@@ -12,7 +12,7 @@ class ValidatorStructureTypesTest {
 
     private static void expect(IrModule m, String code) {
         Validator.Report r = Validator.validate(m);
-        assertTrue(r.has(code), () -> code + " ожидалась, получено: " + r.diagnostics());
+        assertTrue(r.has(code), () -> code + " was expected, got: " + r.diagnostics());
         assertTrue(r.hasErrors() || r.diagnostics().stream().anyMatch(d -> d.code().equals(code)));
     }
 

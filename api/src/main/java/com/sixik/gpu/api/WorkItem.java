@@ -45,7 +45,7 @@ public final class WorkItem {
     public static WorkItemContext current() {
         if (!CURRENT.isBound()) {
             throw new IllegalStateException(
-                    "id-builtin вызван вне запуска ядра: нет контекста work-item (WorkItem.run)");
+                    "id builtin called outside a kernel launch: no work-item context (WorkItem.run)");
         }
         return CURRENT.get();
     }

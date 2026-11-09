@@ -110,7 +110,7 @@ final class JavaTypes {
             case K_LONG -> Types.I64;
             case K_FLOAT -> Types.F32;
             case K_DOUBLE -> Types.F64;
-            default -> throw new IllegalArgumentException("нет типа IR для вида " + k);
+            default -> throw new IllegalArgumentException("no IR type for kind " + k);
         };
     }
 

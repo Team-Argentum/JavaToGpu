@@ -19,12 +19,12 @@ class ValidatorSemanticsTest {
 
     private static void expect(IrModule m, String code) {
         Validator.Report r = Validator.validate(m);
-        assertTrue(r.has(code), () -> code + " ожидалась, получено: " + r.diagnostics());
+        assertTrue(r.has(code), () -> code + " was expected, got: " + r.diagnostics());
     }
 
     private static void expectNot(IrModule m, String code) {
         Validator.Report r = Validator.validate(m);
-        assertFalse(r.has(code), () -> code + " не ожидалась, получено: " + r.diagnostics());
+        assertFalse(r.has(code), () -> code + " was not expected, got: " + r.diagnostics());
     }
 
     // ---------------------------------------------------------------- IR-V ----------------------
@@ -407,7 +407,7 @@ class ValidatorSemanticsTest {
     void b01_barrierUnderDivergentConditionIsWarningByDefault() {
         Validator.Report r = Validator.validate(barrierUnder(false, false));
         assertTrue(r.has("IR-B01"));
-        assertFalse(r.hasErrors(), "по умолчанию IR-B01 - предупреждение");
+        assertFalse(r.hasErrors(), "by default IR-B01 is a warning");
     }
 
     @Test
@@ -567,7 +567,7 @@ class ValidatorSemanticsTest {
         assertFalse(r.hasErrors(), r.diagnostics().toString());
         assertArrayEquals(new int[]{Validator.ACCESS_READ | Validator.ACCESS_WRITE, Validator.ACCESS_READ,
                 Validator.ACCESS_WRITE}, r.functions()[0].paramAccess(),
-                "через локаль-указатель чтение/запись не видны, режим занижать нельзя; constant только читается");
+                "reads/writes through a local pointer are not visible, the mode cannot be understated; constant is read-only");
     }
 
     @Test

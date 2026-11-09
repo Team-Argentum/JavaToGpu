@@ -194,8 +194,8 @@ public final class HostObjects {
         Field[] fields = FIELDS.get(cls);
         if (m.typeKind(t) == Types.KIND_VEC) {
             if (fields.length != m.typeB(t)) {
-                return "класс " + cls.getName() + " имеет " + fields.length + " открытых полей, а вектор - "
-                        + m.typeB(t) + " компонент";
+                return "class " + cls.getName() + " has " + fields.length + " public fields, while the vector has "
+                        + m.typeB(t) + " components";
             }
             for (int i = 0; i < fields.length; i++) {
                 String why = scalarMismatch(m.typeA(t), fields[i]);
@@ -206,7 +206,7 @@ public final class HostObjects {
             return "";
         }
         if (fields.length != m.structFieldCount(t)) {
-            return "класс " + cls.getName() + " имеет " + fields.length + " открытых полей, а struct - "
+            return "class " + cls.getName() + " has " + fields.length + " public fields, while the struct has "
                     + m.structFieldCount(t);
         }
         for (int i = 0; i < fields.length; i++) {
@@ -232,8 +232,8 @@ public final class HostObjects {
             case Types.F64 -> c == double.class;
             default -> false;
         };
-        return ok ? "" : "поле " + f.getDeclaringClass().getSimpleName() + "." + f.getName() + " типа " + c.getSimpleName()
-                + " не соответствует скаляру IR t" + irType;
+        return ok ? "" : "field " + f.getDeclaringClass().getSimpleName() + "." + f.getName() + " of type " + c.getSimpleName()
+                + " does not match IR scalar t" + irType;
     }
 
     // ---- чтение и запись --------------------------------------------------------------------------
@@ -254,7 +254,7 @@ public final class HostObjects {
 
     private static void read(IrModule m, int t, Object value, long[] out, int[] pos) {
         if (value == null) {
-            throw new IllegalArgumentException("значение агрегата равно null");
+            throw new IllegalArgumentException("aggregate value is null");
         }
         Field[] fields = FIELDS.get(value.getClass());
         try {
@@ -279,7 +279,7 @@ public final class HostObjects {
                 }
             }
         } catch (IllegalAccessException e) {
-            throw new IllegalArgumentException("поле недоступно: " + e.getMessage());
+            throw new IllegalArgumentException("field is inaccessible: " + e.getMessage());
         }
     }
 
@@ -303,7 +303,7 @@ public final class HostObjects {
         } else if (c == boolean.class) {
             bits = f.getBoolean(owner) ? 1 : 0;
         } else {
-            throw new IllegalArgumentException("поле " + f.getName() + " имеет не скалярный тип " + c.getName());
+            throw new IllegalArgumentException("field " + f.getName() + " has a non-scalar type " + c.getName());
         }
         return canon(irType, bits);
     }
@@ -351,7 +351,7 @@ public final class HostObjects {
             }
             return target;
         } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("не удалось создать " + cls.getName() + ": " + e);
+            throw new IllegalArgumentException("failed to create " + cls.getName() + ": " + e);
         }
     }
 
@@ -373,7 +373,7 @@ public final class HostObjects {
         } else if (c == boolean.class) {
             return v != 0;
         }
-        throw new IllegalArgumentException("не скалярный тип " + c.getName() + " для t" + irType);
+        throw new IllegalArgumentException("not a scalar type " + c.getName() + " for t" + irType);
     }
 
     private static void store(Field f, Object owner, long v) throws IllegalAccessException {

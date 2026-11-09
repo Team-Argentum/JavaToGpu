@@ -26,7 +26,7 @@ final class Golden {
         try (InputStream in = Golden.class.getResourceAsStream("/golden/" + name)) {
             if (in == null) {
                 writeActual(name, actual);
-                fail("нет golden-файла " + name + "; фактический вывод записан в build/golden-actual/" + name);
+                fail("no golden file " + name + "; actual output written to build/golden-actual/" + name);
                 return;
             }
             expected = new String(in.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
@@ -35,7 +35,7 @@ final class Golden {
         }
         if (!expected.equals(actual)) {
             writeActual(name, actual);
-            assertEquals(expected, actual, "golden " + name + " не совпал; фактический вывод - build/golden-actual/" + name);
+            assertEquals(expected, actual, "golden " + name + " did not match; actual output is in build/golden-actual/" + name);
         }
     }
 

@@ -200,8 +200,8 @@ public final class Validator {
 
         Report run() {
             if (m.builtinsVersion() != Builtins.VERSION) {
-                err("IR-S05", -1, -1, "версия таблицы builtins модуля " + m.builtinsVersion()
-                        + " не совпадает с версией читателя " + Builtins.VERSION);
+                err("IR-S05", -1, -1, "module builtins table version " + m.builtinsVersion()
+                        + " does not match the reader version " + Builtins.VERSION);
             }
             checkTypes();
             checkFunctionTable();
@@ -253,11 +253,11 @@ public final class Validator {
                         int s = m.typeA(t);
                         int lanes = m.typeB(t);
                         if (!Types.isScalar(s) || s == Types.BOOL) {
-                            err("IR-T07", -1, -1, "тип t" + t + ": компонента вектора t" + s + " недопустима");
+                            err("IR-T07", -1, -1, "type t" + t + ": vector component t" + s + " is invalid");
                             typeOk[t] = false;
                         }
                         if (!Types.isValidLanes(lanes)) {
-                            err("IR-T07", -1, -1, "тип t" + t + ": число компонент " + lanes + " не из {2,3,4,8,16}");
+                            err("IR-T07", -1, -1, "type t" + t + ": lane count " + lanes + " is not in {2,3,4,8,16}");
                             typeOk[t] = false;
                         }
                         usesF64[t] = s == Types.F64;
@@ -266,15 +266,15 @@ public final class Validator {
                         int space = m.typeA(t);
                         int elem = m.typeB(t);
                         if (!AddressSpace.isValid(space)) {
-                            err("IR-S01", -1, -1, "тип t" + t + ": неизвестный address space " + space);
+                            err("IR-S01", -1, -1, "type t" + t + ": unknown address space " + space);
                             typeOk[t] = false;
                         }
                         if (elem < 1 || elem >= t || !typeOk[elem]) {
-                            err("IR-S01", -1, -1, "тип t" + t + ": элемент t" + elem + " вне диапазона или определён позже");
+                            err("IR-S01", -1, -1, "type t" + t + ": element t" + elem + " is out of range or defined later");
                             typeOk[t] = false;
                         } else {
                             if (elem == Types.BOOL) {
-                                err("IR-T06", -1, -1, "тип t" + t + ": BOOL нельзя в элементе указателя/массива");
+                                err("IR-T06", -1, -1, "type t" + t + ": BOOL is not allowed as a pointer/array element");
                                 typeOk[t] = false;
                             }
                             usesF64[t] = usesF64[elem];
@@ -282,7 +282,7 @@ public final class Validator {
                     }
                     case Types.KIND_STRUCT -> checkStruct(t);
                     default -> {
-                        err("IR-S01", -1, -1, "тип t" + t + ": вид " + kind + " не поддерживается в v1");
+                        err("IR-S01", -1, -1, "type t" + t + ": kind " + kind + " is not supported in v1");
                         typeOk[t] = false;
                     }
                 }
@@ -294,33 +294,33 @@ public final class Validator {
             int count = m.typeC(t);
             int align = m.typeD(t);
             if (!listOk(off, count)) {
-                err("IR-S04", -1, -1, "тип t" + t + ": список полей вне пула");
+                err("IR-S04", -1, -1, "type t" + t + ": field list outside the pool");
                 typeOk[t] = false;
                 return;
             }
             if (count < 1) {
-                err("IR-T08", -1, -1, "тип t" + t + ": у struct нет полей");
+                err("IR-T08", -1, -1, "type t" + t + ": struct has no fields");
                 typeOk[t] = false;
             }
             if (align != 0 && (align < 0 || Integer.bitCount(align) != 1)) {
-                err("IR-T08", -1, -1, "тип t" + t + ": align " + align + " не степень двойки");
+                err("IR-T08", -1, -1, "type t" + t + ": align " + align + " is not a power of two");
                 typeOk[t] = false;
             }
             boolean f64 = false;
             for (int i = 0; i < count; i++) {
                 int ft = m.list(off + i);
                 if (ft < 1 || ft >= t || !typeOk[ft]) {
-                    err("IR-S01", -1, -1, "тип t" + t + ": поле " + i + " ссылается на t" + ft + " вне диапазона или определённый позже");
+                    err("IR-S01", -1, -1, "type t" + t + ": field " + i + " refers to t" + ft + " out of range or defined later");
                     typeOk[t] = false;
                     continue;
                 }
                 if (ft == Types.BOOL) {
-                    err("IR-T06", -1, -1, "тип t" + t + ": BOOL нельзя в поле struct (поле " + i + ")");
+                    err("IR-T06", -1, -1, "type t" + t + ": BOOL is not allowed in a struct field (field " + i + ")");
                     typeOk[t] = false;
                 }
                 int fk = m.typeKind(ft);
                 if (fk == Types.KIND_ARRAY || fk == Types.KIND_PTR) {
-                    err("IR-M05", -1, -1, "тип t" + t + ": поле " + i + " - массив или указатель (не поддерживается в v1)");
+                    err("IR-M05", -1, -1, "type t" + t + ": field " + i + " is an array or pointer (not supported in v1)");
                     typeOk[t] = false;
                 }
                 f64 |= usesF64[ft];
@@ -337,36 +337,36 @@ public final class Validator {
                 boolean ok = true;
                 int kind = m.fKind(f);
                 if (kind != IrModule.KERNEL && kind != IrModule.DEVICE) {
-                    err("IR-F04", f, -1, "функция f" + f + ": неизвестный вид " + kind);
+                    err("IR-F04", f, -1, "function f" + f + ": unknown kind " + kind);
                     ok = false;
                 }
                 int ret = m.fRet(f);
                 if (!typeInRange(ret) || !typeOk[ret]) {
-                    err("IR-S01", f, -1, "функция f" + f + ": тип результата t" + ret + " вне диапазона");
+                    err("IR-S01", f, -1, "function f" + f + ": result type t" + ret + " out of range");
                     ok = false;
                 } else if (kind == IrModule.KERNEL && ret != Types.VOID) {
-                    err("IR-C02", f, -1, "kernel f" + f + " должен возвращать void");
+                    err("IR-C02", f, -1, "kernel f" + f + " must return void");
                 }
                 int pc = m.fParamCount(f);
                 int po = funcCol(IrModule.F_PARAMS_OFF, f);
                 if (!listOk(po, pc)) {
-                    err("IR-S04", f, -1, "функция f" + f + ": список параметров вне пула");
+                    err("IR-S04", f, -1, "function f" + f + ": parameter list outside the pool");
                     ok = false;
                 } else {
                     for (int i = 0; i < pc; i++) {
                         int pt = m.fParamType(f, i);
                         if (pt < 1 || pt >= typeCount || !typeOk[pt]) {
-                            err("IR-S01", f, -1, "функция f" + f + ": параметр " + i + " имеет тип t" + pt + " вне диапазона");
+                            err("IR-S01", f, -1, "function f" + f + ": parameter " + i + " has type t" + pt + " out of range");
                             ok = false;
                             continue;
                         }
                         if (pt == Types.BOOL) {
-                            err("IR-T06", f, -1, "функция f" + f + ": параметр " + i + " типа BOOL недопустим");
+                            err("IR-T06", f, -1, "function f" + f + ": parameter " + i + " of type BOOL is not allowed");
                         }
                         if (kind == IrModule.KERNEL) {
                             int k = m.typeKind(pt);
                             if ((k == Types.KIND_PTR || k == Types.KIND_ARRAY) && m.typeA(pt) == AddressSpace.PRIVATE) {
-                                err("IR-M04", f, -1, "kernel f" + f + ": параметр " + i + " в private-памяти недопустим");
+                                err("IR-M04", f, -1, "kernel f" + f + ": parameter " + i + " in private memory is not allowed");
                             }
                         }
                     }
@@ -374,13 +374,13 @@ public final class Validator {
                 int lc = m.fLocalCount(f);
                 int lo = funcCol(IrModule.F_LOCALS_OFF, f);
                 if (!listOk(lo, lc)) {
-                    err("IR-S04", f, -1, "функция f" + f + ": список локалей вне пула");
+                    err("IR-S04", f, -1, "function f" + f + ": local list outside the pool");
                     ok = false;
                 } else {
                     for (int i = 0; i < lc; i++) {
                         int lt = m.fLocalType(f, i);
                         if (lt < 1 || lt >= typeCount || !typeOk[lt]) {
-                            err("IR-S01", f, -1, "функция f" + f + ": локаль " + i + " имеет тип t" + lt + " вне диапазона");
+                            err("IR-S01", f, -1, "function f" + f + ": local " + i + " has type t" + lt + " out of range");
                             ok = false;
                         }
                     }
@@ -388,12 +388,12 @@ public final class Validator {
                 int rc = m.fRequiredCount(f);
                 int ro = funcCol(IrModule.F_REQUIRED_OFF, f);
                 if (!listOk(ro, rc)) {
-                    err("IR-S04", f, -1, "функция f" + f + ": список required вне пула");
+                    err("IR-S04", f, -1, "function f" + f + ": required list outside the pool");
                 } else {
                     for (int i = 0; i < rc; i++) {
                         int sid = m.fRequiredName(f, i);
                         if (sid < 0 || sid >= m.stringCount()) {
-                            err("IR-S01", f, -1, "функция f" + f + ": required[" + i + "] ссылается на строку " + sid + " вне таблицы");
+                            err("IR-S01", f, -1, "function f" + f + ": required[" + i + "] refers to string " + sid + " outside the table");
                         }
                     }
                 }
@@ -403,29 +403,29 @@ public final class Validator {
                 boolean anyWg = wx != 0 || wy != 0 || wz != 0;
                 if (anyWg) {
                     if (kind != IrModule.KERNEL) {
-                        err("IR-F03", f, -1, "функция f" + f + ": reqd_work_group_size допустим только у kernel");
+                        err("IR-F03", f, -1, "function f" + f + ": reqd_work_group_size is allowed only on a kernel");
                     }
                     if (wx <= 0 || wy <= 0 || wz <= 0) {
-                        err("IR-F03", f, -1, "функция f" + f + ": reqd_work_group_size (" + wx + "," + wy + "," + wz
-                                + ") должен быть положительным по всем осям");
+                        err("IR-F03", f, -1, "function f" + f + ": reqd_work_group_size (" + wx + "," + wy + "," + wz
+                                + ") must be positive on all axes");
                     }
                 }
                 int inline = m.fInline(f);
                 if (inline < IrModule.INLINE_DEFAULT || inline > IrModule.INLINE_NEVER) {
-                    err("IR-F04", f, -1, "функция f" + f + ": неизвестная политика inline " + inline);
+                    err("IR-F04", f, -1, "function f" + f + ": unknown inline policy " + inline);
                 }
                 int opt = m.fOpt(f);
                 if (opt < 0 || opt > 3) {
-                    err("IR-F04", f, -1, "функция f" + f + ": уровень оптимизации " + opt + " вне 0..3");
+                    err("IR-F04", f, -1, "function f" + f + ": optimization level " + opt + " outside 0..3");
                 }
                 int bodyKind = m.fBodyKind(f);
                 if (bodyKind != IrModule.BODY_IR && bodyKind != IrModule.BODY_NATIVE) {
-                    err("IR-F04", f, -1, "функция f" + f + ": неизвестный вид тела " + bodyKind);
+                    err("IR-F04", f, -1, "function f" + f + ": unknown body kind " + bodyKind);
                 }
                 int fb = m.fFallback(f);
                 if (fb != -1) {
                     if (fb < 0 || fb >= funcCount || fb == f) {
-                        err("IR-F04", f, -1, "функция f" + f + ": fallback f" + fb + " недопустим");
+                        err("IR-F04", f, -1, "function f" + f + ": fallback f" + fb + " is not allowed");
                     }
                 }
                 funcShapeOk[f] = ok;
@@ -434,9 +434,9 @@ public final class Validator {
                 if (bodyKind == IrModule.BODY_NATIVE) {
                     funcBodyOk[f] = false;
                 } else if (body < 0 || body >= nodeCount) {
-                    err("IR-S01", f, -1, "функция f" + f + ": корень тела n" + body + " вне диапазона");
+                    err("IR-S01", f, -1, "function f" + f + ": body root n" + body + " out of range");
                 } else if (m.op(body) != Op.BLOCK) {
-                    err("IR-S07", f, body, "корень тела функции f" + f + " должен быть BLOCK");
+                    err("IR-S07", f, body, "body root of function f" + f + " must be BLOCK");
                 } else {
                     funcBodyOk[f] = ok;
                 }
@@ -450,7 +450,7 @@ public final class Validator {
                         same = m.fParamType(f, i) == m.fParamType(fb, i);
                     }
                     if (!same) {
-                        err("IR-F04", f, -1, "функция f" + f + ": fallback f" + fb + " имеет другую ABI");
+                        err("IR-F04", f, -1, "function f" + f + ": fallback f" + fb + " has a different ABI");
                     }
                 }
             }
@@ -468,41 +468,41 @@ public final class Validator {
             for (int n = 0; n < nodeCount; n++) {
                 int op = m.op(n);
                 if (!Op.isValid(op)) {
-                    err("IR-S01", -1, n, "неизвестный опкод " + op);
+                    err("IR-S01", -1, n, "unknown opcode " + op);
                     bad[n] = true;
                     continue;
                 }
                 int t = m.type(n);
                 if (!typeInRange(t) || !typeOk[t]) {
-                    err("IR-S01", -1, n, "тип результата t" + t + " вне диапазона");
+                    err("IR-S01", -1, n, "result type t" + t + " out of range");
                     bad[n] = true;
                 }
                 if (Op.isStatement(op) && t != Types.VOID) {
-                    err("IR-T09", -1, n, "стейтмент должен иметь тип VOID, а не t" + t);
+                    err("IR-T09", -1, n, "a statement must have type VOID, not t" + t);
                 }
                 // списки
                 switch (op) {
                     case Op.BUILD, Op.STRUCT_BUILD, Op.BLOCK -> {
                         if (!listOk(m.a(n), m.b(n))) {
-                            err("IR-S04", -1, n, "список [" + m.a(n) + "," + m.a(n) + "+" + m.b(n) + ") вне пула");
+                            err("IR-S04", -1, n, "list [" + m.a(n) + "," + m.a(n) + "+" + m.b(n) + ") outside the pool");
                             bad[n] = true;
                         }
                     }
                     case Op.CALL, Op.INTRINSIC -> {
                         if (!listOk(m.b(n), m.c(n))) {
-                            err("IR-S04", -1, n, "список аргументов вне пула");
+                            err("IR-S04", -1, n, "argument list outside the pool");
                             bad[n] = true;
                         }
                     }
                     case Op.SHUFFLE -> {
                         if (!listOk(m.b(n), m.c(n))) {
-                            err("IR-S04", -1, n, "список индексов вне пула");
+                            err("IR-S04", -1, n, "index list outside the pool");
                             bad[n] = true;
                         }
                     }
                     case Op.SWITCH -> {
                         if (m.c(n) < 0 || !listOk(m.b(n), 3 * m.c(n))) {
-                            err("IR-S04", -1, n, "список case вне пула");
+                            err("IR-S04", -1, n, "case list outside the pool");
                             bad[n] = true;
                         }
                     }
@@ -517,10 +517,10 @@ public final class Validator {
                 for (int k = 0; k < cnt; k++) {
                     int o = Operands.get(m, n, k);
                     if (o < 0 || o >= nodeCount) {
-                        err("IR-S01", -1, n, "операнд " + k + " ссылается на узел n" + o + " вне таблицы");
+                        err("IR-S01", -1, n, "operand " + k + " refers to node n" + o + " outside the table");
                         bad[n] = true;
                     } else if (o >= n) {
-                        err("IR-S02", -1, n, "операнд " + k + " (n" + o + ") не имеет меньший id, чем узел");
+                        err("IR-S02", -1, n, "operand " + k + " (n" + o + ") does not have a smaller id than the node");
                         bad[n] = true;
                     }
                 }
@@ -537,7 +537,7 @@ public final class Validator {
             }
             for (int n = 0; n < nodeCount; n++) {
                 if (owner[n] < 0 && !bad[n]) {
-                    err("IR-S03", -1, n, "узел недостижим из тела какой-либо функции");
+                    err("IR-S03", -1, n, "node is unreachable from any function body");
                 }
             }
         }
@@ -553,7 +553,7 @@ public final class Validator {
                     continue;
                 }
                 if (owner[n] >= 0) {
-                    err("IR-S03", f, n, "узел принадлежит и функции f" + owner[n] + ", и функции f" + f);
+                    err("IR-S03", f, n, "node belongs to both function f" + owner[n] + "and function f" + f);
                     continue;
                 }
                 owner[n] = f;
@@ -655,147 +655,147 @@ public final class Validator {
             switch (op) {
                 case Op.CONST_INT -> {
                     if (!Types.isInteger(t)) {
-                        err("IR-T09", f, n, "константа должна иметь целый тип, а не " + tn(t));
+                        err("IR-T09", f, n, "an integer constant must have an integer type, not " + tn(t));
                     } else if (Types.bits(t) == 64 && (a < 0 || a >= m.constCount())) {
-                        err("IR-S01", f, n, "индекс 64-битной константы " + a + " вне таблицы");
+                        err("IR-S01", f, n, "index of the 64-bit constant " + a + " outside the table");
                     }
                 }
                 case Op.CONST_FLOAT -> {
                     if (!Types.isFloat(t)) {
-                        err("IR-T09", f, n, "вещественная константа должна иметь тип F32/F64, а не " + tn(t));
+                        err("IR-T09", f, n, "a floating constant must have type F32/F64, not " + tn(t));
                     } else if (t == Types.F64 && (a < 0 || a >= m.constCount())) {
-                        err("IR-S01", f, n, "индекс F64-константы " + a + " вне таблицы");
+                        err("IR-S01", f, n, "index of the F64 constant " + a + " outside the table");
                     }
                 }
                 case Op.CONST_BOOL -> {
                     if (t != Types.BOOL || (a != 0 && a != 1)) {
-                        err("IR-T09", f, n, "булева константа должна быть BOOL со значением 0 или 1");
+                        err("IR-T09", f, n, "a boolean constant must be BOOL with value 0 or 1");
                     }
                 }
                 case Op.SPEC_CONST -> {
                     if (!Types.isInteger(t)) {
-                        err("IR-T09", f, n, "spec_const должна иметь целый тип");
+                        err("IR-T09", f, n, "spec_const must have an integer type");
                     }
                 }
                 case Op.PARAM -> {
                     if (a < 0 || a >= m.fParamCount(f)) {
-                        err("IR-S01", f, n, "параметр " + a + " вне 0.." + (m.fParamCount(f) - 1));
+                        err("IR-S01", f, n, "parameter " + a + " outside 0.." + (m.fParamCount(f) - 1));
                     } else if (m.fParamType(f, a) != t) {
-                        err("IR-T09", f, n, "тип узла " + tn(t) + " не совпадает с типом параметра " + tn(m.fParamType(f, a)));
+                        err("IR-T09", f, n, "node type " + tn(t) + " does not match the parameter type " + tn(m.fParamType(f, a)));
                     }
                 }
                 case Op.ADD, Op.SUB, Op.MUL, Op.DIV, Op.REM -> {
                     if (ty(a) != ty(b)) {
-                        err("IR-T01", f, n, "типы операндов различаются: " + tn(ty(a)) + " и " + tn(ty(b)));
+                        err("IR-T01", f, n, "operand types differ: " + tn(ty(a)) + " and " + tn(ty(b)));
                     } else if (!arithType(ty(a))) {
-                        err("IR-T02", f, n, "арифметика не определена на " + tn(ty(a)));
+                        err("IR-T02", f, n, "arithmetic is not defined on " + tn(ty(a)));
                     } else if (t != ty(a)) {
-                        err("IR-T09", f, n, "тип результата " + tn(t) + " не совпадает с типом операндов " + tn(ty(a)));
+                        err("IR-T09", f, n, "result type " + tn(t) + " does not match the operand type " + tn(ty(a)));
                     }
                 }
                 case Op.NEG -> {
                     if (!arithType(ty(a))) {
-                        err("IR-T02", f, n, "отрицание не определено на " + tn(ty(a)));
+                        err("IR-T02", f, n, "negation is not defined on " + tn(ty(a)));
                     } else if (t != ty(a)) {
-                        err("IR-T09", f, n, "тип результата не совпадает с типом операнда");
+                        err("IR-T09", f, n, "result type does not match the operand type");
                     }
                 }
                 case Op.AND, Op.OR, Op.XOR -> {
                     if (ty(a) != ty(b)) {
-                        err("IR-T01", f, n, "типы операндов различаются: " + tn(ty(a)) + " и " + tn(ty(b)));
+                        err("IR-T01", f, n, "operand types differ: " + tn(ty(a)) + " and " + tn(ty(b)));
                     } else if (!intBitsType(ty(a)) && ty(a) != Types.BOOL) {
-                        err("IR-T02", f, n, "побитовая операция не определена на " + tn(ty(a)));
+                        err("IR-T02", f, n, "bitwise operation is not defined on " + tn(ty(a)));
                     } else if (t != ty(a)) {
-                        err("IR-T09", f, n, "тип результата не совпадает с типом операндов");
+                        err("IR-T09", f, n, "result type does not match the operand types");
                     }
                 }
                 case Op.NOT -> {
                     if (!intBitsType(ty(a)) && ty(a) != Types.BOOL) {
-                        err("IR-T02", f, n, "NOT не определён на " + tn(ty(a)));
+                        err("IR-T02", f, n, "NOT is not defined on " + tn(ty(a)));
                     } else if (t != ty(a)) {
-                        err("IR-T09", f, n, "тип результата не совпадает с типом операнда");
+                        err("IR-T09", f, n, "result type does not match the operand type");
                     }
                 }
                 case Op.SHL, Op.SHR, Op.USHR -> {
                     if (ty(a) != ty(b)) {
-                        err("IR-T01", f, n, "тип счётчика сдвига " + tn(ty(b)) + " должен совпадать с типом значения " + tn(ty(a)));
+                        err("IR-T01", f, n, "shift count type " + tn(ty(b)) + " must match the value type " + tn(ty(a)));
                     } else if (!intBitsType(ty(a))) {
-                        err("IR-T02", f, n, "сдвиг не определён на " + tn(ty(a)));
+                        err("IR-T02", f, n, "shift is not defined on " + tn(ty(a)));
                     } else if (t != ty(a)) {
-                        err("IR-T09", f, n, "тип результата не совпадает с типом значения");
+                        err("IR-T09", f, n, "result type does not match the value type");
                     }
                 }
                 case Op.EQ, Op.NE -> {
                     if (ty(a) != ty(b)) {
-                        err("IR-T01", f, n, "типы операндов различаются: " + tn(ty(a)) + " и " + tn(ty(b)));
+                        err("IR-T01", f, n, "operand types differ: " + tn(ty(a)) + " and " + tn(ty(b)));
                     } else if (!(Types.isScalar(ty(a)) && (Types.isArith(ty(a)) || ty(a) == Types.BOOL))) {
-                        err("IR-T02", f, n, "сравнение не определено на " + tn(ty(a)));
+                        err("IR-T02", f, n, "comparison is not defined on " + tn(ty(a)));
                     } else if (t != Types.BOOL) {
-                        err("IR-T09", f, n, "результат сравнения должен быть BOOL");
+                        err("IR-T09", f, n, "comparison result must be BOOL");
                     }
                 }
                 case Op.LT, Op.LE, Op.GT, Op.GE -> {
                     if (ty(a) != ty(b)) {
-                        err("IR-T01", f, n, "типы операндов различаются: " + tn(ty(a)) + " и " + tn(ty(b)));
+                        err("IR-T01", f, n, "operand types differ: " + tn(ty(a)) + " and " + tn(ty(b)));
                     } else if (!(Types.isScalar(ty(a)) && Types.isArith(ty(a)))) {
-                        err("IR-T02", f, n, "упорядочивающее сравнение не определено на " + tn(ty(a)));
+                        err("IR-T02", f, n, "ordered comparison is not defined on " + tn(ty(a)));
                     } else if (t != Types.BOOL) {
-                        err("IR-T09", f, n, "результат сравнения должен быть BOOL");
+                        err("IR-T09", f, n, "comparison result must be BOOL");
                     }
                 }
                 case Op.SELECT -> {
                     if (ty(a) != Types.BOOL) {
-                        err("IR-T04", f, n, "условие select должно быть BOOL, а не " + tn(ty(a)));
+                        err("IR-T04", f, n, "select condition must be BOOL, not " + tn(ty(a)));
                     }
                     if (ty(b) != ty(c)) {
-                        err("IR-T04", f, n, "ветки select имеют разные типы: " + tn(ty(b)) + " и " + tn(ty(c)));
+                        err("IR-T04", f, n, "select branches have different types: " + tn(ty(b)) + " and " + tn(ty(c)));
                     } else if (t != ty(b) || t == Types.VOID) {
-                        err("IR-T09", f, n, "тип результата select должен совпадать с типом веток и не быть VOID");
+                        err("IR-T09", f, n, "select result type must match the branch type and not be VOID");
                     }
                 }
                 case Op.CONVERT -> {
                     if (!convertOk(ty(a), t)) {
-                        err("IR-T03", f, n, "недопустимое преобразование " + tn(ty(a)) + " -> " + tn(t));
+                        err("IR-T03", f, n, "invalid conversion " + tn(ty(a)) + " -> " + tn(t));
                     }
                 }
                 case Op.BITCAST -> {
                     if (!bitcastOk(ty(a), t)) {
-                        err("IR-T03", f, n, "недопустимый bitcast " + tn(ty(a)) + " -> " + tn(t));
+                        err("IR-T03", f, n, "invalid bitcast " + tn(ty(a)) + " -> " + tn(t));
                     }
                 }
                 case Op.LOCAL_DECL, Op.LOCAL_SET -> {
                     if (a < 0 || a >= m.fLocalCount(f)) {
-                        err("IR-S01", f, n, "локаль " + a + " вне диапазона");
+                        err("IR-S01", f, n, "local " + a + " out of range");
                     } else if (b < 0) {
                         err(op == Op.LOCAL_DECL ? "IR-V02" : "IR-S01", f, n,
-                                op == Op.LOCAL_DECL ? "объявление локали без инициализатора" : "присваивание без значения");
+                                op == Op.LOCAL_DECL ? "local declaration without an initializer" : "assignment without a value");
                     } else {
                         int lt = m.fLocalType(f, a);
                         if (m.typeKind(lt) == Types.KIND_ARRAY) {
-                            err("IR-V04", f, n, "массив нельзя объявлять/присваивать как обычную локаль; используйте *_array_decl");
+                            err("IR-V04", f, n, "an array cannot be declared/assigned as an ordinary local; use *_array_decl");
                         } else if (ty(b) != lt) {
-                            err("IR-T09", f, n, "тип значения " + tn(ty(b)) + " не совпадает с типом локали " + tn(lt));
+                            err("IR-T09", f, n, "value type " + tn(ty(b)) + " does not match the local type " + tn(lt));
                         }
                     }
                 }
                 case Op.LOCAL_GET -> {
                     if (a < 0 || a >= m.fLocalCount(f)) {
-                        err("IR-S01", f, n, "локаль " + a + " вне диапазона");
+                        err("IR-S01", f, n, "local " + a + " out of range");
                     } else if (m.fLocalType(f, a) != t) {
-                        err("IR-T09", f, n, "тип узла не совпадает с типом локали");
+                        err("IR-T09", f, n, "node type does not match the local type");
                     }
                 }
                 case Op.LOCAL_ADDR -> {
                     if (a < 0 || a >= m.fLocalCount(f)) {
-                        err("IR-S01", f, n, "локаль " + a + " вне диапазона");
+                        err("IR-S01", f, n, "local " + a + " out of range");
                     } else {
                         int lt = m.fLocalType(f, a);
                         int lk = m.typeKind(lt);
                         if (!(Types.isScalar(lt) || lk == Types.KIND_VEC || lk == Types.KIND_STRUCT)) {
-                            err("IR-V03", f, n, "адрес можно брать только у скаляра, вектора или struct");
+                            err("IR-V03", f, n, "an address can be taken only of a scalar, vector or struct");
                         } else if (m.typeKind(t) != Types.KIND_PTR || m.typeA(t) != AddressSpace.PRIVATE
                                 || m.typeB(t) != lt) {
-                            err("IR-T09", f, n, "результат local_addr должен быть Ptr<private, " + tn(lt) + ">");
+                            err("IR-T09", f, n, "local_addr result must be Ptr<private, " + tn(lt) + ">");
                         }
                     }
                 }
@@ -803,28 +803,28 @@ public final class Validator {
                     int bt = ty(a);
                     int k = m.typeKind(bt);
                     if (k != Types.KIND_ARRAY && k != Types.KIND_PTR) {
-                        err("IR-T05", f, n, "база elem_ptr должна быть массивом или указателем, а не " + tn(bt));
+                        err("IR-T05", f, n, "elem_ptr base must be an array or a pointer, not " + tn(bt));
                     } else {
                         if (ty(b) != Types.I32) {
-                            err("IR-M06", f, n, "индекс elem_ptr должен быть I32, а не " + tn(ty(b)));
+                            err("IR-M06", f, n, "elem_ptr index must be I32, not " + tn(ty(b)));
                         }
                         if (m.typeKind(t) != Types.KIND_PTR || m.typeA(t) != m.typeA(bt) || m.typeB(t) != m.typeB(bt)) {
-                            err("IR-T09", f, n, "результат elem_ptr должен быть Ptr<space, elem> базы");
+                            err("IR-T09", f, n, "elem_ptr result must be the base's Ptr<space, elem>");
                         }
                     }
                 }
                 case Op.FIELD_PTR -> {
                     int pt = ty(a);
                     if (m.typeKind(pt) != Types.KIND_PTR || m.typeKind(m.typeB(pt)) != Types.KIND_STRUCT) {
-                        err("IR-T08", f, n, "field_ptr ожидает указатель на struct, а не " + tn(pt));
+                        err("IR-T08", f, n, "field_ptr expects a pointer to a struct, not " + tn(pt));
                     } else {
                         int st = m.typeB(pt);
                         if (b < 0 || b >= m.structFieldCount(st)) {
-                            err("IR-T08", f, n, "индекс поля " + b + " вне 0.." + (m.structFieldCount(st) - 1));
+                            err("IR-T08", f, n, "field index " + b + " outside 0.." + (m.structFieldCount(st) - 1));
                         } else {
                             int ft = m.structFieldType(st, b);
                             if (m.typeKind(t) != Types.KIND_PTR || m.typeA(t) != m.typeA(pt) || m.typeB(t) != ft) {
-                                err("IR-T09", f, n, "результат field_ptr должен быть Ptr<space, " + tn(ft) + ">");
+                                err("IR-T09", f, n, "field_ptr result must be Ptr<space, " + tn(ft) + ">");
                             }
                         }
                     }
@@ -832,118 +832,118 @@ public final class Validator {
                 case Op.LOAD -> {
                     int pt = ty(a);
                     if (m.typeKind(pt) != Types.KIND_PTR) {
-                        err("IR-T05", f, n, "load ожидает указатель, а не " + tn(pt));
+                        err("IR-T05", f, n, "load expects a pointer, not " + tn(pt));
                     } else if (m.typeB(pt) != t) {
-                        err("IR-T05", f, n, "тип результата " + tn(t) + " не совпадает с pointee " + tn(m.typeB(pt)));
+                        err("IR-T05", f, n, "result type " + tn(t) + " does not match pointee " + tn(m.typeB(pt)));
                     }
                 }
                 case Op.STORE -> {
                     int pt = ty(a);
                     if (m.typeKind(pt) != Types.KIND_PTR) {
-                        err("IR-T05", f, n, "store ожидает указатель, а не " + tn(pt));
+                        err("IR-T05", f, n, "store expects a pointer, not " + tn(pt));
                     } else {
                         if (m.typeB(pt) != ty(b)) {
-                            err("IR-T05", f, n, "тип значения " + tn(ty(b)) + " не совпадает с pointee " + tn(m.typeB(pt)));
+                            err("IR-T05", f, n, "value type " + tn(ty(b)) + " does not match pointee " + tn(m.typeB(pt)));
                         }
                         if (m.typeA(pt) == AddressSpace.CONSTANT) {
-                            err("IR-M01", f, n, "запись в constant-память запрещена");
+                            err("IR-M01", f, n, "writing to constant memory is forbidden");
                         }
                     }
                 }
                 case Op.ARRAY_LEN -> {
                     if (m.typeKind(ty(a)) != Types.KIND_ARRAY) {
-                        err("IR-T05", f, n, "array_len ожидает массив, а не " + tn(ty(a)));
+                        err("IR-T05", f, n, "array_len expects an array, not " + tn(ty(a)));
                     } else if (t != Types.I32) {
-                        err("IR-T09", f, n, "длина массива имеет тип I32");
+                        err("IR-T09", f, n, "array length has type I32");
                     }
                 }
                 case Op.PRIVATE_ARRAY_DECL, Op.LOCAL_ARRAY_DECL -> {
                     int space = op == Op.PRIVATE_ARRAY_DECL ? AddressSpace.PRIVATE : AddressSpace.LOCAL;
                     String code = op == Op.PRIVATE_ARRAY_DECL ? "IR-M03" : "IR-M02";
                     if (a < 0 || a >= m.fLocalCount(f)) {
-                        err("IR-S01", f, n, "локаль " + a + " вне диапазона");
+                        err("IR-S01", f, n, "local " + a + " out of range");
                     } else {
                         int lt = m.fLocalType(f, a);
                         if (m.typeKind(lt) != Types.KIND_ARRAY || m.typeA(lt) != space) {
-                            err(code, f, n, "локаль " + a + " должна иметь тип Array<" + AddressSpace.name(space) + ", T>");
+                            err(code, f, n, "local " + a + " must have type Array<" + AddressSpace.name(space) + ", T>");
                         }
                     }
                     if (b >= 0 && b < nodeCount) {
                         boolean constLen = (m.op(b) == Op.CONST_INT || m.op(b) == Op.SPEC_CONST) && ty(b) == Types.I32;
                         if (!constLen) {
-                            err(code, f, n, "длина массива должна быть константой I32");
+                            err(code, f, n, "array length must be an I32 constant");
                         } else if (m.op(b) == Op.CONST_INT && m.a(b) <= 0) {
-                            err(code, f, n, "длина массива должна быть положительной");
+                            err(code, f, n, "array length must be positive");
                         }
                     }
                 }
                 case Op.SPLAT -> {
                     if (m.typeKind(t) != Types.KIND_VEC || m.typeA(t) != ty(a)) {
-                        err("IR-T07", f, n, "splat: результат должен быть вектором со скаляром " + tn(ty(a)));
+                        err("IR-T07", f, n, "splat: the result must be a vector of scalar " + tn(ty(a)));
                     }
                 }
                 case Op.EXTRACT -> {
                     int vt = ty(a);
                     if (m.typeKind(vt) != Types.KIND_VEC) {
-                        err("IR-T07", f, n, "extract ожидает вектор, а не " + tn(vt));
+                        err("IR-T07", f, n, "extract expects a vector, not " + tn(vt));
                     } else if (b < 0 || b >= m.typeB(vt)) {
-                        err("IR-T07", f, n, "индекс компоненты " + b + " вне 0.." + (m.typeB(vt) - 1));
+                        err("IR-T07", f, n, "component index " + b + " outside 0.." + (m.typeB(vt) - 1));
                     } else if (t != m.typeA(vt)) {
-                        err("IR-T09", f, n, "результат extract должен быть скаляром компоненты");
+                        err("IR-T09", f, n, "extract result must be the component scalar");
                     }
                 }
                 case Op.INSERT -> {
                     int vt = ty(a);
                     if (m.typeKind(vt) != Types.KIND_VEC) {
-                        err("IR-T07", f, n, "insert ожидает вектор, а не " + tn(vt));
+                        err("IR-T07", f, n, "insert expects a vector, not " + tn(vt));
                     } else if (b < 0 || b >= m.typeB(vt)) {
-                        err("IR-T07", f, n, "индекс компоненты " + b + " вне 0.." + (m.typeB(vt) - 1));
+                        err("IR-T07", f, n, "component index " + b + " outside 0.." + (m.typeB(vt) - 1));
                     } else if (ty(c) != m.typeA(vt) || t != vt) {
-                        err("IR-T07", f, n, "insert: значение должно быть скаляром компоненты, результат - тем же вектором");
+                        err("IR-T07", f, n, "insert: the value must be the component scalar, the result the same vector");
                     }
                 }
                 case Op.SHUFFLE -> {
                     int vt = ty(a);
                     if (m.typeKind(vt) != Types.KIND_VEC) {
-                        err("IR-T07", f, n, "shuffle ожидает вектор, а не " + tn(vt));
+                        err("IR-T07", f, n, "shuffle expects a vector, not " + tn(vt));
                     } else {
                         boolean ok = true;
                         for (int i = 0; i < c; i++) {
                             int lane = m.list(b + i);
                             if (lane < 0 || lane >= m.typeB(vt)) {
-                                err("IR-T07", f, n, "индекс " + lane + " маски вне 0.." + (m.typeB(vt) - 1));
+                                err("IR-T07", f, n, "index " + lane + " of the mask outside 0.." + (m.typeB(vt) - 1));
                                 ok = false;
                             }
                         }
                         if (ok && (m.typeKind(t) != Types.KIND_VEC || m.typeA(t) != m.typeA(vt) || m.typeB(t) != c)) {
-                            err("IR-T09", f, n, "результат shuffle должен быть вектором той же компоненты длины " + c);
+                            err("IR-T09", f, n, "shuffle result must be a vector of the same component with length " + c);
                         }
                     }
                 }
                 case Op.BUILD -> {
                     if (m.typeKind(t) != Types.KIND_VEC) {
-                        err("IR-T07", f, n, "build: результат должен быть вектором");
+                        err("IR-T07", f, n, "build: the result must be a vector");
                     } else if (b != m.typeB(t)) {
-                        err("IR-T07", f, n, "build: " + b + " компонент для вектора из " + m.typeB(t));
+                        err("IR-T07", f, n, "build: " + b + " components for a vector of " + m.typeB(t));
                     } else {
                         for (int i = 0; i < b; i++) {
                             if (ty(m.list(a + i)) != m.typeA(t)) {
-                                err("IR-T07", f, n, "build: компонента " + i + " имеет тип " + tn(ty(m.list(a + i)))
-                                        + ", ожидался " + tn(m.typeA(t)));
+                                err("IR-T07", f, n, "build: component " + i + " has type " + tn(ty(m.list(a + i)))
+                                        + ", expected " + tn(m.typeA(t)));
                             }
                         }
                     }
                 }
                 case Op.STRUCT_BUILD -> {
                     if (m.typeKind(t) != Types.KIND_STRUCT) {
-                        err("IR-T08", f, n, "struct_build: результат должен быть struct");
+                        err("IR-T08", f, n, "struct_build: the result must be a struct");
                     } else if (b != m.structFieldCount(t)) {
-                        err("IR-T08", f, n, "struct_build: " + b + " значений для struct из " + m.structFieldCount(t) + " полей");
+                        err("IR-T08", f, n, "struct_build: " + b + " values for a struct of " + m.structFieldCount(t) + " fields");
                     } else {
                         for (int i = 0; i < b; i++) {
                             if (ty(m.list(a + i)) != m.structFieldType(t, i)) {
-                                err("IR-T08", f, n, "struct_build: поле " + i + " ожидает " + tn(m.structFieldType(t, i))
-                                        + ", получено " + tn(ty(m.list(a + i))));
+                                err("IR-T08", f, n, "struct_build: field " + i + " expects " + tn(m.structFieldType(t, i))
+                                        + ", got " + tn(ty(m.list(a + i))));
                             }
                         }
                     }
@@ -951,48 +951,48 @@ public final class Validator {
                 case Op.FIELD_GET -> {
                     int st = ty(a);
                     if (m.typeKind(st) != Types.KIND_STRUCT) {
-                        err("IR-T08", f, n, "field_get ожидает struct, а не " + tn(st));
+                        err("IR-T08", f, n, "field_get expects a struct, not " + tn(st));
                     } else if (b < 0 || b >= m.structFieldCount(st)) {
-                        err("IR-T08", f, n, "индекс поля " + b + " вне 0.." + (m.structFieldCount(st) - 1));
+                        err("IR-T08", f, n, "field index " + b + " outside 0.." + (m.structFieldCount(st) - 1));
                     } else if (t != m.structFieldType(st, b)) {
-                        err("IR-T09", f, n, "результат field_get должен иметь тип поля " + tn(m.structFieldType(st, b)));
+                        err("IR-T09", f, n, "field_get result must have the field type " + tn(m.structFieldType(st, b)));
                     }
                 }
                 case Op.FIELD_SET -> {
                     int st = ty(a);
                     if (m.typeKind(st) != Types.KIND_STRUCT) {
-                        err("IR-T08", f, n, "field_set ожидает struct, а не " + tn(st));
+                        err("IR-T08", f, n, "field_set expects a struct, not " + tn(st));
                     } else if (b < 0 || b >= m.structFieldCount(st)) {
-                        err("IR-T08", f, n, "индекс поля " + b + " вне 0.." + (m.structFieldCount(st) - 1));
+                        err("IR-T08", f, n, "field index " + b + " outside 0.." + (m.structFieldCount(st) - 1));
                     } else if (ty(c) != m.structFieldType(st, b) || t != st) {
-                        err("IR-T08", f, n, "field_set: значение должно иметь тип поля, результат - тот же struct");
+                        err("IR-T08", f, n, "field_set: the value must have the field type, the result is the same struct");
                     }
                 }
                 case Op.CALL -> {
                     if (a < 0 || a >= funcCount) {
-                        err("IR-S01", f, n, "вызов функции f" + a + " вне таблицы");
+                        err("IR-S01", f, n, "call of function f" + a + " outside the table");
                     } else if (funcShapeOk[a]) {
                         if (c != m.fParamCount(a)) {
-                            err("IR-F02", f, n, "вызов f" + a + ": " + c + " аргументов, ожидалось " + m.fParamCount(a));
+                            err("IR-F02", f, n, "call of f" + a + ": " + c + " arguments, expected " + m.fParamCount(a));
                         } else {
                             for (int i = 0; i < c; i++) {
                                 int at = ty(m.list(b + i));
                                 if (at != m.fParamType(a, i)) {
-                                    err("IR-F02", f, n, "вызов f" + a + ": аргумент " + i + " имеет тип " + tn(at)
-                                            + ", ожидался " + tn(m.fParamType(a, i)));
+                                    err("IR-F02", f, n, "call of f" + a + ": argument " + i + " has type " + tn(at)
+                                            + ", expected " + tn(m.fParamType(a, i)));
                                 }
                             }
                         }
                         if (t != m.fRet(a)) {
-                            err("IR-T09", f, n, "тип вызова " + tn(t) + " не совпадает с результатом функции " + tn(m.fRet(a)));
+                            err("IR-T09", f, n, "call type " + tn(t) + " does not match the function result " + tn(m.fRet(a)));
                         }
                     }
                 }
                 case Op.INTRINSIC -> {
                     if (!Builtins.isValid(a)) {
-                        err("IR-S01", f, n, "builtin #" + a + " отсутствует в таблице");
+                        err("IR-S01", f, n, "builtin #" + a + " is missing from the table");
                     } else if (Builtins.has(a, Builtins.SYNC)) {
-                        err("IR-S08", f, n, "builtin " + Builtins.name(a) + " - точка синхронизации: в IR это узел barrier");
+                        err("IR-S08", f, n, "builtin " + Builtins.name(a) + " is a synchronization point: in IR it is a barrier node");
                     } else {
                         int[] argTypes = new int[c];
                         for (int i = 0; i < c; i++) {
@@ -1000,30 +1000,30 @@ public final class Validator {
                         }
                         int ret = Builtins.resultType(m, a, argTypes, c);
                         if (ret < 0) {
-                            err("IR-T10", f, n, "аргументы не подходят к builtin " + Builtins.name(a));
+                            err("IR-T10", f, n, "arguments do not fit builtin " + Builtins.name(a));
                         } else if (ret != t) {
-                            err("IR-T09", f, n, "тип результата builtin " + Builtins.name(a) + " должен быть " + tn(ret));
+                            err("IR-T09", f, n, "builtin result type " + Builtins.name(a) + " must be " + tn(ret));
                         }
                     }
                 }
                 case Op.BARRIER -> {
                     if (a < 1 || a > 3) {
-                        err("IR-S01", f, n, "флаги барьера " + a + " вне 1..3");
+                        err("IR-S01", f, n, "barrier flags " + a + " outside 1..3");
                     }
                 }
                 case Op.IF -> {
                     if (ty(a) != Types.BOOL) {
-                        err("IR-T04", f, n, "условие if должно быть BOOL");
+                        err("IR-T04", f, n, "if condition must be BOOL");
                     }
                 }
                 case Op.LOOP -> {
                     if (ty(a) != Types.BOOL) {
-                        err("IR-T04", f, n, "условие loop должно быть BOOL");
+                        err("IR-T04", f, n, "loop condition must be BOOL");
                     }
                 }
                 case Op.DO_WHILE -> {
                     if (ty(b) != Types.BOOL) {
-                        err("IR-T04", f, n, "условие do_while должно быть BOOL");
+                        err("IR-T04", f, n, "do_while condition must be BOOL");
                     }
                 }
                 case Op.SWITCH -> checkSwitch(f, n);
@@ -1041,10 +1041,10 @@ public final class Validator {
                     boolean wantStmt = Operands.operandIsStatement(m, n, k);
                     boolean isStmt = Op.isStatement(m.op(o));
                     if (wantStmt != isStmt) {
-                        err("IR-S07", f, n, "операнд " + k + " (n" + o + " " + Op.nameOf(m.op(o)) + ") должен быть "
-                                + (wantStmt ? "стейтментом" : "выражением"));
+                        err("IR-S07", f, n, "operand " + k + " (n" + o + " " + Op.nameOf(m.op(o)) + ") must be a "
+                                + (wantStmt ? "statement" : "expression"));
                     } else if (!wantStmt && ty(o) == Types.VOID && op != Op.EXPR_STMT) {
-                        err("IR-T09", f, n, "операнд " + k + " (n" + o + ") имеет тип VOID и не может использоваться как значение");
+                        err("IR-T09", f, n, "operand " + k + " (n" + o + ") has type VOID and cannot be used as a value");
                     }
                 }
             }
@@ -1056,27 +1056,27 @@ public final class Validator {
             int cnt = m.c(n);
             int kt = ty(key);
             if (!(kt == Types.I32 || kt == Types.U32)) {
-                err("IR-C03", f, n, "ключ switch должен быть I32 или U32, а не " + tn(kt));
+                err("IR-C03", f, n, "switch key must be I32 or U32, not " + tn(kt));
             }
             int defaults = 0;
             for (int i = 0; i < cnt; i++) {
                 int isDef = m.list(off + 3 * i);
                 int value = m.list(off + 3 * i + 1);
                 if (isDef != 0 && isDef != 1) {
-                    err("IR-C03", f, n, "case " + i + ": признак default " + isDef + " не 0/1");
+                    err("IR-C03", f, n, "case " + i + ": default flag " + isDef + " is not 0/1");
                 }
                 if (isDef == 1) {
                     defaults++;
                 } else {
                     for (int j = 0; j < i; j++) {
                         if (m.list(off + 3 * j) == 0 && m.list(off + 3 * j + 1) == value) {
-                            err("IR-C03", f, n, "значение case " + value + " повторяется");
+                            err("IR-C03", f, n, "case value " + value + " is repeated");
                         }
                     }
                 }
             }
             if (defaults > 1) {
-                err("IR-C03", f, n, "в switch больше одной ветки default");
+                err("IR-C03", f, n, "more than one default branch in switch");
             }
         }
 
@@ -1144,7 +1144,7 @@ public final class Validator {
                 if (callState[g] == 1) {
                     inCycle[f] = true;
                     inCycle[g] = true;
-                    err("IR-F01", f, -1, "рекурсия: f" + f + " вызывает f" + g + ", который уже в цепочке вызовов");
+                    err("IR-F01", f, -1, "recursion: f" + f + " calls f" + g + ", which is already in the call chain");
                 } else if (callState[g] == 0) {
                     dfs(g);
                 }
@@ -1352,7 +1352,7 @@ public final class Validator {
                 return;
             }
             if (declared[local] >= 0) {
-                err("IR-V01", walkFunc, n, "локаль " + local + " уже объявлена в видимой области");
+                err("IR-V01", walkFunc, n, "local " + local + " is already declared in a visible scope");
                 return;
             }
             declared[local] = scopeDepth;
@@ -1372,7 +1372,7 @@ public final class Validator {
                         int child = m.list(m.a(n) + i);
                         if (child >= 0 && child < nodeCount && m.op(child) == Op.LOCAL_ARRAY_DECL) {
                             if (!(isRoot && m.fKind(f) == IrModule.KERNEL)) {
-                                err("IR-M02", f, child, "local_array_decl допустим только на верхнем уровне тела kernel");
+                                err("IR-M02", f, child, "local_array_decl is allowed only at the top level of a kernel body");
                             }
                         }
                         walkStmt(child, false);
@@ -1424,12 +1424,12 @@ public final class Validator {
                 }
                 case Op.BREAK -> {
                     if (loopDepth + switchDepth == 0) {
-                        err("IR-C01", f, n, "break вне цикла и switch");
+                        err("IR-C01", f, n, "break outside a loop and switch");
                     }
                 }
                 case Op.CONTINUE -> {
                     if (loopDepth == 0) {
-                        err("IR-C01", f, n, "continue вне цикла");
+                        err("IR-C01", f, n, "continue outside a loop");
                     }
                 }
                 case Op.RETURN -> {
@@ -1438,12 +1438,12 @@ public final class Validator {
                     if (v >= 0) {
                         checkExpr(v);
                         if (v < nodeCount && ret == Types.VOID) {
-                            err("IR-C02", f, n, "return со значением в функции void");
+                            err("IR-C02", f, n, "return with a value in a void function");
                         } else if (v < nodeCount && ty(v) != ret) {
-                            err("IR-C02", f, n, "тип возвращаемого значения " + tn(ty(v)) + " не совпадает с " + tn(ret));
+                            err("IR-C02", f, n, "return value type " + tn(ty(v)) + " does not match " + tn(ret));
                         }
                     } else if (ret != Types.VOID) {
-                        err("IR-C02", f, n, "return без значения в функции с результатом " + tn(ret));
+                        err("IR-C02", f, n, "return without a value in a function with result " + tn(ret));
                     }
                 }
                 default -> {
@@ -1456,7 +1456,7 @@ public final class Validator {
                 return;
             }
             if (declared[local] < 0) {
-                err("IR-V01", walkFunc, n, "локаль " + local + " используется до объявления или вне своей области");
+                err("IR-V01", walkFunc, n, "local " + local + " is used before declaration or outside its scope");
             }
         }
 
@@ -1519,13 +1519,13 @@ public final class Validator {
                     boolean placed = parents[n] == 1 && parentOf[n] >= 0
                             && Operands.allowsEffectfulOperand(m, parentOf[n], parentSlot[n]);
                     if (!placed) {
-                        err("IR-E01", owner[n], n, "эффектный узел допустим только как значение стейтмента "
-                                + "(expr_stmt/local_decl/local_set/store/return) и только с одним родителем");
+                        err("IR-E01", owner[n], n, "an effect node is allowed only as a statement value "
+                                + "(expr_stmt/local_decl/local_set/store/return) and only with one parent");
                     }
                 }
                 if (isOpen && parents[n] > 1) {
-                    err("IR-E02", owner[n], n, "узел читает локаль или память и имеет " + parents[n]
-                            + " родителей (допустим один)");
+                    err("IR-E02", owner[n], n, "the node reads a local or memory and has " + parents[n]
+                            + " parents (one is allowed)");
                 }
             }
         }
@@ -1621,7 +1621,7 @@ public final class Validator {
                 }
                 case Op.BARRIER -> {
                     if (divergent) {
-                        reportBarrier(f, n, "barrier под расходящимся управлением (условие зависит от getGlobalId/getLocalId)");
+                        reportBarrier(f, n, "barrier under divergent control flow (the condition depends on getGlobalId/getLocalId)");
                     }
                     return 0;
                 }
@@ -1710,7 +1710,7 @@ public final class Validator {
             }
             if (m.op(e) == Op.CALL && m.a(e) >= 0 && m.a(e) < funcCount && infos[m.a(e)] != null
                     && infos[m.a(e)].usesGroupSync()) {
-                reportBarrier(f, e, "вызов функции f" + m.a(e) + " с barrier/local memory под расходящимся управлением");
+                reportBarrier(f, e, "call of function f" + m.a(e) + " with barrier/local memory under divergent control flow");
             }
             int cnt = Operands.count(m, e);
             for (int k = 0; k < cnt; k++) {

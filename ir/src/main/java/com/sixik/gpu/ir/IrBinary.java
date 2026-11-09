@@ -225,7 +225,7 @@ public final class IrBinary {
         try {
             return MessageDigest.getInstance("SHA-256").digest(semanticBytes(m));
         } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 недоступен в JDK", e);
+            throw new IllegalStateException("SHA-256 is unavailable in the JDK", e);
         }
     }
 
@@ -268,7 +268,7 @@ public final class IrBinary {
 
     private static void need(ByteBuffer b, long bytes, String what) {
         if (bytes < 0 || bytes > b.remaining()) {
-            throw new Corrupt(what + ": нужно " + bytes + " байт, осталось " + b.remaining());
+            throw new Corrupt(what + ": need " + bytes + " bytes, remaining " + b.remaining());
         }
     }
 
@@ -276,7 +276,7 @@ public final class IrBinary {
         need(b, 4, what);
         int n = b.getInt();
         if (n < 0 || (long) n * elemBytes > b.remaining()) {
-            throw new Corrupt(what + ": число элементов " + n + " не помещается в данные");
+            throw new Corrupt(what + ": element count " + n + " does not fit in the data");
         }
         return n;
     }
@@ -315,13 +315,13 @@ public final class IrBinary {
     }
 
     private static ByteBuffer section(ByteBuffer file, int expectedTag, String name) {
-        need(file, 8, "секция " + name);
+        need(file, 8, "section " + name);
         int tag = file.getInt();
         int len = file.getInt();
         if (tag != expectedTag) {
-            throw new Corrupt("ожидалась секция " + name);
+            throw new Corrupt("expected section " + name);
         }
-        need(file, len, "секция " + name);
+        need(file, len, "section " + name);
         ByteBuffer slice = file.slice(file.position(), len).order(ByteOrder.LITTLE_ENDIAN);
         file.position(file.position() + len);
         return slice;
@@ -329,7 +329,7 @@ public final class IrBinary {
 
     private static void drained(ByteBuffer b, String name) {
         if (b.hasRemaining()) {
-            throw new Corrupt("в секции " + name + " лишние данные: " + b.remaining() + " байт");
+            throw new Corrupt("in section " + name + " has extra data: " + b.remaining() + " bytes");
         }
     }
 
@@ -343,33 +343,33 @@ public final class IrBinary {
         try {
             return Result.ok(decode(bytes));
         } catch (Corrupt e) {
-            String code = e.getMessage() != null && e.getMessage().startsWith("версия") ? "IR-S05" : "IR-S06";
+            String code = e.getMessage() != null && e.getMessage().startsWith("version") ? "IR-S05" : "IR-S06";
             return Result.failed(List.of(new Diagnostic(code, Severity.ERROR, -1, -1, e.getMessage())));
         }
     }
 
     private static IrModule decode(byte[] bytes) {
         ByteBuffer file = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
-        need(file, 12, "заголовок");
+        need(file, 12, "header");
         for (byte mb : MAGIC) {
             if (file.get() != mb) {
-                throw new Corrupt("неверная сигнатура файла (ожидалось GIR)");
+                throw new Corrupt("invalid file signature (expected GIR)");
             }
         }
         int format = file.getShort() & 0xFFFF;
         int builtins = file.getShort() & 0xFFFF;
         file.getInt();
         if (format != FORMAT) {
-            throw new Corrupt("версия формата " + format + " не поддерживается (ожидалась " + FORMAT + ")");
+            throw new Corrupt("version of the format " + format + " is not supported (expected " + FORMAT + ")");
         }
         if (builtins != Builtins.VERSION) {
-            throw new Corrupt("версия таблицы builtins " + builtins + " не совпадает с " + Builtins.VERSION);
+            throw new Corrupt("version of the builtins table " + builtins + " does not match " + Builtins.VERSION);
         }
 
         ByteBuffer ty = section(file, TAG_TYPE, "TYPE");
         int dynamic = count(ty, 0, "TYPE");
         if ((long) dynamic * IrModule.T_COLS * 4 > ty.remaining()) {
-            throw new Corrupt("TYPE: число строк " + dynamic + " не помещается в данные");
+            throw new Corrupt("TYPE: string count " + dynamic + " does not fit in the data");
         }
         int[][] types = IrModule.presetTypeColumns(Types.FIRST_DYNAMIC + dynamic);
         for (int c = 0; c < IrModule.T_COLS; c++) {
@@ -394,7 +394,7 @@ public final class IrBinary {
         ByteBuffer nd = section(file, TAG_NODE, "NODE");
         int nn = count(nd, 0, "NODE");
         if ((long) nn * IrModule.N_COLS * 4 > nd.remaining()) {
-            throw new Corrupt("NODE: число узлов " + nn + " не помещается в данные");
+            throw new Corrupt("NODE: node count " + nn + " does not fit in the data");
         }
         int[][] nodes = new int[IrModule.N_COLS][];
         for (int c = 0; c < IrModule.N_COLS; c++) {
@@ -410,7 +410,7 @@ public final class IrBinary {
         ByteBuffer fu = section(file, TAG_FUNC, "FUNC");
         int fn = count(fu, 0, "FUNC");
         if ((long) fn * IrModule.F_COLS * 4 > fu.remaining()) {
-            throw new Corrupt("FUNC: число функций " + fn + " не помещается в данные");
+            throw new Corrupt("FUNC: function count " + fn + " does not fit in the data");
         }
         int[][] funcs = new int[IrModule.F_COLS][];
         for (int c = 0; c < IrModule.F_COLS; c++) {
@@ -430,7 +430,7 @@ public final class IrBinary {
         int[] col = readCounted(db, "DBUG.nodeCol", 0);
         drained(db, "DBUG");
         if (file.hasRemaining()) {
-            throw new Corrupt("после последней секции лишние данные: " + file.remaining() + " байт");
+            throw new Corrupt("extra data after the last section: " + file.remaining() + " bytes");
         }
         DebugInfo debug = new DebugInfo(dstr, funcName, paramOff, localOff, typeName, typeFields, pool, line, col);
         return new IrModule(new IrModule.Parts(builtins, types, strings, consts, nodes, lists, funcs, debug));

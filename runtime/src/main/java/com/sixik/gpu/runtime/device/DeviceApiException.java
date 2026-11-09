@@ -17,7 +17,7 @@ public final class DeviceApiException extends RuntimeException {
      * @param message  пояснение
      */
     public DeviceApiException(int status, String function, String message) {
-        super(function + ": " + message + " (код " + status + ")");
+        super(function + ": " + message + " (code " + status + ")");
         this.status = status;
         this.function = function;
     }

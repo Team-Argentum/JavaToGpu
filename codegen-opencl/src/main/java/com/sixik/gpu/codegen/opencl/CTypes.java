@@ -107,7 +107,7 @@ final class CTypes {
             case Types.U64:
                 return Long.toUnsignedString(value) + "UL";
             default:
-                throw new IllegalArgumentException("не целый тип " + type);
+                throw new IllegalArgumentException("not an integer type " + type);
         }
     }
 

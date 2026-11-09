@@ -1,4 +1,4 @@
-description = 'Дамперы IR и CI-отчёты. Не входит в production-артефакт.'
+description = 'IR dumpers and CI reports. Not part of the production artifact.'
 
 dependencies {
     implementation project(':ir')

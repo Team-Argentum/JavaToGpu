@@ -109,10 +109,10 @@ jvm f32,f64,i32,i64 = a
 # На JVM барьер выполнить нельзя (work-item'ы идут по очереди): такие ядра в JVM-fallback не уходят.
 15  barrier         effect,sync     void ()
 doc Барьер work-group с гарантией видимости записей в {@code local}-память: все work-item группы должны дойти до него, прежде чем кто-либо пойдёт дальше. Вызывать нужно из кода, одинакового для всей группы (IR-B01).
-jvm = { throw new UnsupportedOperationException("barrier выполняется только на устройстве или в IR-интерпретаторе"); }
+jvm = { throw new UnsupportedOperationException("barrier runs only on the device or in the IR interpreter"); }
 16  barrierGlobal   effect,sync     void ()
 doc То же, что {@code barrier()}, но гарантирует и видимость записей в {@code global}-память внутри группы.
-jvm = { throw new UnsupportedOperationException("barrierGlobal выполняется только на устройстве или в IR-интерпретаторе"); }
+jvm = { throw new UnsupportedOperationException("barrierGlobal runs only on the device or in the IR interpreter"); }
 
 # --- атомики -------------------------------------------------------------------------------------
 # Первый аргумент - Global*Ptr либо Local*Ptr (Int/Long); результат - прежнее значение. На JVM work-item'ы идут по очереди,

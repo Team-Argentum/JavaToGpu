@@ -3,7 +3,7 @@ plugins {
     id 'java-test-fixtures'
 }
 
-description = 'Плоский IR (SoA на примитивных массивах), типы, бинарная сериализация, валидатор. Ноль зависимостей.'
+description = 'Flat IR (SoA over primitive arrays), types, binary serialization, validator. Zero dependencies.'
 
 // Таблица builtins лежит в корне репозитория (builtins/builtins.def) и упаковывается как ресурс модуля.
 // Тот же файл на M2 будет входом генератора Gpu.java в модуле api (REWORK_ARCHITECTURE.md, 5.7, O1).

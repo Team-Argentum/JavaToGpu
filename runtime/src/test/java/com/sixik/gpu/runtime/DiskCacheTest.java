@@ -43,7 +43,7 @@ class DiskCacheTest {
     @Test
     void roundTripAndMiss(@TempDir Path dir) {
         DiskCache cache = new DiskCache(dir.resolve("sub"), 1 << 20);
-        assertNull(cache.get("k"), "пустой кэш - промах");
+        assertNull(cache.get("k"), "empty cache - a miss");
         byte[] image = bytes(1000, 1);
         assertTrue(cache.put("k", image));
         assertArrayEquals(image, cache.get("k"));
@@ -58,7 +58,7 @@ class DiskCacheTest {
     @Test
     void dataSurvivesANewInstanceOverTheSameDirectory(@TempDir Path dir) {
         new DiskCache(dir, 1 << 20).put("k", bytes(64, 2));
-        assertArrayEquals(bytes(64, 2), new DiskCache(dir, 1 << 20).get("k"), "другой процесс увидит записанное");
+        assertArrayEquals(bytes(64, 2), new DiskCache(dir, 1 << 20).get("k"), "another process will see what was written");
     }
 
     @Test
@@ -77,10 +77,10 @@ class DiskCacheTest {
         byte[] raw = Files.readAllBytes(file);
         raw[raw.length - 1] ^= 0x55;
         Files.write(file, raw);
-        assertNull(cache.get("k"), "контрольная сумма не сошлась - промах");
-        assertEquals(0, cacheFiles(dir).size(), "повреждённый файл удалён");
+        assertNull(cache.get("k"), "checksum mismatch - a miss");
+        assertEquals(0, cacheFiles(dir).size(), "the corrupted file was deleted");
         assertEquals(1, cache.stats().corrupted());
-        assertTrue(cache.put("k", bytes(500, 3)), "после промаха запись снова возможна");
+        assertTrue(cache.put("k", bytes(500, 3)), "after a miss, writing is possible again");
         assertArrayEquals(bytes(500, 3), cache.get("k"));
     }
 
@@ -102,8 +102,8 @@ class DiskCacheTest {
                 default -> new byte[0];                                // пустой
             };
             Files.write(file, broken);
-            assertNull(cache.get("k"), "вариант " + variant);
-            assertEquals(0, cacheFiles(dir).size(), "вариант " + variant);
+            assertNull(cache.get("k"), "variant " + variant);
+            assertEquals(0, cacheFiles(dir).size(), "variant " + variant);
         }
     }
 
@@ -114,7 +114,7 @@ class DiskCacheTest {
             cache.put("k" + i, bytes(100, i));
         }
         try (Stream<Path> s = Files.list(dir)) {
-            assertTrue(s.noneMatch(p -> p.toString().endsWith(".tmp")), "временные файлы переименованы");
+            assertTrue(s.noneMatch(p -> p.toString().endsWith(".tmp")), "temporary files were renamed");
         }
         assertEquals(20, cacheFiles(dir).size());
     }
@@ -131,9 +131,9 @@ class DiskCacheTest {
         touch(dir, cache, "a", now - 3000);
         touch(dir, cache, "b", now - 2000);
         touch(dir, cache, "c", now - 1000);
-        assertArrayEquals(bytes(100, 1), cache.get("a"), "чтение освежает a: теперь самый старый b");
+        assertArrayEquals(bytes(100, 1), cache.get("a"), "a read refreshes a: now b is the oldest");
         cache.put("d", bytes(100, 4));
-        assertNull(cache.get("b"), "вытеснен самый давно использованный");
+        assertNull(cache.get("b"), "the least recently used was evicted");
         assertArrayEquals(bytes(100, 1), cache.get("a"));
         assertArrayEquals(bytes(100, 3), cache.get("c"));
         assertArrayEquals(bytes(100, 4), cache.get("d"));
@@ -167,7 +167,7 @@ class DiskCacheTest {
     void unusableDirectoryIsASilentMiss(@TempDir Path dir) throws IOException {
         Path file = Files.writeString(dir.resolve("file"), "x");
         DiskCache cache = new DiskCache(file.resolve("below-a-file"), 1 << 20);
-        assertFalse(cache.put("k", bytes(10, 1)), "кэш - оптимизация: запись не удалась, но исключения нет");
+        assertFalse(cache.put("k", bytes(10, 1)), "the cache is an optimization: the write failed, but there is no exception");
         assertNull(cache.get("k"));
     }
 
@@ -187,7 +187,7 @@ class DiskCacheTest {
                         cache.put("same", bytes(4096, seed));
                         byte[] got = cache.get("same");
                         if (got != null && got.length != 4096) {
-                            throw new AssertionError("прочитан неполный образ");
+                            throw new AssertionError("an incomplete image was read");
                         }
                     }
                     return null;
@@ -202,7 +202,7 @@ class DiskCacheTest {
         }
         byte[] last = cache.get("same");
         assertEquals(4096, last.length);
-        assertEquals(0, cache.stats().corrupted(), "читатель никогда не видел наполовину записанный файл");
+        assertEquals(0, cache.stats().corrupted(), "a reader never saw a half-written file");
     }
 
     @Test

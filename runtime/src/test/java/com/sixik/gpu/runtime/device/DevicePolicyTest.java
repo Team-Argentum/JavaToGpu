@@ -58,7 +58,7 @@ class DevicePolicyTest {
                 DeviceInfo.featuresOf("cl_khr_byte_addressable_store cl_khr_fp64 cl_khr_int64_base_atomics"));
         assertEquals(Features.FP16, DeviceInfo.featuresOf("cl_khr_fp16"));
         assertEquals(0, DeviceInfo.featuresOf(""));
-        assertEquals(0, DeviceInfo.featuresOf("cl_khr_fp64_not_really"), "сравнение по целому слову");
+        assertEquals(0, DeviceInfo.featuresOf("cl_khr_fp64_not_really"), "comparison by whole word");
     }
 
     @Test
@@ -117,12 +117,12 @@ class DevicePolicyTest {
         List<DeviceInfo> all = devices(NVIDIA, AMD, CPU, FakeDeviceApi.Spec.gpu().withName("Second NVIDIA")
                 .withVendor("NVIDIA Corporation"));
         DevicePolicy onlyCpu = DevicePolicy.DEFAULT.withKind(DevicePolicy.Kind.CPU);
-        assertEquals("Radeon RX 9070", onlyCpu.withOverride("1").select(all).orElseThrow().name(), "номер среди всех");
+        assertEquals("Radeon RX 9070", onlyCpu.withOverride("1").select(all).orElseThrow().name(), "ordinal among all");
         assertEquals("GeForce RTX 5070", onlyCpu.withOverride("nvidia").select(all).orElseThrow().name());
         assertEquals("Second NVIDIA", onlyCpu.withOverride("nvidia:1").select(all).orElseThrow().name());
         assertEquals("GeForce RTX 5070", onlyCpu.withOverride("nvidia:0").select(all).orElseThrow().name());
         assertEquals("Intel i9", onlyCpu.withOverride(" intel ").select(all).orElseThrow().name());
-        assertEquals("GeForce RTX 5070", onlyCpu.withOverride(":0").select(all).orElseThrow().name(), "пустое имя - любое");
+        assertEquals("GeForce RTX 5070", onlyCpu.withOverride(":0").select(all).orElseThrow().name(), "an empty name matches any");
     }
 
     @Test
@@ -167,17 +167,17 @@ class DevicePolicyTest {
         // как у автора: NVIDIA и AMD рядом с процессорным устройством, порядок перечисления драйвера задан
         FakeDeviceApi fake = new FakeDeviceApi(CPU, AMD, NVIDIA);
         try (var ctx = com.sixik.gpu.runtime.GpuContext.builder().api(fake).ignoreEnvironment().build()) {
-            assertEquals("Radeon RX 9070", ctx.device().name(), "GPU раньше CPU; среди GPU - порядок перечисления");
+            assertEquals("Radeon RX 9070", ctx.device().name(), "GPU before CPU; among GPUs - enumeration order");
         }
         try (var ctx = com.sixik.gpu.runtime.GpuContext.builder().api(fake).ignoreEnvironment()
                 .policy(DevicePolicy.DEFAULT.withVendor("nvidia")).build()) {
             assertEquals("GeForce RTX 5070", ctx.device().name());
         }
         try (var ctx = com.sixik.gpu.runtime.GpuContext.builder().api(fake).ignoreEnvironment().device("intel").build()) {
-            assertEquals("Intel i9", ctx.device().name(), "явный выбор побеждает предпочтение GPU");
+            assertEquals("Intel i9", ctx.device().name(), "an explicit choice beats the GPU preference");
         }
         try (var ctx = com.sixik.gpu.runtime.GpuContext.builder().api(fake).ignoreEnvironment().device("2").build()) {
-            assertEquals("GeForce RTX 5070", ctx.device().name(), "по порядковому номеру");
+            assertEquals("GeForce RTX 5070", ctx.device().name(), "by ordinal number");
         }
         // builder побеждает окружение
         String old = System.getProperty(DevicePolicy.PROPERTY);

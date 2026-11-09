@@ -48,7 +48,7 @@ class AbiLayoutTest {
         int v3 = b.vec(Types.F32, 3);
         int d3 = b.vec(Types.F64, 3);
         IrModule m = m();
-        assertEquals(16, AbiLayout.sizeOf(m, v3), "sizeof(float3) == 16 в OpenCL C");
+        assertEquals(16, AbiLayout.sizeOf(m, v3), "sizeof(float3) == 16 in OpenCL C");
         assertEquals(16, AbiLayout.alignOf(m, v3));
         assertEquals(32, AbiLayout.sizeOf(m, d3));
     }
@@ -94,7 +94,7 @@ class AbiLayoutTest {
         assertEquals(0, AbiLayout.fieldOffset(m, s, 0));
         assertEquals(4, AbiLayout.fieldOffset(m, s, 1));
         assertEquals(8, AbiLayout.fieldOffset(m, s, 2));
-        assertEquals(12, AbiLayout.sizeOf(m, s), "9 байт округляются до кратного 4");
+        assertEquals(12, AbiLayout.sizeOf(m, s), "9 bytes are rounded up to a multiple of 4");
         assertEquals(4, AbiLayout.alignOf(m, s));
     }
 

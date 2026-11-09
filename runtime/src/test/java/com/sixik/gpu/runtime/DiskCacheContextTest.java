@@ -69,7 +69,7 @@ class DiskCacheContextTest {
             assertEquals(new CacheStats(0, 1, 1, 0, 1, 1), ctx.cacheStats());
         }
         assertEquals(1, first.sources().size());
-        assertEquals(1, files(dir), "образ записан");
+        assertEquals(1, files(dir), "image written");
 
         List<GpuEvent> events2 = new ArrayList<>();
         FakeDeviceApi second = device();
@@ -77,7 +77,7 @@ class DiskCacheContextTest {
             Result<CompiledKernel> r = ctx.compile(Fixtures.computeSine());
             assertTrue(r.isOk(), r.diagnostics().toString());
             assertEquals("disk-hit", lastCompileDetail(events2));
-            assertEquals(0, second.sources().size(), "исходник драйверу не передавался");
+            assertEquals(0, second.sources().size(), "the source was not passed to the driver");
             assertEquals(1, second.binaryLoads());
             assertEquals(new CacheStats(0, 1, 1, 1, 0, 0), ctx.cacheStats());
 
@@ -89,7 +89,7 @@ class DiskCacheContextTest {
             assertTrue(run.isOk(), run.diagnostics().toString());
             assertEquals((float) Math.sin(1f) + 2f, out[1]);
         }
-        assertEquals(1, files(dir), "повторной записи нет");
+        assertEquals(1, files(dir), "no repeated write");
     }
 
     @Test
@@ -101,7 +101,7 @@ class DiskCacheContextTest {
             ctx.compile(Fixtures.computeSine());
             assertEquals("cache-hit", lastCompileDetail(events));
             assertEquals(new CacheStats(1, 1, 1, 0, 1, 1), ctx.cacheStats());
-            assertEquals(0, fake.binaryLoads(), "на диск за образом не ходили");
+            assertEquals(0, fake.binaryLoads(), "the disk was not consulted for an image");
         }
     }
 
@@ -113,10 +113,10 @@ class DiskCacheContextTest {
         FakeDeviceApi other = new FakeDeviceApi(FakeDeviceApi.Spec.gpu().withName("Another GPU")).onKernel("k0", l -> { });
         try (GpuContext ctx = open(other, dir, new ArrayList<>())) {
             assertTrue(ctx.compile(Fixtures.computeSine()).isOk());
-            assertEquals(0, other.binaryLoads(), "образ другого устройства не используется");
+            assertEquals(0, other.binaryLoads(), "another device's image is not used");
             assertEquals(1, other.sources().size());
         }
-        assertEquals(2, files(dir), "у каждого устройства свой образ");
+        assertEquals(2, files(dir), "each device has its own image");
     }
 
     @Test
@@ -141,10 +141,10 @@ class DiskCacheContextTest {
         try (GpuContext ctx = GpuContext.builder().api(fake).ignoreEnvironment().diskCache(dir).codegenVersion("2")
                 .listener(events::add).build()) {
             assertTrue(ctx.compile(Fixtures.computeSine()).isOk());
-            assertEquals("built", lastCompileDetail(events), "версия изменилась - образ не подходит");
+            assertEquals("built", lastCompileDetail(events), "the version changed - the image does not fit");
             assertEquals(0, fake.binaryLoads());
         }
-        assertEquals(2, files(dir), "образ новой версии рядом со старым (старый вытеснит LRU)");
+        assertEquals(2, files(dir), "the image of the new version sits next to the old one (the old one will be evicted by LRU)");
         // и обратно: прежняя версия снова находит свой образ
         FakeDeviceApi again = device();
         try (GpuContext ctx = GpuContext.builder().api(again).ignoreEnvironment().diskCache(dir).codegenVersion("1").build()) {
@@ -171,8 +171,8 @@ class DiskCacheContextTest {
         try (GpuContext ctx = open(fake, dir, events)) {
             assertTrue(ctx.compile(Fixtures.computeSine()).isOk());
             assertEquals("built", lastCompileDetail(events));
-            assertEquals(1, fake.sources().size(), "собрано из исходника");
-            assertEquals(0, fake.binaryLoads(), "повреждённый образ драйверу не показывали");
+            assertEquals(1, fake.sources().size(), "built from source");
+            assertEquals(0, fake.binaryLoads(), "the corrupted image was not shown to the driver");
             assertEquals(new CacheStats(0, 1, 1, 0, 1, 1), ctx.cacheStats());
         }
         byte[] repaired = Files.readAllBytes(file);
@@ -180,7 +180,7 @@ class DiskCacheContextTest {
         FakeDeviceApi third = device();
         try (GpuContext ctx = open(third, dir, new ArrayList<>())) {
             ctx.compile(Fixtures.computeSine());
-            assertEquals(1, third.binaryLoads(), "после пересборки образ снова годен");
+            assertEquals(1, third.binaryLoads(), "after the rebuild the image is valid again");
         }
     }
 
@@ -195,10 +195,10 @@ class DiskCacheContextTest {
             Result<CompiledKernel> r = ctx.compile(Fixtures.computeSine());
             assertTrue(r.isOk(), r.diagnostics().toString());
             assertEquals("built", lastCompileDetail(events));
-            assertEquals(1, fake.binaryLoads(), "образ был предложен драйверу");
-            assertEquals(1, fake.sources().size(), "и после отказа ядро собрано из исходника");
+            assertEquals(1, fake.binaryLoads(), "the image was offered to the driver");
+            assertEquals(1, fake.sources().size(), "and after the rejection the kernel was built from source");
         }
-        assertEquals(1, files(dir), "негодный образ заменён новым");
+        assertEquals(1, files(dir), "the unusable image was replaced with a new one");
     }
 
     @Test
@@ -229,7 +229,7 @@ class DiskCacheContextTest {
 
         try (GpuContext ctx = GpuContext.builder().api(device()).ignoreEnvironment().diskCache(dir).diskCacheLimit(10).build()) {
             assertTrue(ctx.compile(Fixtures.computeSine()).isOk());
-            assertEquals(0, ctx.cacheStats().diskWrites(), "образ больше предела не записывается");
+            assertEquals(0, ctx.cacheStats().diskWrites(), "an image over the limit is not written");
         }
         assertEquals(0, files(dir));
     }
@@ -249,7 +249,7 @@ class DiskCacheContextTest {
         try (GpuContext ctx = GpuContext.builder().api(device()).build()) {
             ctx.compile(Fixtures.computeSine());
         }
-        assertEquals(1, files(dir), "каталог из свойства javatogpu.cache");
+        assertEquals(1, files(dir), "directory from the javatogpu.cache property");
 
         System.setProperty(GpuContext.CACHE_PROPERTY, "off");
         try (GpuContext ctx = GpuContext.builder().api(device()).diskCache(dir.resolve("explicit")).build()) {
@@ -260,7 +260,7 @@ class DiskCacheContextTest {
 
         try (GpuContext ctx = GpuContext.builder().api(device()).build()) {
             ctx.compile(Fixtures.computeSine());
-            assertEquals(0, ctx.cacheStats().diskWrites(), "off выключает кэш");
+            assertEquals(0, ctx.cacheStats().diskWrites(), "off disables the cache");
         }
     }
 
@@ -269,13 +269,13 @@ class DiskCacheContextTest {
         List<GpuEvent> events = new ArrayList<>();
         FakeDeviceApi fake = new FakeDeviceApi(FakeDeviceApi.Spec.cpu(), FakeDeviceApi.Spec.gpu()).onKernel("k0", l -> { });
         try (GpuContext ctx = open(fake, dir, events)) {
-            assertEquals(1, ctx.device().index(), "GPU предпочтительнее CPU");
+            assertEquals(1, ctx.device().index(), "GPU is preferred over CPU");
             ctx.compile(Fixtures.computeSine());
         }
         assertFalse(events.isEmpty());
         for (GpuEvent e : events) {
             assertEquals(1, e.device(), e.toString());
         }
-        assertEquals(-1, new GpuEvent(GpuEvent.Kind.WARNING, "x", 0, 0, "").device(), "событие вне устройства");
+        assertEquals(-1, new GpuEvent(GpuEvent.Kind.WARNING, "x", 0, 0, "").device(), "event outside the device");
     }
 }

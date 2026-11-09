@@ -18,10 +18,10 @@ public final class LaunchConfig {
         this.dim = dim;
         for (int d = 0; d < dim; d++) {
             if (g[d] <= 0) {
-                throw new IllegalArgumentException("размер NDRange по оси " + d + " должен быть > 0: " + g[d]);
+                throw new IllegalArgumentException("NDRange size on axis " + d + " must be > 0: " + g[d]);
             }
             if (l[d] < 0) {
-                throw new IllegalArgumentException("размер work-group по оси " + d + " не может быть < 0: " + l[d]);
+                throw new IllegalArgumentException("work-group size on axis " + d + " cannot be < 0: " + l[d]);
             }
             global[d] = g[d];
             local[d] = l[d];

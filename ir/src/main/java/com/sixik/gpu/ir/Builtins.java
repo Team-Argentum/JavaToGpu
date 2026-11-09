@@ -58,7 +58,7 @@ public final class Builtins {
         List<String[]> rows = new ArrayList<>();
         try (InputStream in = Builtins.class.getResourceAsStream("builtins.def")) {
             if (in == null) {
-                throw new IllegalStateException("builtins.def не найден в ресурсах модуля ir");
+                throw new IllegalStateException("builtins.def not found in the ir module resources");
             }
             String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             for (String raw : text.split("\\R")) {
@@ -77,10 +77,10 @@ public final class Builtins {
                 rows.add(line.split("\\s+", 4));
             }
         } catch (IOException e) {
-            throw new IllegalStateException("не удалось прочитать builtins.def", e);
+            throw new IllegalStateException("failed to read builtins.def", e);
         }
         if (version < 0) {
-            throw new IllegalStateException("в builtins.def нет строки version");
+            throw new IllegalStateException("builtins.def has no version line");
         }
         VERSION = version;
 
@@ -98,7 +98,7 @@ public final class Builtins {
         for (String[] r : rows) {
             int id = Integer.parseInt(r[0]);
             if (NAMES[id] != null) {
-                throw new IllegalStateException("builtins.def: повторный id " + id);
+                throw new IllegalStateException("builtins.def: duplicate id " + id);
             }
             NAMES[id] = r[1];
             int flags = 0;
@@ -120,7 +120,7 @@ public final class Builtins {
             int open = sig.indexOf('(');
             int close = sig.lastIndexOf(')');
             if (open < 0 || close < open) {
-                throw new IllegalStateException("builtins.def: плохая сигнатура у id " + id);
+                throw new IllegalStateException("builtins.def: bad signature for id " + id);
             }
             RET[id] = new int[]{token(sig.substring(0, open).strip(), id)};
             String inner = sig.substring(open + 1, close).strip();
@@ -150,7 +150,7 @@ public final class Builtins {
             case "atomic" -> ATOMIC;
             case "sync" -> SYNC;
             case "ext" -> EXT;
-            default -> throw new IllegalStateException("builtins.def: неизвестный флаг '" + f + "' у id " + id);
+            default -> throw new IllegalStateException("builtins.def: unknown flag '" + f + "' for id " + id);
         };
     }
 
@@ -159,7 +159,7 @@ public final class Builtins {
             case "genf" -> CLASS_FLOAT;
             case "geni" -> CLASS_INT;
             case "genn" -> CLASS_NUM;
-            default -> throw new IllegalStateException("builtins.def: неизвестный класс '" + name + "' у id " + id);
+            default -> throw new IllegalStateException("builtins.def: unknown class '" + name + "' for id " + id);
         };
     }
 
@@ -186,7 +186,7 @@ public final class Builtins {
             case "u64" -> Types.U64;
             case "f32" -> Types.F32;
             case "f64" -> Types.F64;
-            default -> throw new IllegalStateException("builtins.def: неизвестный тип '" + s + "' у id " + id);
+            default -> throw new IllegalStateException("builtins.def: unknown type '" + s + "' for id " + id);
         };
     }
 

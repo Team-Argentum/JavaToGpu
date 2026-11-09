@@ -334,7 +334,7 @@ public final class FakeDeviceApi implements DeviceApi {
         }
         Integer status = failures.isEmpty() ? null : failures.remove(function);
         if (status != null) {
-            throw new DeviceApiException(status, function, "имитированный отказ");
+            throw new DeviceApiException(status, function, "simulated failure");
         }
     }
 
@@ -459,7 +459,7 @@ public final class FakeDeviceApi implements DeviceApi {
         binaryLoads++;
         if (rejectBinaries || binary.length < BINARY_MAGIC.length
                 || !java.util.Arrays.equals(java.util.Arrays.copyOf(binary, BINARY_MAGIC.length), BINARY_MAGIC)) {
-            throw new DeviceApiException(-42, "clCreateProgramWithBinary", "образ не принят");
+            throw new DeviceApiException(-42, "clCreateProgramWithBinary", "image not accepted");
         }
         long h = fresh();
         programs.put(h, new String(binary, BINARY_MAGIC.length, binary.length - BINARY_MAGIC.length,
@@ -534,7 +534,7 @@ public final class FakeDeviceApi implements DeviceApi {
         String name = kernels.get(kernel)[0];
         KernelBody body = bodies.get(name);
         if (body == null) {
-            throw new DeviceApiException(-48, "enqueue", "у фейка нет поведения для ядра " + name);
+            throw new DeviceApiException(-48, "enqueue", "the fake has no behavior for kernel " + name);
         }
         body.run(new Launch(this, kernelArgs.get(kernel).clone(), dim, global.clone(), local == null ? null : local.clone()));
     }

@@ -62,8 +62,8 @@ class GpuBuiltinsTest {
         // поэтому «a*a + c» с c = -(1 + 2^-11) даёт 0, а слитная операция сохраняет 2^-24.
         float a = 1f + 0x1p-12f;
         float c = -(1f + 0x1p-11f);
-        assertEquals(0f, a * a + c, "раздельно: произведение уже округлено");
-        assertEquals(0x1p-24f, Gpu.fma(a, a, c), "слитно: одно округление");
+        assertEquals(0f, a * a + c, "separately: the product is already rounded");
+        assertEquals(0x1p-24f, Gpu.fma(a, a, c), "fused: single rounding");
         double da = 1.0 + 0x1p-27;
         double dc = -(1.0 + 0x1p-26);
         assertEquals(0.0, da * da + dc);
@@ -87,7 +87,7 @@ class GpuBuiltinsTest {
     void floatMaxMinFollowJavaSemantics() {
         assertTrue(sameBits(0f, Gpu.max(-0f, 0f)), "max(-0, +0) = +0");
         assertTrue(sameBits(-0f, Gpu.min(-0f, 0f)), "min(-0, +0) = -0");
-        assertTrue(Float.isNaN(Gpu.max(Float.NaN, 1f)), "NaN распространяется (в отличие от fmax OpenCL)");
+        assertTrue(Float.isNaN(Gpu.max(Float.NaN, 1f)), "NaN propagates (unlike OpenCL fmax)");
         assertTrue(Double.isNaN(Gpu.min(1.0, Double.NaN)));
         assertEquals(Float.POSITIVE_INFINITY, Gpu.max(Float.POSITIVE_INFINITY, Float.MAX_VALUE));
         assertEquals(Float.NEGATIVE_INFINITY, Gpu.min(Float.NEGATIVE_INFINITY, -Float.MAX_VALUE));
@@ -126,7 +126,7 @@ class GpuBuiltinsTest {
                 in[8], in[9], in[10], in[11], in[12], in[13], in[14], in[15]));
         float[] out = {r.s0, r.s1, r.s2, r.s3, r.s4, r.s5, r.s6, r.s7, r.s8, r.s9, r.sA, r.sB, r.sC, r.sD, r.sE, r.sF};
         for (int i = 0; i < 16; i++) {
-            assertEquals((float) i, out[i], "компонента " + i);
+            assertEquals((float) i, out[i], "component " + i);
         }
     }
 }

@@ -33,8 +33,8 @@ class PointerLoweringTest {
 
     private static void rejects(String code, String members) {
         FrontendHarness.Outcome r = compile(members);
-        assertFalse(r.success(), "ожидалась ошибка " + code + "\n" + r.describe());
-        assertTrue(r.errorCodes().contains(code), code + " не выдан; выданы: " + r.errorCodes() + "\n" + r.describe());
+        assertFalse(r.success(), "expected error " + code + "\n" + r.describe());
+        assertTrue(r.errorCodes().contains(code), code + " was not reported; reported: " + r.errorCodes() + "\n" + r.describe());
     }
 
     private static int count(IrModule m, int op) {
@@ -127,7 +127,7 @@ class PointerLoweringTest {
                 """);
         assertTrue(r.success(), r.describe());
         IrModule m = r.module();
-        assertEquals(3, count(m, Op.LOCAL_ADDR), "адрес берётся при каждом использовании имени: два вызова и c.value");
+        assertEquals(3, count(m, Op.LOCAL_ADDR), "the address is taken on every use of the name: two calls and c.value");
         assertTrue(hasPtr(m, AddressSpace.PRIVATE, Types.I32));
         assertEquals(0, count(m, Op.LOCAL_ARRAY_DECL));
     }
@@ -143,7 +143,7 @@ class PointerLoweringTest {
                 }
                 """);
         assertTrue(r.success(), r.describe());
-        assertTrue(count(r.module(), Op.LOCAL_DECL) >= 3, "c, временная копия c.value и результат вызова");
+        assertTrue(count(r.module(), Op.LOCAL_DECL) >= 3, "c, a temporary copy of c.value and the call result");
     }
 
     @Test
@@ -158,8 +158,8 @@ class PointerLoweringTest {
                 """);
         assertTrue(r.success(), r.describe());
         IrModule m = r.module();
-        assertEquals(2, count(m, Op.LOAD), "p.get(0) и q.get(0)");
-        assertEquals(2, count(m, Op.STORE), "p.set(...) и a[0] = ...");
+        assertEquals(2, count(m, Op.LOAD), "p.get(0) and q.get(0)");
+        assertEquals(2, count(m, Op.STORE), "p.set(...) and a[0] = ...");
         assertTrue(count(m, Op.ELEM_PTR) >= 5);
         assertTrue(hasPtr(m, AddressSpace.GLOBAL, Types.I32));
     }

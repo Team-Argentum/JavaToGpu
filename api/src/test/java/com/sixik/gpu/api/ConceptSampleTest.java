@@ -59,7 +59,7 @@ class ConceptSampleTest {
         assertEquals(15f, ConceptSample.lerp(10f, 20f, 0.5f));
         FloatPtr p = new FloatPtr(50f);
         ConceptSample.clamp(p);
-        assertEquals(32f, p.value, "значение по ссылке ограничено");
+        assertEquals(32f, p.value, "reference value is bounded");
         p.value = 5f;
         ConceptSample.clamp(p);
         assertEquals(5f, p.value);

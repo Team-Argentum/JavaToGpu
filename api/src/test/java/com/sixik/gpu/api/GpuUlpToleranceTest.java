@@ -71,8 +71,8 @@ class GpuUlpToleranceTest {
     void ulpDistanceHelperIsCorrect() {
         assertTrue(ulpDistance(1f, Math.nextUp(1f)) == 1);
         assertTrue(ulpDistance(1f, Math.nextUp(Math.nextUp(1f))) == 2);
-        assertTrue(ulpDistance(0f, -0f) == 0, "+0 и -0 совпадают");
-        assertTrue(ulpDistance(Float.MIN_VALUE, -Float.MIN_VALUE) == 2, "через ноль: два шага");
+        assertTrue(ulpDistance(0f, -0f) == 0, "+0 and -0 coincide");
+        assertTrue(ulpDistance(Float.MIN_VALUE, -Float.MIN_VALUE) == 2, "across zero: two steps");
         assertTrue(ulpDistance(-1f, Math.nextDown(-1f)) == 1);
         assertTrue(ulpDistance(1.0, Math.nextUp(1.0)) == 1);
         assertTrue(ulpDistance(Double.MIN_VALUE, -Double.MIN_VALUE) == 2);
@@ -200,7 +200,7 @@ class GpuUlpToleranceTest {
             }
             Function<float[], Float> ref = REF32.get(b.name());
             if (ref == null) {
-                fail("builtin " + b.name() + " имеет допуск ULP, но в тесте нет эталона f32");
+                fail("builtin " + b.name() + " has a ULP tolerance, but the test has no f32 reference");
             }
             Method m = method(b.name(), float.class, b.args().size());
             for (float[] args : argTuples32(b.args().size())) {
@@ -219,7 +219,7 @@ class GpuUlpToleranceTest {
             }
             Function<double[], Double> ref = REF64.get(b.name());
             if (ref == null) {
-                fail("builtin " + b.name() + " имеет допуск ULP, но в тесте нет эталона f64");
+                fail("builtin " + b.name() + " has a ULP tolerance, but the test has no f64 reference");
             }
             Method m = method(b.name(), double.class, b.args().size());
             for (double[] args : argTuples64(b.args().size())) {
@@ -242,7 +242,7 @@ class GpuUlpToleranceTest {
             int[] e = expected.get(b.name());
             if (e != null) {
                 assertTrue(b.ulp() == e[0] && b.ulp64() == e[1],
-                        b.name() + ": ожидалось " + e[0] + "/" + e[1] + ", в таблице " + b.ulp() + "/" + b.ulp64());
+                        b.name() + ": expected " + e[0] + "/" + e[1] + ", in table " + b.ulp() + "/" + b.ulp64());
             }
         }
     }
@@ -267,20 +267,20 @@ class GpuUlpToleranceTest {
         try {
             return m.invoke(null, args);
         } catch (InvocationTargetException e) {
-            throw new AssertionError("исключение в " + m.getName(), e.getCause());
+            throw new AssertionError("exception in " + m.getName(), e.getCause());
         }
     }
 
     private static void check(String name, String type, String args, double got, double want, int tolerance) {
-        String where = name + "(" + type + ") args=" + args + " got=" + got + " want=" + want + " допуск=" + tolerance;
+        String where = name + "(" + type + ") args=" + args + " got=" + got + " want=" + want + " tolerance=" + tolerance;
         if (Double.isNaN(want)) {
-            assertTrue(Double.isNaN(got), "ожидался NaN: " + where);
+            assertTrue(Double.isNaN(got), "expected NaN: " + where);
         } else if (Double.isInfinite(want)) {
-            assertTrue(got == want, "ожидалась бесконечность того же знака: " + where);
+            assertTrue(got == want, "expected an infinity of the same sign: " + where);
         } else {
-            assertTrue(finite(got), "ожидалось конечное значение: " + where);
+            assertTrue(finite(got), "expected a finite value: " + where);
             long d = type.equals("f32") ? ulpDistance((float) got, (float) want) : ulpDistance(got, want);
-            assertTrue(d <= tolerance, "расхождение " + d + " ULP: " + where);
+            assertTrue(d <= tolerance, "mismatch " + d + " ULP: " + where);
         }
     }
 }

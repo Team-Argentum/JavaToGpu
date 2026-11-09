@@ -86,7 +86,7 @@ final class FrontendHarness {
                 if (e.getKey().startsWith(KernelResources.IR_DIR) && e.getKey().endsWith(KernelResources.IR_EXT)) {
                     Result<IrModule> read = IrBinary.read(e.getValue());
                     if (!read.isOk()) {
-                        throw new AssertionError("повреждён записанный IR " + e.getKey() + ": " + read.diagnostics());
+                        throw new AssertionError("corrupted written IR " + e.getKey() + ": " + read.diagnostics());
                     }
                     r.add(read.value());
                 }
@@ -98,7 +98,7 @@ final class FrontendHarness {
         IrModule module() {
             List<IrModule> ms = modules();
             if (ms.size() != 1) {
-                throw new AssertionError("ожидался один модуль, записано " + ms.size() + "; диагностики: " + diagnostics);
+                throw new AssertionError("expected one module, written " + ms.size() + "; diagnostics: " + diagnostics);
             }
             return ms.get(0);
         }
@@ -186,7 +186,7 @@ final class FrontendHarness {
             String pkg = pm.find() ? pm.group(1).replace('.', '/') + "/" : "";
             Matcher tm = TYPE.matcher(text);
             if (!tm.find()) {
-                throw new IllegalArgumentException("в исходнике нет объявления типа");
+                throw new IllegalArgumentException("no type declaration in the source");
             }
             return pkg + tm.group(1) + ".java";
         }

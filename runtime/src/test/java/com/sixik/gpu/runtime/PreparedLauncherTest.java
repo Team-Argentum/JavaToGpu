@@ -82,19 +82,19 @@ class PreparedLauncherTest {
             float[] in = {1, 2, 3, 4};
             float[] out = new float[4];
             try (PreparedLauncher p = prepare(ctx, k, in, out, 10, 2f)) {
-                assertEquals(2, count(fake, "createBuffer"), "по буферу на каждый массив, один раз");
+                assertEquals(2, count(fake, "createBuffer"), "one buffer per array, once");
                 p.run(LaunchConfig.of1D(4));
                 assertArrayEquals(new float[]{12, 14, 16, 18}, out);
                 long bound = countSetArgs(fake);
-                assertEquals(6, bound, "первый запуск выставил все 6 аргументов OpenCL");
+                assertEquals(6, bound, "the first launch set all 6 OpenCL arguments");
 
                 for (int round = 0; round < 5; round++) {
                     in[0] = round; // пользователь меняет данные между запусками - они уходят на устройство
                     p.run(LaunchConfig.of1D(4));
                     assertEquals(round * 2f + 10, out[0]);
                 }
-                assertEquals(bound, countSetArgs(fake), "аргументы не менялись: clSetKernelArg не вызывался");
-                assertEquals(2, count(fake, "createBuffer"), "новых буферов не создавалось");
+                assertEquals(bound, countSetArgs(fake), "arguments did not change: clSetKernelArg was not called");
+                assertEquals(2, count(fake, "createBuffer"), "no new buffers were created");
             }
         }
     }
@@ -110,7 +110,7 @@ class PreparedLauncherTest {
                 p.run(LaunchConfig.of1D(2));
                 long before = countSetArgs(fake);
                 p.set(3, 5f).run(LaunchConfig.of1D(2));
-                assertEquals(before + 1, countSetArgs(fake), "изменился один аргумент - одна установка");
+                assertEquals(before + 1, countSetArgs(fake), "one argument changed - one set");
                 assertArrayEquals(new float[]{5, 10}, out);
                 p.set(2, 100).set(3, 0.5f).run(LaunchConfig.of1D(2));
                 assertEquals(before + 3, countSetArgs(fake));
@@ -131,7 +131,7 @@ class PreparedLauncherTest {
                 a.run(LaunchConfig.of1D(3));
                 b.run(LaunchConfig.of1D(3));
                 a.run(LaunchConfig.of1D(3));
-                assertArrayEquals(new float[]{1, 2, 3}, outA, "общий cl_kernel: запуск b не испортил аргументы a");
+                assertArrayEquals(new float[]{1, 2, 3}, outA, "shared cl_kernel: the launch of b did not spoil the arguments of a");
                 assertArrayEquals(new float[]{10, 20, 30}, outB);
                 b.run(LaunchConfig.of1D(3)); // последний, кто привязал аргументы, - сам b
                 long beforeSugar = countSetArgs(fake);
@@ -140,7 +140,7 @@ class PreparedLauncherTest {
                 assertTrue(countSetArgs(fake) > beforeSugar);
                 long afterSugar = countSetArgs(fake);
                 b.run(LaunchConfig.of1D(3));
-                assertEquals(afterSugar + 6, countSetArgs(fake), "после чужого запуска все аргументы выставлены заново");
+                assertEquals(afterSugar + 6, countSetArgs(fake), "after someone else's launch all arguments are set again");
                 assertArrayEquals(new float[]{10, 20, 30}, outB);
             }
         }
@@ -159,8 +159,8 @@ class PreparedLauncherTest {
                 int reads = fake.reads();
                 LaunchStats s = p.run(LaunchConfig.of1D(4));
                 p.run(LaunchConfig.of1D(4));
-                assertEquals(writes, fake.writes(), "данные уже на устройстве: ничего не записывается");
-                assertEquals(reads, fake.reads(), "и не читается");
+                assertEquals(writes, fake.writes(), "the data is already on the device: nothing is written");
+                assertEquals(reads, fake.reads(), "and nothing is read");
                 assertEquals(0, s.bytesUp());
                 assertEquals(0, s.bytesDown());
                 float[] result = new float[4];
@@ -179,8 +179,8 @@ class PreparedLauncherTest {
             float[] out = new float[4];
             try (PreparedLauncher p = prepare(ctx, k, in, out, 0, 1f)) {
                 LaunchStats s = p.run(LaunchConfig.of1D(4));
-                assertEquals(2 * 16, s.bytesUp(), "в устройство - все массивы хоста");
-                assertEquals(16, s.bytesDown(), "обратно - только записываемый out");
+                assertEquals(2 * 16, s.bytesUp(), "to the device - all host arrays");
+                assertEquals(16, s.bytesDown(), "back - only the writable out");
                 assertEquals(1, fake.reads());
             }
         }
@@ -195,11 +195,11 @@ class PreparedLauncherTest {
             int baseline = fake.liveBuffers();
             float[] out = new float[4];
             PreparedLauncher p = prepare(ctx, k, shared, out, 0, 1f);
-            assertEquals(baseline + 1, fake.liveBuffers(), "буфер под out принадлежит запуску");
+            assertEquals(baseline + 1, fake.liveBuffers(), "the buffer for out belongs to the launch");
             p.close();
             p.close();
             assertTrue(p.isClosed());
-            assertEquals(baseline, fake.liveBuffers(), "буфер пользователя на месте, свой освобождён");
+            assertEquals(baseline, fake.liveBuffers(), "the user's buffer is in place, its own was released");
             assertFalse(shared.isClosed());
             assertEquals("RT-X02", code(p.launch(LaunchConfig.of1D(4))));
             assertThrows(GpuException.class, () -> p.set(2, 1));
@@ -217,7 +217,7 @@ class PreparedLauncherTest {
             p = prepare(ctx, k, new float[2], new float[2], 0, 1f);
             assertEquals(2, fake.liveBuffers());
         }
-        assertEquals(0, fake.liveBuffers(), "утечки нет");
+        assertEquals(0, fake.liveBuffers(), "no leak");
         assertTrue(p.isClosed());
         assertEquals("RT-X02", code(p.launch(LaunchConfig.of1D(2))));
     }
@@ -229,7 +229,7 @@ class PreparedLauncherTest {
             CompiledKernel k = ctx.compile(scaled()).value();
             float[] data = {1, 2, 3};
             try (PreparedLauncher p = prepare(ctx, k, data, data, 5, 2f)) {
-                assertEquals(1, count(fake, "createBuffer"), "алиасинг как в JVM: один буфер");
+                assertEquals(1, count(fake, "createBuffer"), "aliasing as in the JVM: one buffer");
                 p.run(LaunchConfig.of1D(3));
                 assertArrayEquals(new float[]{7, 9, 11}, data);
             }
@@ -262,7 +262,7 @@ class PreparedLauncherTest {
             assertEquals("RT-A01", code(ctx.prepare(k, new float[1])));
             assertEquals("RT-A02", code(ctx.prepare(k, new int[1], new float[1], 0, 1f)));
             assertEquals("RT-A02", code(ctx.prepare(k, new float[1], new float[1], 0, "x")));
-            assertEquals(0, fake.liveBuffers(), "при отказе буферы не создаются");
+            assertEquals(0, fake.liveBuffers(), "no buffers are created on rejection");
             assertThrows(IllegalArgumentException.class, () -> ctx.prepare(null, new Object[0]));
             try (GpuContext other = open(device(), EventListener.NONE)) {
                 assertEquals("RT-A02", code(other.prepare(k, new float[1], new float[1], 0, 1f)));
@@ -275,8 +275,8 @@ class PreparedLauncherTest {
         try (GpuContext ctx = open(device(), EventListener.NONE)) {
             CompiledKernel k = ctx.compile(scaled()).value();
             try (PreparedLauncher p = prepare(ctx, k, new float[2], new float[2], 0, 1f)) {
-                assertThrows(GpuException.class, () -> p.set(3, "строка"));
-                assertThrows(GpuException.class, () -> p.set(2, 1.5f), "int-параметру не подходит float");
+                assertThrows(GpuException.class, () -> p.set(3, "string"));
+                assertThrows(GpuException.class, () -> p.set(2, 1.5f), "float does not fit an int parameter");
                 assertThrows(GpuException.class, () -> p.set(9, 1));
                 GpuException e = assertThrows(GpuException.class, () -> p.set(0, new float[2]));
                 assertEquals("RT-A02", e.diagnostics().get(0).code());
@@ -293,7 +293,7 @@ class PreparedLauncherTest {
                 in.close();
                 Result<LaunchStats> r = p.launch(LaunchConfig.of1D(2));
                 assertEquals("RT-A02", code(r));
-                assertTrue(r.diagnostics().get(0).message().contains("закрыт"));
+                assertTrue(r.diagnostics().get(0).message().contains("closed"));
             }
         }
     }
@@ -303,7 +303,7 @@ class PreparedLauncherTest {
         try (GpuContext ctx = open(device(), EventListener.NONE)) {
             CompiledKernel k = ctx.compile(scaled()).value();
             try (PreparedLauncher p = prepare(ctx, k, new float[8], new float[8], 0, 1f)) {
-                assertEquals("RT-L01", code(p.launch(LaunchConfig.of1D(8, 3))), "8 не делится на 3");
+                assertEquals("RT-L01", code(p.launch(LaunchConfig.of1D(8, 3))), "8 is not divisible by 3");
                 assertTrue(p.launch(LaunchConfig.of1D(8, 4)).isOk());
                 assertThrows(IllegalArgumentException.class, () -> p.launch(null));
             }
@@ -320,8 +320,8 @@ class PreparedLauncherTest {
             try (PreparedLauncher p = prepare(ctx, k, in, out, 0, 2f)) {
                 Result<LaunchStats> failed = p.launch(LaunchConfig.of1D(2));
                 assertEquals("RT-X01", code(failed));
-                assertArrayEquals(new float[]{-1, -1}, out, "при ошибке запуска массивы хоста не меняются");
-                assertTrue(p.launch(LaunchConfig.of1D(2)).isOk(), "следующий запуск проходит");
+                assertArrayEquals(new float[]{-1, -1}, out, "on a launch error the host arrays are not changed");
+                assertTrue(p.launch(LaunchConfig.of1D(2)).isOk(), "the next launch succeeds");
                 assertArrayEquals(new float[]{2, 4}, out);
             }
         }
@@ -382,8 +382,8 @@ class PreparedLauncherTest {
                 Float4[] before = data.clone();
                 data[0] = new Float4(10, 20, 30, 40);
                 p.run(LaunchConfig.of1D(1));
-                assertEquals(new Float4(11, 21, 31, 41), data[1], "изменённые данные хоста ушли на устройство");
-                assertNotSame(before[1], data[1], "вектор неизменяем и создан заново");
+                assertEquals(new Float4(11, 21, 31, 41), data[1], "the changed host data went to the device");
+                assertNotSame(before[1], data[1], "the vector is immutable and created anew");
             }
         }
     }

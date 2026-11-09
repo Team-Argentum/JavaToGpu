@@ -82,9 +82,9 @@ class IrBuilderTest {
         int f32 = b.constF32(2.0f);
         int f64 = b.constF64(0.5);
         IrModule m = b.build();
-        assertEquals(-5, m.a(small), "до 32 бит - прямо в колонке a");
-        assertEquals(1L << 40, m.constant(m.a(wide)), "64 бита - в таблице констант");
-        assertEquals(0x40000000, m.a(f32), "F32 - сырые биты в колонке a");
+        assertEquals(-5, m.a(small), "up to 32 bits - directly in column a");
+        assertEquals(1L << 40, m.constant(m.a(wide)), "64 bits - in the constant table");
+        assertEquals(0x40000000, m.a(f32), "F32 - raw bits in column a");
         assertEquals(Double.doubleToRawLongBits(0.5), m.constant(m.a(f64)));
         assertEquals(2, m.constCount());
     }
@@ -97,7 +97,7 @@ class IrBuilderTest {
         assertEquals(1, b.declareLocal(Types.F32));
         b.endFunction(b.block());
         b.beginFunction(IrModule.KERNEL, Types.VOID);
-        assertEquals(0, b.declareLocal(Types.F64), "нумерация локалей начинается заново в каждой функции");
+        assertEquals(0, b.declareLocal(Types.F64), "local numbering starts anew in every function");
         b.endFunction(b.block());
         IrModule m = b.build();
         assertEquals(2, m.fLocalCount(0));
@@ -162,7 +162,7 @@ class IrBuilderTest {
         int nodes = first.nodeCount();
         b.beginFunction(IrModule.KERNEL, Types.VOID);
         b.endFunction(b.block());
-        assertEquals(nodes, first.nodeCount(), "ранее собранный модуль неизменяем");
+        assertEquals(nodes, first.nodeCount(), "a previously built module is immutable");
         assertTrue(b.build().nodeCount() > nodes);
     }
 
@@ -175,7 +175,7 @@ class IrBuilderTest {
         assertTrue(Types.isSigned(Types.I8));
         assertTrue(!Types.isSigned(Types.U32));
         assertTrue(Types.isArith(Types.I32));
-        assertTrue(!Types.isArith(Types.I16), "I8..U16 - типы хранения");
+        assertTrue(!Types.isArith(Types.I16), "I8..U16 are storage types");
         assertTrue(Types.isInt32or64(Types.U64));
         assertEquals(16, Types.bits(Types.U16));
         assertEquals(0, Types.bits(Types.BOOL));

@@ -154,7 +154,7 @@ class JavaToGpuTest {
                 assertArrayEquals(new float[]{10, 20, 30}, out);
             }
             assertEquals(2, fake.enqueues());
-            assertEquals(0, fake.liveBuffers(), "запуск закрыт - буферы освобождены");
+            assertEquals(0, fake.liveBuffers(), "the launch is closed - buffers released");
 
             GpuException missing = assertThrows(GpuException.class, () -> JavaToGpu.prepare(demo, "nope", in, out, 2f));
             assertEquals("RT-F02", missing.diagnostics().get(0).code());
@@ -194,7 +194,7 @@ class JavaToGpuTest {
             call(demo, "scale", in, out, 2f);
             assertArrayEquals(new float[]{2, 4, 6, 8, 10}, out);
             assertEquals(1, fake.enqueues());
-            assertEquals(List.of(5L), globals, "размер запуска по умолчанию - длина первого массива");
+            assertEquals(List.of(5L), globals, "the default launch size is the length of the first array");
             assertEquals(null, locals.get(0));
             assertFalse(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.FALLBACK));
         } finally {
@@ -217,7 +217,7 @@ class JavaToGpuTest {
             }
             call(demo, "scale", in, out, 1f);
             assertArrayEquals(new long[]{4}, locals.get(0));
-            assertEquals(null, locals.get(1), "после закрытия области размеры снова по умолчанию");
+            assertEquals(null, locals.get(1), "after the scope closes, sizes are back to default");
         } finally {
             holder[0].close();
         }
@@ -231,7 +231,7 @@ class JavaToGpuTest {
              GpuContext two = context(b, new ArrayList<>(), GpuContext.Fallback.ALLOWED)) {
             JavaToGpu.Scope outer = JavaToGpu.use(one);
             JavaToGpu.Scope inner = JavaToGpu.use(two);
-            assertThrows(IllegalStateException.class, outer::close, "закрытие не в порядке открытия");
+            assertThrows(IllegalStateException.class, outer::close, "closing out of opening order");
             inner.close();
             inner.close(); // повторное закрытие безопасно
             outer.close();
@@ -284,12 +284,12 @@ class JavaToGpuTest {
             float[] out = new float[3];
             call(demo, "scale", in, out, 10f);
             call(demo, "scale", in, out, 100f);
-            assertArrayEquals(new float[]{100, 200, 300}, out, "выполнено на JVM");
+            assertArrayEquals(new float[]{100, 200, 300}, out, "ran on the JVM");
             assertEquals(0, fake.enqueues());
             List<GpuEvent> fallbacks = events.stream().filter(e -> e.kind() == GpuEvent.Kind.FALLBACK).toList();
-            assertEquals(1, fallbacks.size(), "одно предупреждение на ядро");
+            assertEquals(1, fallbacks.size(), "one warning per kernel");
             assertTrue(fallbacks.get(0).detail().contains("RT-C01"), fallbacks.get(0).detail());
-            assertTrue(fallbacks.get(0).detail().contains("строка 3:1: no"), "в предупреждении разобранный журнал сборки драйвера: " + fallbacks.get(0).detail());
+            assertTrue(fallbacks.get(0).detail().contains("line 3:1: no"), "the warning contains the parsed driver build log: " + fallbacks.get(0).detail());
         } finally {
             holder[0].close();
         }
@@ -331,7 +331,7 @@ class JavaToGpuTest {
              var l = JavaToGpu.launch(LaunchConfig.of1D(10, 4))) {
             Class<?> demo = woven(dir, holder);
             GpuException e = assertThrows(GpuException.class, () -> call(demo, "scale", new float[10], new float[10], 1f));
-            assertEquals("RT-L01", e.diagnostics().get(0).code(), "размер не делится на группу");
+            assertEquals("RT-L01", e.diagnostics().get(0).code(), "the size is not divisible by the group");
         } finally {
             holder[0].close();
         }
@@ -358,7 +358,7 @@ class JavaToGpuTest {
         List<GpuEvent> events = new ArrayList<>();
         JavaToGpu.configureDefault(b -> b.api(fake).ignoreEnvironment().listener(events::add));
         try {
-            assertEquals(0, fake.liveContexts(), "до первого обращения контекста нет");
+            assertEquals(0, fake.liveContexts(), "there is no context before the first access");
             float[] out = new float[3];
             call(woven(dir, holder), "scale", new float[]{1, 2, 3}, out, 2f);
             assertArrayEquals(new float[]{2, 4, 6}, out);
@@ -366,7 +366,7 @@ class JavaToGpuTest {
             assertTrue(JavaToGpu.defaultContext().isPresent());
             assertEquals(GpuEvent.Kind.DEVICE_SELECTED, events.get(0).kind());
             assertThrows(IllegalStateException.class, () -> JavaToGpu.configureDefault(b -> {
-            }), "после создания настроить нельзя");
+            }), "it cannot be configured after creation");
         } finally {
             holder[0].close();
         }
@@ -383,11 +383,11 @@ class JavaToGpuTest {
             Class<?> demo = woven(dir, holder);
             float[] out = new float[3];
             call(demo, "scale", new float[]{1, 2, 3}, out, 3f);
-            assertArrayEquals(new float[]{3, 6, 9}, out, "нет устройства - ядро выполнено на JVM");
+            assertArrayEquals(new float[]{3, 6, 9}, out, "no device - the kernel ran on the JVM");
             int callsAfterFirst = nothing.journal().size();
             call(demo, "scale", new float[]{1, 2, 3}, out, 4f);
             assertArrayEquals(new float[]{4, 8, 12}, out);
-            assertEquals(callsAfterFirst, nothing.journal().size(), "повторных попыток найти устройство нет");
+            assertEquals(callsAfterFirst, nothing.journal().size(), "no repeated attempts to find a device");
             assertEquals(Optional.empty(), JavaToGpu.defaultContext());
         } finally {
             holder[0].close();

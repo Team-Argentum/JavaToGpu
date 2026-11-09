@@ -205,7 +205,7 @@ public final class ApiGenerator {
         for (int i = 0; i < lanes; i++) {
             sb.append("            case ").append(i).append(": return ").append(laneName(lanes, i)).append(";\n");
         }
-        sb.append("            default: throw new IndexOutOfBoundsException(\"компонента \" + i + \" вне 0..").append(lanes - 1)
+        sb.append("            default: throw new IndexOutOfBoundsException(\"component \" + i + \" out of 0..").append(lanes - 1)
                 .append("\");\n        }\n    }\n");
 
         for (int k = 0; k < lanes; k++) {
@@ -412,7 +412,7 @@ public final class ApiGenerator {
         for (String t : toks) {
             boolean generic = t.equals("T") || t.startsWith("T:") || t.startsWith("ptr<T:");
             if (!generic && !FIXED_JAVA.containsKey(t)) {
-                return "тип '" + t + "' без Java-представления";
+                return "type '" + t + "' has no Java representation";
             }
         }
         return null;
@@ -427,14 +427,14 @@ public final class ApiGenerator {
             case "genf" -> List.of("f32", "f64");
             case "geni" -> List.of("i32", "i64");
             case "genn" -> List.of("f32", "f64", "i32", "i64");
-            default -> throw new IllegalArgumentException("builtin " + builtin + ": неизвестный класс '" + cls + "'");
+            default -> throw new IllegalArgumentException("builtin " + builtin + ": unknown class '" + cls + "'");
         };
     }
 
     private static void genBuiltin(Def def, Builtin b, StringBuilder out) {
         if (!isGeneric(b)) {
             if (!b.jvm().containsKey("") || b.jvm().size() != 1) {
-                throw new IllegalArgumentException("builtin " + b.name() + ": нужна ровно одна jvm-реализация без типов");
+                throw new IllegalArgumentException("builtin " + b.name() + ": exactly one jvm implementation without types is required");
             }
             emit(out, b, FIXED_JAVA.get(b.ret()), b.args().stream().map(FIXED_JAVA::get).toList(),
                     body(b.jvm().get("")), false);
@@ -452,18 +452,18 @@ public final class ApiGenerator {
             }
         }
         if (cls == null) {
-            throw new IllegalArgumentException("builtin " + b.name() + ": обобщённый builtin без привязки 'T:<класс>'");
+            throw new IllegalArgumentException("builtin " + b.name() + ": generic builtin without a 'T:<class>' binding");
         }
         List<String> scalars = classScalars(cls, b.name());
         for (String k : b.jvm().keySet()) {
             if (!scalars.contains(k)) {
-                throw new IllegalArgumentException("builtin " + b.name() + ": jvm-реализация для '" + k
-                        + "' вне класса " + cls);
+                throw new IllegalArgumentException("builtin " + b.name() + ": jvm implementation for '" + k
+                        + "' outside class " + cls);
             }
         }
         for (String s : scalars) {
             if (!b.jvm().containsKey(s)) {
-                throw new IllegalArgumentException("builtin " + b.name() + ": нет jvm-реализации для " + s);
+                throw new IllegalArgumentException("builtin " + b.name() + ": no jvm implementation for " + s);
             }
         }
         boolean hasPtr = b.args().stream().anyMatch(a -> a.startsWith("ptr<T:"));
@@ -521,7 +521,7 @@ public final class ApiGenerator {
         }
         String fixed = FIXED_JAVA.get(token);
         if (fixed == null) {
-            throw new IllegalArgumentException("builtin " + b.name() + ": тип '" + token + "' без Java-представления");
+            throw new IllegalArgumentException("builtin " + b.name() + ": type '" + token + "' has no Java representation");
         }
         return fixed;
     }

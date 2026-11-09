@@ -39,7 +39,7 @@ final class Golden {
     static void assertLowers(String golden, String source) {
         FrontendHarness.Outcome r = FrontendHarness.compile(source);
         assertTrue(r.success(), r.describe());
-        assertTrue(r.gpu().isEmpty(), "ожидалось отсутствие диагностик GPU:\n" + r.describe());
+        assertTrue(r.gpu().isEmpty(), "expected no GPU diagnostics:\n" + r.describe());
         assertMatches(golden, dumpAll(r));
     }
 
@@ -50,7 +50,7 @@ final class Golden {
     static String dumpAll(FrontendHarness.Outcome r) {
         Map<String, IrModule> byName = new TreeMap<>();
         for (IrModule m : r.modules()) {
-            assertFalse(Validator.validate(m).hasErrors(), "модуль не прошёл валидатор: " + Validator.validate(m).diagnostics());
+            assertFalse(Validator.validate(m).hasErrors(), "module failed the validator: " + Validator.validate(m).diagnostics());
             byName.put(m.debug().functionName(m.functionCount() - 1), m);
         }
         StringBuilder sb = new StringBuilder();
@@ -65,7 +65,7 @@ final class Golden {
         try (InputStream in = Golden.class.getResourceAsStream("/golden/" + name)) {
             if (in == null) {
                 writeActual(name, actual);
-                fail("нет golden-файла " + name + "; фактический вывод записан в build/golden-actual/" + name);
+                fail("no golden file " + name + "; actual output written to build/golden-actual/" + name);
                 return;
             }
             expected = new String(in.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
@@ -74,7 +74,7 @@ final class Golden {
         }
         if (!expected.equals(actual)) {
             writeActual(name, actual);
-            assertEquals(expected, actual, "golden " + name + " не совпал; фактический вывод - build/golden-actual/" + name);
+            assertEquals(expected, actual, "golden " + name + " did not match; actual output is in build/golden-actual/" + name);
         }
     }
 

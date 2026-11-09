@@ -47,7 +47,7 @@ class PointerTest {
     }
 
     private static void fails(Result<?> r, String code) {
-        assertFalse(r.isOk(), "ожидалась ошибка " + code);
+        assertFalse(r.isOk(), "expected error " + code);
         assertEquals(code, r.diagnostics().get(0).code(), r.diagnostics().toString());
     }
 
@@ -107,7 +107,7 @@ class PointerTest {
                 b.exprStmt(b.call(bump, b.elemPtr(b.param(0), b.constI32(1)), b.constI32(2)))));
         int[] data = {0, 1, 2, 3, 4};
         ok(run(b.build(), NdRange.of1D(1), (Object) data));
-        assertArrayEquals(new int[]{0, 1, 2, 103, 4}, data, "p = a + 1; p[2] это a[3]");
+        assertArrayEquals(new int[]{0, 1, 2, 103, 4}, data, "p = a + 1; p[2] is a[3]");
     }
 
     @Test
@@ -185,7 +185,7 @@ class PointerTest {
                 new Particle(3, new Float4(9, 9, 9, 9), 9)};
         ok(run(b.build(), NdRange.of1D(3), (Object) data));
         assertArrayEquals(new int[]{0, 10, 20}, new int[]{data[0].id, data[1].id, data[2].id});
-        assertEquals(new Float4(5, 6, 7, 8), data[1].v, "соседние поля не тронуты");
+        assertEquals(new Float4(5, 6, 7, 8), data[1].v, "neighbouring fields are untouched");
         assertEquals(2f, data[1].x);
     }
 

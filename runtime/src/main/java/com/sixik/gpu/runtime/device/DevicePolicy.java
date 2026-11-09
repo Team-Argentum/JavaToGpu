@@ -49,7 +49,7 @@ public record DevicePolicy(Kind kind, String vendor, long minGlobalMemory, int r
     /** Проверяет, что тип задан. */
     public DevicePolicy {
         if (kind == null) {
-            throw new IllegalArgumentException("kind обязателен");
+            throw new IllegalArgumentException("kind is required");
         }
     }
 

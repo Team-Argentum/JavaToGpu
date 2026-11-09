@@ -387,7 +387,7 @@ final class FunctionLowerer {
             case JavaTypes.K_LONG -> b.constI64(1);
             case JavaTypes.K_FLOAT -> b.constF32(1f);
             case JavaTypes.K_DOUBLE -> b.constF64(1.0);
-            default -> throw new IllegalStateException("единица вида " + kind);
+            default -> throw new IllegalStateException("unit of kind " + kind);
         };
     }
 
@@ -424,7 +424,7 @@ final class FunctionLowerer {
         if (val instanceof Number x) {
             return sv(b.constI32(x.intValue()), JavaTypes.K_INT, false);
         }
-        throw new IllegalStateException("константа неподдерживаемого типа: " + val);
+        throw new IllegalStateException("constant of unsupported type: " + val);
     }
 
     // =============================================================================================
@@ -447,7 +447,7 @@ final class FunctionLowerer {
             case RETURN -> returnStmt(p);
             case EMPTY_STATEMENT -> {
             }
-            default -> throw new IllegalStateException("неожиданный стейтмент " + t.getKind());
+            default -> throw new IllegalStateException("unexpected statement " + t.getKind());
         }
     }
 
@@ -533,7 +533,7 @@ final class FunctionLowerer {
         vars.put(el, new Var(false, l, JavaTypes.K_ARRAY, elemKind, space, -1));
         Long len = ConstEval.evalIntegral(trees, child(np, na.getDimensions().get(0)));
         if (len == null) {
-            throw new IllegalStateException("размер массива не константа");
+            throw new IllegalStateException("array size is not a constant");
         }
         int lenNode = b.constI32(len.intValue());
         out.add(at(vt, space == AddressSpace.LOCAL ? b.localArrayDecl(l, lenNode) : b.privateArrayDecl(l, lenNode)));
@@ -548,7 +548,7 @@ final class FunctionLowerer {
                  XOR_ASSIGNMENT, OR_ASSIGNMENT -> compound(p, false);
             case PREFIX_INCREMENT, PREFIX_DECREMENT, POSTFIX_INCREMENT, POSTFIX_DECREMENT -> incDec(p, false);
             case METHOD_INVOCATION -> call(p, true);
-            default -> throw new IllegalStateException("неожиданное выражение-стейтмент " + t.getKind());
+            default -> throw new IllegalStateException("unexpected expression statement " + t.getKind());
         }
     }
 
@@ -679,7 +679,7 @@ final class FunctionLowerer {
                     TreePath lp = child(child(cp, cl), cl.getConstantExpression());
                     Long cv = ConstEval.evalIntegral(trees, lp);
                     if (cv == null) {
-                        throw new IllegalStateException("метка case не константа");
+                        throw new IllegalStateException("case label is not a constant");
                     }
                     value = (int) (long) cv;
                 }
@@ -762,7 +762,7 @@ final class FunctionLowerer {
                 List<V> vs = operands(List.of(child(p, bt.getLeftOperand()), child(p, bt.getRightOperand())));
                 return applyBinary(t.getKind(), vs.get(0), vs.get(1));
             }
-            default -> throw new IllegalStateException("неожиданное выражение " + t.getKind());
+            default -> throw new IllegalStateException("unexpected expression " + t.getKind());
         }
     }
 
@@ -821,7 +821,7 @@ final class FunctionLowerer {
         if (el instanceof VariableElement ve && ve.getConstantValue() != null) {
             return constant(ve.getConstantValue());
         }
-        throw new IllegalStateException("неизвестная переменная " + el);
+        throw new IllegalStateException("unknown variable " + el);
     }
 
     private V memberSelect(TreePath p) {
@@ -849,7 +849,7 @@ final class FunctionLowerer {
         if (el instanceof VariableElement ve && ve.getConstantValue() != null) {
             return constant(ve.getConstantValue());
         }
-        throw new IllegalStateException("неподдерживаемое обращение к члену " + ms);
+        throw new IllegalStateException("unsupported member access " + ms);
     }
 
     private int indexNode(V idx) {
@@ -936,7 +936,7 @@ final class FunctionLowerer {
         } else {
             FnInfo info = fns.get(callee);
             if (info == null) {
-                throw new IllegalStateException("функция " + callee + " не построена раньше вызывающей");
+                throw new IllegalStateException("function " + callee + " is not built before the caller");
             }
             node = b.call(info.index, args);
             effectful = info.effects;
@@ -1284,7 +1284,7 @@ final class FunctionLowerer {
                 int pk = JavaTypes.binaryPromoted(l.kind(), r.kind());
                 return sv(b.binary(op, conv(l, pk), conv(r, pk)), pk, open);
             }
-            default -> throw new IllegalStateException("неожиданная бинарная операция " + kind);
+            default -> throw new IllegalStateException("unexpected binary operation " + kind);
         }
     }
 

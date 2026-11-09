@@ -84,7 +84,7 @@ final class KernelResources {
             }
             String[] f = line.split("\t", -1);
             if (f.length != 4) {
-                throw new IllegalArgumentException("строка индекса должна содержать 4 поля: " + line);
+                throw new IllegalArgumentException("index line must contain 4 fields: " + line);
             }
             r.add(new IndexEntry(f[0], f[1], f[2], f[3]));
         }
@@ -118,7 +118,7 @@ final class KernelResources {
             case DOUBLE -> "D";
             case ARRAY -> "[" + typeDescriptor(((ArrayType) t).getComponentType());
             case DECLARED -> "L" + binaryName((javax.lang.model.element.TypeElement) ((javax.lang.model.type.DeclaredType) t).asElement()).replace('.', '/') + ";";
-            default -> throw new IllegalArgumentException("тип " + t + " не имеет дескриптора ядра");
+            default -> throw new IllegalArgumentException("type " + t + " has no kernel descriptor");
         };
     }
 

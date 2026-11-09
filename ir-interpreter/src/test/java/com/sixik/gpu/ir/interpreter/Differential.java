@@ -88,11 +88,11 @@ final class Differential {
         Result<Interpreter.Execution> result = Interpreter.run(k.module(), k.module().functionCount() - 1, range, BUDGET, irArgs);
 
         if (jvmFailure != null) {
-            assertTrue(!result.isOk(), name + ": JVM бросила " + jvmFailure.getCause()
-                    + ", а интерпретатор завершился успешно");
+            assertTrue(!result.isOk(), name + ": the JVM threw " + jvmFailure.getCause()
+                    + ", but the interpreter finished successfully");
             return;
         }
-        assertTrue(result.isOk(), name + ": интерпретатор отказал: " + result.diagnostics());
+        assertTrue(result.isOk(), name + ": interpreter refused: " + result.diagnostics());
         for (int i = 0; i < jvmArgs.length; i++) {
             assertArrayEquals(name, i, jvmArgs[i], irArgs[i], ulps);
         }
@@ -196,10 +196,10 @@ final class Differential {
      */
     static String objectDifference(Object e, Object a, int ulps) {
         if (e == null || a == null) {
-            return e == a ? null : "null против значения";
+            return e == a ? null : "null versus a value";
         }
         if (e.getClass() != a.getClass()) {
-            return "разные классы";
+            return "different classes";
         }
         for (java.lang.reflect.Field f : e.getClass().getDeclaredFields()) {
             int mod = f.getModifiers();
@@ -211,15 +211,15 @@ final class Differential {
                 Object y = f.get(a);
                 String why;
                 if (x instanceof Float fx) {
-                    why = sameFloat(fx, (Float) y, ulps) ? null : "поле " + f.getName();
+                    why = sameFloat(fx, (Float) y, ulps) ? null : "field " + f.getName();
                 } else if (x instanceof Double dx) {
-                    why = sameDouble(dx, (Double) y, ulps) ? null : "поле " + f.getName();
+                    why = sameDouble(dx, (Double) y, ulps) ? null : "field " + f.getName();
                 } else if (x == null || x.getClass().isPrimitive() || x instanceof Number || x instanceof Boolean
                         || x instanceof Character) {
-                    why = java.util.Objects.equals(x, y) ? null : "поле " + f.getName();
+                    why = java.util.Objects.equals(x, y) ? null : "field " + f.getName();
                 } else {
                     String inner = objectDifference(x, y, ulps);
-                    why = inner == null ? null : "поле " + f.getName() + ": " + inner;
+                    why = inner == null ? null : "field " + f.getName() + ": " + inner;
                 }
                 if (why != null) {
                     return why;

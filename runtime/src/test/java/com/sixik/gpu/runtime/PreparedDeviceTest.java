@@ -62,7 +62,7 @@ class PreparedDeviceTest {
     void repeatedLaunchesWithChangingHostDataAndScalar(@TempDir Path dir) throws Exception {
         List<GpuEvent> events = new ArrayList<>();
         JavaToGpu.configureDefault(b -> b.listener(events::add).fallback(GpuContext.Fallback.NEVER));
-        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "нет OpenCL-устройства");
+        Assumptions.assumeTrue(JavaToGpu.defaultContext().isPresent(), "no OpenCL device");
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
         assertEquals(2, Weaver.weaveTree(dir).kernels());
@@ -95,7 +95,7 @@ class PreparedDeviceTest {
         List<GpuEvent> events = new ArrayList<>();
         JavaToGpu.configureDefault(b -> b.listener(events::add).fallback(GpuContext.Fallback.NEVER));
         GpuContext ctx = JavaToGpu.defaultContext().orElse(null);
-        Assumptions.assumeTrue(ctx != null, "нет OpenCL-устройства");
+        Assumptions.assumeTrue(ctx != null, "no OpenCL device");
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
         Weaver.weaveTree(dir);
@@ -130,7 +130,7 @@ class PreparedDeviceTest {
                     src = dst;
                     dst = t;
                 }
-                assertEquals(0, transferred, "между итерациями данные не ходят через хост");
+                assertEquals(0, transferred, "data does not travel through the host between iterations");
                 int[] result = new int[n];
                 src.read(result);
                 assertArrayEquals(expected, result);

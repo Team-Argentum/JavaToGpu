@@ -259,7 +259,7 @@ public final class KernelSample {
          */
         public Builder ulps(int ulps) {
             if (ulps < 0) {
-                throw new IllegalArgumentException("ulps не может быть отрицательным");
+                throw new IllegalArgumentException("ulps must not be negative");
             }
             this.ulps = ulps;
             return this;
@@ -301,7 +301,7 @@ public final class KernelSample {
          */
         public KernelSample build() {
             if (args == null) {
-                throw new IllegalStateException("образец " + name + ": не задан генератор аргументов");
+                throw new IllegalStateException("sample " + name + ": no argument generator is set");
             }
             return new KernelSample(this);
         }
@@ -332,7 +332,7 @@ public final class KernelSample {
                 return Range.of1D(Math.max(1, Array.getLength(a)));
             }
         }
-        throw new IllegalStateException("образец " + name + ": размер запуска не задан, а массивов в аргументах нет");
+        throw new IllegalStateException("sample " + name + ": launch size is not set and there are no arrays in the arguments");
     }
 
     /** @return ожидаемые значения либо {@code null} */
@@ -372,7 +372,7 @@ public final class KernelSample {
     public static KernelSample fromJson(String json) {
         Object root = Json.parse(json);
         if (!(root instanceof Map<?, ?> top)) {
-            throw new IllegalArgumentException("образец: ожидался JSON-объект");
+            throw new IllegalArgumentException("sample: a JSON object was expected");
         }
         String name = top.get("name") instanceof String s ? s : "json";
         List<?> argSpecs = list(top.get("args"), "args");
@@ -426,14 +426,14 @@ public final class KernelSample {
         if (o instanceof List<?> l) {
             return l;
         }
-        throw new IllegalArgumentException("образец: '" + what + "' должен быть массивом");
+        throw new IllegalArgumentException("sample: '" + what + "' must be an array");
     }
 
     private static Range range(Map<?, ?> r) {
         List<?> g = list(r.get("global"), "range.global");
         List<?> l = r.get("local") == null ? List.of() : list(r.get("local"), "range.local");
         if (g.isEmpty() || g.size() > 3 || (!l.isEmpty() && l.size() != g.size())) {
-            throw new IllegalArgumentException("range: global из 1-3 чисел, local - той же длины либо пуст");
+            throw new IllegalArgumentException("range: global of 1-3 numbers, local of the same length or empty");
         }
         long[] gl = new long[3];
         long[] lo = new long[3];
@@ -457,7 +457,7 @@ public final class KernelSample {
 
         static Object build(Object spec, String where) {
             if (!(spec instanceof Map<?, ?> m) || !(m.get("type") instanceof String type)) {
-                throw new IllegalArgumentException(where + ": ожидался объект с полем type");
+                throw new IllegalArgumentException(where + ": an object with a type field was expected");
             }
             if (!type.endsWith("[]")) {
                 return scalar(type, m.get("value"), where);
@@ -467,7 +467,7 @@ public final class KernelSample {
                 return array(elem, values.size(), i -> values.get(i), where);
             }
             if (!(m.get("size") instanceof Number size) || size.longValue() < 0 || size.longValue() > Integer.MAX_VALUE) {
-                throw new IllegalArgumentException(where + ": нужен values либо size");
+                throw new IllegalArgumentException(where + ": values or size is required");
             }
             String fill = m.get("fill") instanceof String f ? f : "zeros";
             Random rnd = new Random(m.get("seed") instanceof Number s ? s.longValue() : 0L);
@@ -476,7 +476,7 @@ public final class KernelSample {
                 case "iota" -> (long) i;
                 case "random" -> isFloating(elem) ? (Object) (rnd.nextDouble() * 2 - 1)
                         : (Object) (elem.equals("long") ? rnd.nextLong() : (long) rnd.nextInt());
-                default -> throw new IllegalArgumentException(where + ": неизвестный fill '" + fill + "'");
+                default -> throw new IllegalArgumentException(where + ": unknown fill '" + fill + "'");
             }, where);
         }
 
@@ -490,7 +490,7 @@ public final class KernelSample {
                 case "long" -> integral(v, where);
                 case "float" -> (float) floating(v, where);
                 case "double" -> floating(v, where);
-                default -> throw new IllegalArgumentException(where + ": неизвестный скалярный тип '" + type + "'");
+                default -> throw new IllegalArgumentException(where + ": unknown scalar type '" + type + "'");
             };
         }
 
@@ -501,7 +501,7 @@ public final class KernelSample {
             if (v instanceof Double d && d == Math.rint(d)) {
                 return d.longValue();
             }
-            throw new IllegalArgumentException(where + ": ожидалось целое, получено " + v);
+            throw new IllegalArgumentException(where + ": expected an integer, got " + v);
         }
 
         private static double floating(Object v, String where) {
@@ -513,10 +513,10 @@ public final class KernelSample {
                     case "NaN" -> Double.NaN;
                     case "Infinity" -> Double.POSITIVE_INFINITY;
                     case "-Infinity" -> Double.NEGATIVE_INFINITY;
-                    default -> throw new IllegalArgumentException(where + ": неизвестное вещественное '" + s + "'");
+                    default -> throw new IllegalArgumentException(where + ": unknown floating value '" + s + "'");
                 };
             }
-            throw new IllegalArgumentException(where + ": ожидалось число, получено " + v);
+            throw new IllegalArgumentException(where + ": expected a number, got " + v);
         }
 
         private static Object array(String elem, int n, java.util.function.IntFunction<Object> at, String where) {
@@ -579,7 +579,7 @@ public final class KernelSample {
                     return a;
                 }
                 default:
-                    throw new IllegalArgumentException(where + ": неизвестный тип массива '" + elem + "[]'");
+                    throw new IllegalArgumentException(where + ": unknown array type '" + elem + "[]'");
             }
         }
     }

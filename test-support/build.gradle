@@ -1,4 +1,4 @@
-description = 'JUnit-библиотека: GpuAssert, @GPUTest, KernelSample (JVM <-> IR-интерпретатор <-> GPU).'
+description = 'JUnit library: GpuAssert, @GPUTest, KernelSample (JVM <-> IR interpreter <-> GPU).'
 
 dependencies {
     api project(':api')
@@ -34,7 +34,7 @@ tasks.named('test') {
 // Сверка всех образцов с реальным устройством. Без драйвера ветвь DEVICE пропускается.
 tasks.register('deviceTest', Test) {
     group = 'verification'
-    description = 'Тесты test-support на реальном OpenCL-устройстве (тег device).'
+    description = 'test-support tests on a real OpenCL device (tag device).'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform {

@@ -3,7 +3,7 @@ plugins {
     id 'java-test-fixtures'
 }
 
-description = 'Подмена тела @Kernel-метода в байткоде (ASM): оригинал уходит в <name>$jvm, метод становится делегатом.'
+description = 'Replaces the body of a @Kernel method in bytecode (ASM): the original moves to <name>$jvm, the method becomes a delegate.'
 
 dependencies {
     implementation 'org.ow2.asm:asm:9.11.1'

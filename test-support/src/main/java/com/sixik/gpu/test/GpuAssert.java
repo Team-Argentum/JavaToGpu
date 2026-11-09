@@ -125,8 +125,8 @@ public final class GpuAssert {
         try {
             module = JavaToGpu.loadModule(owner, kernel);
         } catch (GpuException e) {
-            throw new AssertionFailedError(title + ": IR ядра не найден: " + e.getMessage()
-                    + " (класс собран без annotation processor frontend-java?)");
+            throw new AssertionFailedError(title + ": kernel IR not found: " + e.getMessage()
+                    + " (was the class built without the frontend-java annotation processor?)");
         }
         int fn = module.functionCount() - 1;
         boolean groupSync = Validator.validate(module).functions()[fn].usesGroupSync();
@@ -144,9 +144,9 @@ public final class GpuAssert {
         // ---- JVM ------------------------------------------------------------------------------
         Throwable jvmFailure = null;
         if (!sample.legs().contains(Leg.JVM)) {
-            skipped.put(Leg.JVM, "исключена образцом");
+            skipped.put(Leg.JVM, "excluded by the sample");
         } else if (groupSync) {
-            skipped.put(Leg.JVM, "ядро использует barrier или local-память: на JVM work-item-ы идут по очереди");
+            skipped.put(Leg.JVM, "the kernel uses barrier or local memory: on the JVM work-items run one after another");
         } else {
             Object[] args = sample.args();
             jvmFailure = runOnJvm(owner, kernel, module, range, args);
@@ -160,50 +160,50 @@ public final class GpuAssert {
 
         // ---- интерпретатор ----------------------------------------------------------------------
         if (!sample.legs().contains(Leg.INTERPRETER)) {
-            skipped.put(Leg.INTERPRETER, "исключена образцом");
+            skipped.put(Leg.INTERPRETER, "excluded by the sample");
         } else {
             Object[] args = sample.args();
             Result<Interpreter.Execution> r = Interpreter.run(module, fn, range.toNdRange(), BUDGET, args);
             if (jvmFailure != null) {
                 if (r.isOk()) {
-                    throw new AssertionFailedError(title + ": JVM бросила " + describe(jvmFailure)
-                            + ", а интерпретатор завершился успешно");
+                    throw new AssertionFailedError(title + ": the JVM threw " + describe(jvmFailure)
+                            + ", but the interpreter finished successfully");
                 }
-                skipped.put(Leg.DEVICE, "JVM бросила исключение, поведение на устройстве не определено");
+                skipped.put(Leg.DEVICE, "the JVM threw an exception, device behavior is undefined");
                 ran.add(Leg.INTERPRETER);
                 return new Report(owner.getSimpleName() + "." + kernel, List.copyOf(ran), skipped, true, null, deviceUlps);
             }
             if (!r.isOk()) {
-                throw new AssertionFailedError(title + ": интерпретатор отказал: " + diagnostics(r.diagnostics()));
+                throw new AssertionFailedError(title + ": interpreter refused: " + diagnostics(r.diagnostics()));
             }
             results.put(Leg.INTERPRETER, args);
             ran.add(Leg.INTERPRETER);
         }
         if (jvmFailure != null) {
-            throw new AssertionFailedError(title + ": JVM бросила " + describe(jvmFailure)
-                    + ", а проверить отказ интерпретатора нельзя: ветвь INTERPRETER исключена");
+            throw new AssertionFailedError(title + ": the JVM threw " + describe(jvmFailure)
+                    + ", and the interpreter refusal cannot be checked: the INTERPRETER branch is excluded");
         }
 
         // ---- устройство -------------------------------------------------------------------------
         String deviceName = null;
         if (!sample.legs().contains(Leg.DEVICE)) {
-            skipped.put(Leg.DEVICE, "исключена образцом");
+            skipped.put(Leg.DEVICE, "excluded by the sample");
         } else if (device == null) {
-            skipped.put(Leg.DEVICE, "нет устройства");
+            skipped.put(Leg.DEVICE, "no device");
         } else {
             Result<CompiledKernel> compiled = device.compile(module);
             if (!compiled.isOk()) {
                 if (compiled.diagnostics().stream().anyMatch(d -> d.code().equals("RT-D02"))) {
-                    skipped.put(Leg.DEVICE, "устройство не поддерживает нужные возможности: " + diagnostics(compiled.diagnostics()));
+                    skipped.put(Leg.DEVICE, "the device does not support the required features: " + diagnostics(compiled.diagnostics()));
                 } else {
-                    throw new AssertionFailedError(title + ": компиляция для устройства не удалась: "
+                    throw new AssertionFailedError(title + ": compilation for the device failed: "
                             + diagnostics(compiled.diagnostics()));
                 }
             } else {
                 Object[] args = sample.args();
                 Result<LaunchStats> r = device.launch(compiled.value(), range.toLaunchConfig(), args);
                 if (!r.isOk()) {
-                    throw new AssertionFailedError(title + ": запуск на устройстве не удался: " + diagnostics(r.diagnostics()));
+                    throw new AssertionFailedError(title + ": launch on the device failed: " + diagnostics(r.diagnostics()));
                 }
                 results.put(Leg.DEVICE, args);
                 ran.add(Leg.DEVICE);
@@ -215,7 +215,7 @@ public final class GpuAssert {
         Leg reference = results.containsKey(Leg.JVM) ? Leg.JVM : Leg.INTERPRETER;
         Object[] ref = results.get(reference);
         if (expected != null) {
-            compare(title, "ожидаемое", reference.name(), expected, ref, 0, sample, true);
+            compare(title, "expected", reference.name(), expected, ref, 0, sample, true);
         }
         if (reference != Leg.INTERPRETER && results.containsKey(Leg.INTERPRETER)) {
             compare(title, reference.name(), "INTERPRETER", ref, results.get(Leg.INTERPRETER), interpreterUlps, sample, false);
@@ -238,8 +238,8 @@ public final class GpuAssert {
             }
             String why = Compare.difference(expected[i], actual[i], ulps);
             if (why != null) {
-                throw new AssertionFailedError(title + ": аргумент " + i + " " + why + " [" + expectedName + " против "
-                        + actualName + ", допуск " + ulps + " ULP]");
+                throw new AssertionFailedError(title + ": argument " + i + " " + why + " [" + expectedName + " versus "
+                        + actualName + ", tolerance " + ulps + " ULP]");
             }
         }
     }
@@ -285,18 +285,18 @@ public final class GpuAssert {
                 body = m;
             } else if (m.getName().equals(kernel)) {
                 if (original != null) {
-                    throw new IllegalArgumentException("у ядра " + kernel + " несколько методов: перегрузки ядер не поддерживаются");
+                    throw new IllegalArgumentException("the kernel has " + kernel + " has several methods: kernel overloads are not supported");
                 }
                 original = m;
             }
         }
         Method chosen = body != null ? body : original;
         if (chosen == null) {
-            throw new IllegalArgumentException("в " + owner.getName() + " нет метода " + kernel);
+            throw new IllegalArgumentException("in " + owner.getName() + " has no method " + kernel);
         }
         if (chosen.getParameterCount() != args.length) {
-            throw new IllegalArgumentException("ядро " + kernel + " принимает " + chosen.getParameterCount()
-                    + " аргументов, образец даёт " + args.length);
+            throw new IllegalArgumentException("kernel " + kernel + " takes " + chosen.getParameterCount()
+                    + " arguments, the sample gives " + args.length);
         }
         chosen.setAccessible(true);
         return chosen;

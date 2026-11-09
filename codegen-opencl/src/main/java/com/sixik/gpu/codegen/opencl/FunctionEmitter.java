@@ -274,7 +274,7 @@ final class FunctionEmitter {
                 }
             }
             case Op.RETURN -> line(m.a(n) >= 0 ? "return " + expr(m.a(n)).s() + ";" : "return;");
-            default -> throw new IllegalStateException("стейтмент " + Op.nameOf(op) + " не поддержан эмиттером");
+            default -> throw new IllegalStateException("statement " + Op.nameOf(op) + " is not supported by the emitter");
         }
     }
 
@@ -524,7 +524,7 @@ final class FunctionEmitter {
             case Op.INTRINSIC:
                 return intrinsic(n);
             default:
-                throw new IllegalStateException("выражение " + Op.nameOf(op) + " не поддержано эмиттером");
+                throw new IllegalStateException("expression " + Op.nameOf(op) + " is not supported by the emitter");
         }
     }
 
@@ -807,7 +807,7 @@ final class FunctionEmitter {
         return switch (m.op(node)) {
             case Op.PARAM -> paramNames[m.a(node)];
             case Op.LOCAL_GET -> localNames[m.a(node)];
-            default -> throw new IllegalStateException("массив-значение должно быть параметром или локалью");
+            default -> throw new IllegalStateException("an array value must be a parameter or a local");
         };
     }
 
@@ -815,7 +815,7 @@ final class FunctionEmitter {
         return switch (m.op(arrayNode)) {
             case Op.PARAM -> lenNames[m.a(arrayNode)];
             case Op.LOCAL_GET -> Integer.toString(arrayLen[m.a(arrayNode)]);
-            default -> throw new IllegalStateException("массив-значение должно быть параметром или локалью");
+            default -> throw new IllegalStateException("an array value must be a parameter or a local");
         };
     }
 
@@ -935,7 +935,7 @@ final class FunctionEmitter {
                         P_ATOM);
             }
             default:
-                throw new IllegalStateException("builtin " + name + " не поддержан эмиттером");
+                throw new IllegalStateException("builtin " + name + " is not supported by the emitter");
         }
     }
 

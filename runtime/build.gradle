@@ -3,7 +3,7 @@ plugins {
     id 'java-test-fixtures'
 }
 
-description = 'GpuContext, устройства (FFM к libOpenCL), GpuBuffer, кэш, запуск, JVM-fallback.'
+description = 'GpuContext, devices (FFM to libOpenCL), GpuBuffer, cache, launch, JVM fallback.'
 
 dependencies {
     api project(':api')
@@ -42,7 +42,7 @@ tasks.named('test') {
 // Тесты на настоящем OpenCL-устройстве. Без драйвера пропускаются (Assumptions), в обычную сборку не входят.
 tasks.register('deviceTest', Test) {
     group = 'verification'
-    description = 'Тесты рантайма на реальном OpenCL-устройстве (тег device).'
+    description = 'Runtime tests on a real OpenCL device (tag device).'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath

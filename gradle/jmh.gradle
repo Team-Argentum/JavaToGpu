@@ -27,7 +27,7 @@ dependencies {
 
 tasks.register('jmh', JavaExec) {
     group = 'verification'
-    description = 'Запускает JMH-бенчмарки модуля (source set jmh).'
+    description = 'Runs the JMH benchmarks of the module (source set jmh).'
     dependsOn 'jmhClasses'
     classpath = sourceSets.jmh.runtimeClasspath
     mainClass = 'org.openjdk.jmh.Main'

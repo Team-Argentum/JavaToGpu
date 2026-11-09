@@ -1,73 +1,73 @@
-# Таблица диагностик фронтенда GPU-кода - единый источник кодов GPU#### (REWORK_ARCHITECTURE.md, 3.3).
+# Diagnostics table of the GPU-code frontend - the single source of the GPU#### codes (REWORK_ARCHITECTURE.md, 3.3).
 #
-# Это данные, общие для будущих фронтендов (ASM, Rust): код, серьёзность, сообщение и подсказка не зашиты в
-# Java-код. Упаковывается в ресурсы модуля frontend-java. Коды стабильны: смысл не меняется, номера не
-# переиспользуются.
+# This is data shared by future frontends (ASM, Rust): code, severity, message and hint are not hard-coded in
+# Java code. It is packaged into the resources of the frontend-java module. Codes are stable: their meaning does
+# not change, numbers are not reused.
 #
-# Формат строки:   <код> <error|warning> <сообщение> | <подсказка>
-#   {0}, {1}, ... - подставляемые значения (имя метода, тип и т.п.); подсказка может быть пустой.
+# Line format:   <code> <error|warning> <message> | <hint>
+#   {0}, {1}, ... - substituted values (method name, type, etc.); the hint may be empty.
 #
-# Группы:  GPU00xx - объявления и аннотации (сигнатуры, атрибуты, fallback)
-#          GPU01xx - конструкции и типы в телах методов (подмножество Java для GPU)
-#          GPU02xx - окружение компиляции
-#          GPU09xx - внутренние ошибки (проверка IR, сбой фронтенда); сообщите о них как об ошибке библиотеки
+# Groups:  GPU00xx - declarations and annotations (signatures, attributes, fallback)
+#          GPU01xx - constructs and types in method bodies (the Java subset for GPU)
+#          GPU02xx - compilation environment
+#          GPU09xx - internal errors (IR validation, frontend failure); report them as a library bug
 
-# --- объявления и аннотации ---------------------------------------------------------------------
-GPU0001 error   Метод {0} с @{1} должен быть static | Добавьте модификатор static
-GPU0002 error   Метод {0} с @Kernel должен возвращать void | Результат возвращайте через массив-параметр
-GPU0003 error   Недопустимый тип {0} параметра {1} | Допустимы int, long, float, double и одномерные массивы примитивных типов
-GPU0004 error   Параметр {0} типа boolean недопустим | Используйте int (0 или 1) либо массив boolean[]
-GPU0005 error   Многомерные массивы не поддерживаются: {0} | Используйте одномерный массив и вычисляйте индекс вручную
-GPU0006 error   Недопустимый тип результата {0} у device-функции {1} | Допустимы void, boolean, int, long, float, double
-GPU0007 error   Метод {0} не может быть generic, иметь varargs-параметр или объявлять throws | Уберите type parameters, varargs и throws
-GPU0008 error   У ядра {0} размер work-group задан и в @WorkGroup, и в workgroup | Оставьте один способ
-GPU0009 error   Неизвестная возможность {0} в required у ядра {1} | Допустимы FP64, INT64_ATOMICS, FP16, IMAGES
-GPU0010 error   fallback {0} у ядра {1} не найден среди методов @Kernel этого класса | Укажите имя метода с @Kernel из того же класса
-GPU0011 error   fallback {0} имеет другую сигнатуру, чем ядро {1} | Типы и порядок параметров должны совпадать
-GPU0012 error   optLevel {0} у ядра {1} вне диапазона 0..3 | Укажите значение от 0 до 3
-GPU0013 error   Размер work-group должен быть положительным по каждой оси: {0} | Укажите x, y, z больше нуля
-GPU0014 error   Цепочка fallback замыкается: {0} | fallback не должен ссылаться на ядро, уже входящее в цепочку
-GPU0015 error   Поле {0} с @Constant должно быть static final примитивного типа с константным значением | Задайте константное выражение в инициализаторе
+# --- declarations and annotations ---------------------------------------------------------------
+GPU0001 error   Method {0} with @{1} must be static | Add the static modifier
+GPU0002 error   Method {0} with @Kernel must return void | Return the result through an array parameter
+GPU0003 error   Invalid type {0} of parameter {1} | Allowed: int, long, float, double and one-dimensional arrays of primitive types
+GPU0004 error   Parameter {0} of type boolean is not allowed | Use int (0 or 1) or a boolean[] array
+GPU0005 error   Multidimensional arrays are not supported: {0} | Use a one-dimensional array and compute the index manually
+GPU0006 error   Invalid result type {0} of device function {1} | Allowed: void, boolean, int, long, float, double
+GPU0007 error   Method {0} cannot be generic, have a varargs parameter or declare throws | Remove type parameters, varargs and throws
+GPU0008 error   Kernel {0} has its work-group size set both in @WorkGroup and in workgroup | Keep only one way
+GPU0009 error   Unknown capability {0} in required of kernel {1} | Allowed: FP64, INT64_ATOMICS, FP16, IMAGES
+GPU0010 error   fallback {0} of kernel {1} not found among the @Kernel methods of this class | Specify the name of a @Kernel method from the same class
+GPU0011 error   fallback {0} has a different signature than kernel {1} | Parameter types and order must match
+GPU0012 error   optLevel {0} of kernel {1} is outside the range 0..3 | Specify a value from 0 to 3
+GPU0013 error   Work-group size must be positive on every axis: {0} | Specify x, y, z greater than zero
+GPU0014 error   The fallback chain is cyclic: {0} | fallback must not refer to a kernel that is already in the chain
+GPU0015 error   Field {0} with @Constant must be static final of a primitive type with a constant value | Set a constant expression in the initializer
 
-# --- конструкции и типы в телах методов ---------------------------------------------------------
-GPU0101 error   Исключения не поддерживаются в GPU-коде ({0}) | Уберите try/catch/finally/throw; ошибки возвращайте значением
-GPU0102 error   synchronized не поддерживается в GPU-коде | Для синхронизации внутри группы будет barrier
-GPU0103 error   assert не поддерживается в GPU-коде | Уберите assert или замените проверкой с условием
-GPU0104 error   Метки (labeled break/continue/statement) не поддерживаются | Перепишите через булев флаг и обычные break/continue
-GPU0105 error   Рекурсия запрещена: {0} | Перепишите итеративно
-GPU0106 error   Строки не поддерживаются в GPU-коде | Используйте числовые коды
-GPU0107 error   Объекты не поддерживаются в GPU-коде: {0} | В GPU-коде допустимы примитивы и одномерные массивы примитивов
-GPU0108 error   Лямбды, ссылки на методы и локальные или анонимные классы не поддерживаются | Вынесите логику в метод с @DeviceFunction
-GPU0109 error   Недопустимое приведение или instanceof: {0} | Допустимы приведения между примитивными числовыми типами
-GPU0110 error   Конструкция switch не поддерживается: {0} | Допустим switch-оператор по int, short, byte или char с константными метками
-GPU0111 error   Цикл for-each не поддерживается | Используйте цикл for с индексом
-GPU0112 error   Метод {0} не поддерживается в GPU-коде | Используйте builtins Gpu.* или методы с @DeviceFunction
-GPU0113 error   Вызываемый метод {0} не помечен @DeviceFunction | Добавьте @DeviceFunction (вызывать kernel из GPU-кода нельзя)
-GPU0114 error   Исходный код метода {0} недоступен: device-функции из библиотек без исходников пока не поддерживаются | Скомпилируйте вместе с модулем с процессором
-GPU0115 error   Недопустимое обращение к полю {0} | Допустимы только локальные переменные, параметры и константы (static final)
-GPU0116 error   Недопустимое использование массива: {0} | Массив можно индексировать, брать length и передавать параметром
-GPU0117 error   Недопустимое создание массива: {0} | Допустимо только 'T[] a = new T[константа];' в объявлении локальной переменной
-GPU0118 error   Присваивание параметру {0} с @Global(constant = true) | Скопируйте значение в локальную переменную
-GPU0119 error   Тип {0} не поддерживается в GPU-коде | Допустимы boolean, byte, short, char, int, long, float, double и одномерные массивы примитивов
-GPU0120 error   Массив с @Local допустим только в ядре, на верхнем уровне тела, с константным размером | Объявите 'T[] a = new T[N];' в начале ядра
-GPU0121 error   Несовпадение адресных пространств массива {0}: функция ожидает {1}, передано {2} | Передайте массив того же адресного пространства (@Global, @Local)
-GPU0122 error   Запись в элемент массива {0} с @Global(constant = true) | Массив constant доступен только для чтения: скопируйте значение в @Global-массив
-GPU0130 warning Барьер в ядре {0} может быть достигнут не всеми work-item группы: {1} | Барьер должен стоять там, куда доходит вся группа; если условие одинаково для группы, оберните его в Gpu.assumeUniform(...)
-GPU0131 error   Барьер в ядре {0} под расходящимся управлением (режим strictBarriers): {1} | Вынесите barrier() из условия, зависящего от getGlobalId/getLocalId, или оберните условие в Gpu.assumeUniform(...)
-GPU0191 error   Недопустимое объявление @Struct {0}: {1} | Поля - public, не final: int, long, float, double, векторы или другие @Struct; нужен public-конструктор без аргументов
-GPU0192 error   Недопустимое создание объекта {0}: {1} | Создавайте вектор конструктором по всем компонентам, а @Struct - конструктором по всем полям
-GPU0193 error   Значение struct {0} должно быть создано выражением new или copy(), а не взято из переменной | Используйте 'new P(...)' или 'x.copy()': на GPU struct копируется, на JVM это была бы общая ссылка
-GPU0194 error   Недопустимая запись в поле {0}: {1} | Меняйте поля у локальной переменной-struct или у элемента массива struct; параметр-struct только читается
-GPU0195 error   Индекс shuffle должен быть константой в пределах 0..{0} | Укажите числа-литералы или константы (static final)
-GPU0196 error   Сравнение объектов {0} недопустимо | Сравнивайте компоненты (x, y, ...) или поля
-GPU0197 error   Указатель недопустим в параметрах ядра {0}: {1} | Передайте массив; указатель создайте в теле: GlobalFloatPtr.of(массив, смещение)
-GPU0198 error   Недопустимое использование указателя {0}: {1} | Ссылка FloatPtr: new в объявлении, .value и передача в @DeviceFunction; указатель GlobalFloatPtr: of, get, set, plus
-GPU0199 error   Указатель {0} создаётся из массива пространства {1}, а передан массив пространства {2} | Используйте указатель, соответствующий пространству массива (Global/Local/Constant)
+# --- constructs and types in method bodies ------------------------------------------------------
+GPU0101 error   Exceptions are not supported in GPU code ({0}) | Remove try/catch/finally/throw; return errors as values
+GPU0102 error   synchronized is not supported in GPU code | A barrier will be used for synchronization within a group
+GPU0103 error   assert is not supported in GPU code | Remove the assert or replace it with a conditional check
+GPU0104 error   Labels (labeled break/continue/statement) are not supported | Rewrite using a boolean flag and plain break/continue
+GPU0105 error   Recursion is forbidden: {0} | Rewrite iteratively
+GPU0106 error   Strings are not supported in GPU code | Use numeric codes
+GPU0107 error   Objects are not supported in GPU code: {0} | GPU code allows primitives and one-dimensional arrays of primitives
+GPU0108 error   Lambdas, method references and local or anonymous classes are not supported | Move the logic into a method with @DeviceFunction
+GPU0109 error   Invalid cast or instanceof: {0} | Casts between primitive numeric types are allowed
+GPU0110 error   The switch construct is not supported: {0} | A switch statement over int, short, byte or char with constant labels is allowed
+GPU0111 error   The for-each loop is not supported | Use a for loop with an index
+GPU0112 error   Method {0} is not supported in GPU code | Use the Gpu.* builtins or methods with @DeviceFunction
+GPU0113 error   The called method {0} is not marked @DeviceFunction | Add @DeviceFunction (a kernel cannot be called from GPU code)
+GPU0114 error   The source code of method {0} is unavailable: device functions from libraries without sources are not supported yet | Compile together with the module that has the processor
+GPU0115 error   Invalid access to field {0} | Only local variables, parameters and constants (static final) are allowed
+GPU0116 error   Invalid use of an array: {0} | An array can be indexed, its length taken, and passed as a parameter
+GPU0117 error   Invalid array creation: {0} | Only 'T[] a = new T[constant];' in a local variable declaration is allowed
+GPU0118 error   Assignment to parameter {0} with @Global(constant = true) | Copy the value into a local variable
+GPU0119 error   Type {0} is not supported in GPU code | Allowed: boolean, byte, short, char, int, long, float, double and one-dimensional arrays of primitives
+GPU0120 error   An array with @Local is allowed only in a kernel, at the top level of the body, with a constant size | Declare 'T[] a = new T[N];' at the start of the kernel
+GPU0121 error   Address space mismatch of array {0}: the function expects {1}, passed {2} | Pass an array of the same address space (@Global, @Local)
+GPU0122 error   Write to an element of array {0} with @Global(constant = true) | A constant array is read-only: copy the value into a @Global array
+GPU0130 warning The barrier in kernel {0} may not be reached by all work-items of the group: {1} | The barrier must be placed where the whole group arrives; if the condition is the same for the group, wrap it in Gpu.assumeUniform(...)
+GPU0131 error   The barrier in kernel {0} is under divergent control flow (strictBarriers mode): {1} | Move barrier() out of the condition that depends on getGlobalId/getLocalId, or wrap the condition in Gpu.assumeUniform(...)
+GPU0191 error   Invalid @Struct declaration {0}: {1} | Fields are public, not final: int, long, float, double, vectors or other @Struct; a public no-arg constructor is required
+GPU0192 error   Invalid creation of object {0}: {1} | Create a vector with a constructor over all components, and a @Struct with a constructor over all fields
+GPU0193 error   The struct value {0} must be created by a new expression or copy(), not taken from a variable | Use 'new P(...)' or 'x.copy()': on the GPU a struct is copied, on the JVM it would be a shared reference
+GPU0194 error   Invalid write to field {0}: {1} | Change fields of a local struct variable or of a struct array element; a struct parameter is read-only
+GPU0195 error   The shuffle index must be a constant within 0..{0} | Specify literal numbers or constants (static final)
+GPU0196 error   Comparing objects {0} is not allowed | Compare components (x, y, ...) or fields
+GPU0197 error   A pointer is not allowed in kernel parameters {0}: {1} | Pass an array; create the pointer in the body: GlobalFloatPtr.of(array, offset)
+GPU0198 error   Invalid use of pointer {0}: {1} | FloatPtr reference: new in a declaration, .value and passing to @DeviceFunction; GlobalFloatPtr pointer: of, get, set, plus
+GPU0199 error   Pointer {0} is created from an array of address space {1}, but an array of address space {2} was passed | Use a pointer matching the address space of the array (Global/Local/Constant)
 
-# --- окружение компиляции -----------------------------------------------------------------------
-GPU0201 error   Не удалось получить доступ к javac Tree API из {0} | Компилируйте javac (ECJ не поддерживается); сообщите окружение, если это javac
+# --- compilation environment --------------------------------------------------------------------
+GPU0201 error   Failed to get access to the javac Tree API from {0} | Compile with javac (ECJ is not supported); report your environment if this is javac
 
-# --- внутренние ошибки --------------------------------------------------------------------------
-GPU0901 error   IR ядра {0} не прошёл проверку: {1} | Внутренняя ошибка фронтенда или нарушение контракта IR; сообщите о ней с примером кода
-GPU0902 error   Внутренняя ошибка фронтенда при обработке {0}: {1} | Сообщите о ней с примером кода
-GPU0903 warning IR ядра {0}: {1} |
+# --- internal errors ----------------------------------------------------------------------------
+GPU0901 error   The IR of kernel {0} failed validation: {1} | Internal frontend error or an IR contract violation; report it with a code sample
+GPU0902 error   Internal frontend error while processing {0}: {1} | Report it with a code sample
+GPU0903 warning IR of kernel {0}: {1} |

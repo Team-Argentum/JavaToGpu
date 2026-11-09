@@ -16,7 +16,7 @@ class CTypesTest {
         String[] expected = {null, "bool", "char", "uchar", "short", "ushort", "int", "uint", "long", "ulong", "float",
                 "double"};
         for (int t = Types.VOID; t <= Types.F64; t++) {
-            assertEquals(expected[t], CTypes.scalar(t), "тип " + t);
+            assertEquals(expected[t], CTypes.scalar(t), "type " + t);
         }
         assertNull(CTypes.scalar(Types.FIRST_DYNAMIC));
     }
@@ -45,7 +45,7 @@ class CTypesTest {
         assertEquals("2147483647", CTypes.integer(Types.I32, Integer.MAX_VALUE));
         assertEquals("INT_MIN", CTypes.integer(Types.I32, Integer.MIN_VALUE));
         assertEquals("(-5)", CTypes.integer(Types.I32, -5));
-        assertEquals("(-1)", CTypes.integer(Types.I32, 0xFFFFFFFFL), "младшие 32 бита");
+        assertEquals("(-1)", CTypes.integer(Types.I32, 0xFFFFFFFFL), "low 32 bits");
         assertEquals("9223372036854775807L", CTypes.integer(Types.I64, Long.MAX_VALUE));
         assertEquals("LONG_MIN", CTypes.integer(Types.I64, Long.MIN_VALUE));
         assertEquals("(-7L)", CTypes.integer(Types.I64, -7));
@@ -63,7 +63,7 @@ class CTypesTest {
     @Test
     void smallIntegerLiteralsAreCastsOfTheirOwnType() {
         assertEquals("((char)(-128))", CTypes.integer(Types.I8, -128));
-        assertEquals("((char)(-1))", CTypes.integer(Types.I8, 255), "255 как значение I8 это -1");
+        assertEquals("((char)(-1))", CTypes.integer(Types.I8, 255), "255 as an I8 value is -1");
         assertEquals("((uchar)255)", CTypes.integer(Types.U8, 255));
         assertEquals("((uchar)255)", CTypes.integer(Types.U8, -1));
         assertEquals("((short)(-32768))", CTypes.integer(Types.I16, Short.MIN_VALUE));
@@ -94,7 +94,7 @@ class CTypesTest {
         assertEquals("INFINITY", CTypes.float32(Float.floatToRawIntBits(Float.POSITIVE_INFINITY)));
         assertEquals("(-INFINITY)", CTypes.float32(Float.floatToRawIntBits(Float.NEGATIVE_INFINITY)));
         assertEquals("NAN", CTypes.float32(0x7fc00000));
-        assertEquals("as_float(0x7fc12345u)", CTypes.float32(0x7fc12345), "биты нестандартного NaN сохраняются");
+        assertEquals("as_float(0x7fc12345u)", CTypes.float32(0x7fc12345), "non-standard NaN bits are preserved");
     }
 
     @Test

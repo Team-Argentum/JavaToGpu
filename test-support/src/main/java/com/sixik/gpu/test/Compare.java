@@ -26,13 +26,13 @@ final class Compare {
      */
     static String difference(Object expected, Object actual, int ulps) {
         if (expected == null || actual == null) {
-            return expected == actual ? null : "null против значения";
+            return expected == actual ? null : "null versus a value";
         }
         if (!expected.getClass().isArray()) {
             return null;
         }
         if (expected.getClass() != actual.getClass()) {
-            return "разные типы массивов: " + expected.getClass().getSimpleName() + " и " + actual.getClass().getSimpleName();
+            return "different array types: " + expected.getClass().getSimpleName() + " and " + actual.getClass().getSimpleName();
         }
         switch (expected) {
             case int[] e -> {
@@ -66,7 +66,7 @@ final class Compare {
                     if (!sameFloat(e[i], a[i], ulps)) {
                         return at(i, e[i] + " (0x" + Integer.toHexString(Float.floatToRawIntBits(e[i])) + ")",
                                 a[i] + " (0x" + Integer.toHexString(Float.floatToRawIntBits(a[i])) + ")")
-                                + ", расстояние " + floatDistance(e[i], a[i]) + " ULP, допуск " + ulps;
+                                + ", distance " + floatDistance(e[i], a[i]) + " ULP, tolerance " + ulps;
                     }
                 }
             }
@@ -79,7 +79,7 @@ final class Compare {
                     if (!sameDouble(e[i], a[i], ulps)) {
                         return at(i, e[i] + " (0x" + Long.toHexString(Double.doubleToRawLongBits(e[i])) + ")",
                                 a[i] + " (0x" + Long.toHexString(Double.doubleToRawLongBits(a[i])) + ")")
-                                + ", расстояние " + doubleDistance(e[i], a[i]) + " ULP, допуск " + ulps;
+                                + ", distance " + doubleDistance(e[i], a[i]) + " ULP, tolerance " + ulps;
                     }
                 }
             }
@@ -135,30 +135,30 @@ final class Compare {
                 for (int i = 0; i < e.length; i++) {
                     String why = objectDifference(e[i], a[i], ulps);
                     if (why != null) {
-                        return "[" + i + "]: " + why + " (ожидалось " + describe(e[i]) + ", получено " + describe(a[i]) + ")";
+                        return "[" + i + "]: " + why + " (expected " + describe(e[i]) + ", got " + describe(a[i]) + ")";
                     }
                 }
             }
-            default -> throw new IllegalArgumentException("неподдержанный массив " + expected.getClass());
+            default -> throw new IllegalArgumentException("unsupported array " + expected.getClass());
         }
         return null;
     }
 
     private static String lengths(int e, int a) {
-        return "длина " + a + " вместо " + e;
+        return "length " + a + " instead of " + e;
     }
 
     private static String at(int i, Object e, Object a) {
-        return "[" + i + "]: ожидалось " + e + ", получено " + a;
+        return "[" + i + "]: expected " + e + ", got " + a;
     }
 
     /** Объекты хоста (векторы и struct): открытые поля в порядке объявления; вещественные - в ULP, остальное точно. */
     private static String objectDifference(Object e, Object a, int ulps) {
         if (e == null || a == null) {
-            return e == a ? null : "null против значения";
+            return e == a ? null : "null versus a value";
         }
         if (e.getClass() != a.getClass()) {
-            return "разные классы";
+            return "different classes";
         }
         for (Field f : e.getClass().getFields()) {
             if (Modifier.isStatic(f.getModifiers())) {
@@ -169,14 +169,14 @@ final class Compare {
                 Object y = f.get(a);
                 String why;
                 if (x instanceof Float fx) {
-                    why = sameFloat(fx, (Float) y, ulps) ? null : "поле " + f.getName();
+                    why = sameFloat(fx, (Float) y, ulps) ? null : "field " + f.getName();
                 } else if (x instanceof Double dx) {
-                    why = sameDouble(dx, (Double) y, ulps) ? null : "поле " + f.getName();
+                    why = sameDouble(dx, (Double) y, ulps) ? null : "field " + f.getName();
                 } else if (x == null || x instanceof Number || x instanceof Boolean || x instanceof Character) {
-                    why = java.util.Objects.equals(x, y) ? null : "поле " + f.getName();
+                    why = java.util.Objects.equals(x, y) ? null : "field " + f.getName();
                 } else {
                     String inner = objectDifference(x, y, ulps);
-                    why = inner == null ? null : "поле " + f.getName() + ": " + inner;
+                    why = inner == null ? null : "field " + f.getName() + ": " + inner;
                 }
                 if (why != null) {
                     return why;

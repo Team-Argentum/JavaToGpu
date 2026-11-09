@@ -78,7 +78,7 @@ class AggregateLoweringTest {
         IrModule m = r.module();
         assertEquals(1, count(m, Op.SHUFFLE));
         assertEquals(1, count(m, Op.INSERT));
-        assertTrue(count(m, Op.SPLAT) >= 2, "Float4.splat и скаляр-операнд mul размножаются");
+        assertTrue(count(m, Op.SPLAT) >= 2, "Float4.splat and the scalar operand of mul are broadcast");
         assertEquals(1, count(m, Op.BUILD));
         assertTrue(count(m, Op.EXTRACT) >= 4);
         assertEquals(1, count(m, Op.NEG));
@@ -118,10 +118,10 @@ class AggregateLoweringTest {
         assertTrue(r.success(), r.describe());
         IrModule m = r.module();
         assertTrue(hasType(m, Types.KIND_STRUCT));
-        assertTrue(count(m, Op.FIELD_SET) >= 4, "запись в поля - цепочки field_set");
+        assertTrue(count(m, Op.FIELD_SET) >= 4, "field writes are field_set chains");
         assertTrue(count(m, Op.FIELD_GET) >= 5);
         assertEquals(1, count(m, Op.STRUCT_BUILD));
-        assertEquals(0, count(m, Op.FIELD_PTR), "field_ptr - веха M9, во фронтенде не используется");
+        assertEquals(0, count(m, Op.FIELD_PTR), "field_ptr is an M9 milestone, not used in the frontend");
         assertEquals(0, count(m, Op.LOCAL_ADDR));
     }
 
@@ -138,7 +138,7 @@ class AggregateLoweringTest {
         assertTrue(r.success(), r.describe());
         IrModule m = r.module();
         assertEquals(2, m.functionCount());
-        assertEquals(2, count(m, Op.CALL), "copy() - не вызов, а пересборка значения");
+        assertEquals(2, count(m, Op.CALL), "copy() is not a call but a value rebuild");
     }
 
     @Test
@@ -158,15 +158,15 @@ class AggregateLoweringTest {
                 return t;
             }
         }
-        throw new AssertionError("нет struct");
+        throw new AssertionError("no struct");
     }
 
     // ---- value-семантика: что отвергается ---------------------------------------------------------
 
     private static void rejects(String code, String members) {
         FrontendHarness.Outcome r = compile(members);
-        assertFalse(r.success(), "ожидалась ошибка " + code + "\n" + r.describe());
-        assertTrue(r.errorCodes().contains(code), code + " не выдан; выданы: " + r.errorCodes() + "\n" + r.describe());
+        assertFalse(r.success(), "expected error " + code + "\n" + r.describe());
+        assertTrue(r.errorCodes().contains(code), code + " was not reported; reported: " + r.errorCodes() + "\n" + r.describe());
     }
 
     @Test
@@ -190,7 +190,7 @@ class AggregateLoweringTest {
                     ps[2] = a;
                 }
                 """);
-        assertFalse(r.success(), "ps[2] = a - общая ссылка");
+        assertFalse(r.success(), "ps[2] = a - shared reference");
         FrontendHarness.Outcome ok = compile("""
                 @DeviceFunction static P make(float x) { return new P(x, Float4.splat(x), 1); }
                 @Kernel public static void k(@Global P[] ps, int c) {

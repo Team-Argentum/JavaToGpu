@@ -119,18 +119,18 @@ class PluginTest {
         assertEquals(TaskOutcome.SUCCESS, r.task(":compileJava").getOutcome());
         assertEquals(TaskOutcome.SUCCESS, r.task(":runDemo").getOutcome());
         assertTrue(r.getOutput().contains("RESULT 3.0 5.0 7.0 9.0"), r.getOutput());
-        assertTrue(r.getOutput().contains("PLAIN 15"), "обычные методы не тронуты");
+        assertTrue(r.getOutput().contains("PLAIN 15"), "ordinary methods untouched");
         // именно строка JVMARGS: при отсутствии флага JDK сам печатает предупреждение с упоминанием этого флага
         assertTrue(r.getOutput().lines().anyMatch(l -> l.startsWith("JVMARGS ")
                         && l.contains("--enable-native-access=ALL-UNNAMED")),
-                "плагин выдал --enable-native-access задаче JavaExec: " + r.getOutput());
+                "the plugin gave --enable-native-access to the JavaExec task: " + r.getOutput());
 
         String kernels = classText(dir, "Kernels");
-        assertTrue(kernels.contains("scale$jvm"), "оригинал сохранён как scale$jvm");
+        assertTrue(kernels.contains("scale$jvm"), "the original is preserved as scale$jvm");
         assertFalse(kernels.contains("plain$jvm"));
         assertTrue(Files.isRegularFile(dir.resolve("build/classes/java/main/META-INF/gpu/kernels.idx")));
         try (var irs = Files.list(dir.resolve("build/classes/java/main/META-INF/gpu/ir"))) {
-            assertEquals(1, irs.count(), "IR-ресурс записан processor'ом");
+            assertEquals(1, irs.count(), "IR resource written by the processor");
         }
     }
 
@@ -176,7 +176,7 @@ class PluginTest {
         project(dir, "");
         write(dir.resolve("src/main/java/demo/Sync.java"), divergent);
         BuildResult lenient = runner(dir, "classes").build();
-        assertTrue(lenient.getOutput().contains("GPU0130"), "по умолчанию - предупреждение: " + lenient.getOutput());
+        assertTrue(lenient.getOutput().contains("GPU0130"), "a warning by default: " + lenient.getOutput());
 
         project(dir, "strictBarriers = true");
         write(dir.resolve("src/main/java/demo/Sync.java"), divergent);
@@ -188,7 +188,7 @@ class PluginTest {
     void weavingCanBeSwitchedOff(@TempDir Path dir) throws IOException {
         project(dir, "weave = false");
         runner(dir, "classes").build();
-        assertFalse(classText(dir, "Kernels").contains("scale$jvm"), "weave выключен: тело ядра не тронуто");
+        assertFalse(classText(dir, "Kernels").contains("scale$jvm"), "weave is off: the kernel body is untouched");
     }
 
     @Test

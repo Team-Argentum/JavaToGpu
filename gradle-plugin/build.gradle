@@ -2,7 +2,7 @@ plugins {
     id 'java-gradle-plugin'
 }
 
-description = 'Gradle-плагин: подключает зависимости, annotation processor и weave-шаг.'
+description = 'Gradle plugin: wires dependencies, the annotation processor and the weave step.'
 
 dependencies {
     implementation project(':weaver')
@@ -17,7 +17,7 @@ gradlePlugin {
             id = 'io.github.deussixik.javatogpu'
             implementationClass = 'com.sixik.gpu.gradle.JavaToGpuPlugin'
             displayName = 'JavaToGpu'
-            description = 'Компилирует @Kernel-методы в IR, подменяет их тела вызовом рантайма и подключает библиотеки.'
+            description = 'Compiles @Kernel methods to IR, replaces their bodies with a runtime call and wires the libraries.'
         }
     }
 }

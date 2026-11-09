@@ -69,12 +69,12 @@ class SmallTypesTest {
         assertEquals(3, d.size());
         assertEquals("RT-C01", d.get(0).code());
         assertEquals(7, d.get(0).function());
-        assertEquals("строка 12:5: use of undeclared identifier 'foo'\n  foo(1);\n  ^", d.get(0).message());
+        assertEquals("line 12:5: use of undeclared identifier 'foo'\n  foo(1);\n  ^", d.get(0).message());
         assertEquals("RT-C02", d.get(1).code());
         assertFalse(d.get(1).isError());
-        assertEquals("строка 3:1: unused function 'bar'", d.get(1).message());
+        assertEquals("line 3:1: unused function 'bar'", d.get(1).message());
         assertEquals("RT-C01", d.get(2).code());
-        assertTrue(d.get(2).message().startsWith("строка 20:9"));
+        assertTrue(d.get(2).message().startsWith("line 20:9"));
     }
 
     @Test
@@ -100,7 +100,7 @@ class SmallTypesTest {
         assertTrue(BuildLog.parse("  \n ", 0, false).isEmpty());
         List<Diagnostic> failed = BuildLog.parse("", 0, true);
         assertEquals(1, failed.size());
-        assertTrue(failed.get(0).message().contains("пуст"));
+        assertTrue(failed.get(0).message().contains("empty"));
     }
 
     @Test
@@ -150,7 +150,7 @@ class SmallTypesTest {
         assertTrue(Marshal.compatible(Types.I32, Types.I32));
         assertTrue(Marshal.compatible(Types.U32, Types.I32));
         assertTrue(Marshal.compatible(Types.F32, Types.F32));
-        assertFalse(Marshal.compatible(Types.F32, Types.I32), "одинаковый размер, но разная природа");
+        assertFalse(Marshal.compatible(Types.F32, Types.I32), "same size, but a different nature");
         assertFalse(Marshal.compatible(Types.I32, Types.I64));
         assertTrue(Marshal.compatible(Types.I8, Types.U8));
     }
@@ -189,7 +189,7 @@ class SmallTypesTest {
             for (int i = 0; i < originals.length; i++) {
                 MemorySegment seg = Marshal.toNative(arena, originals[i]);
                 Marshal.fromNative(seg, fresh[i]);
-                assertTrue(same(originals[i], fresh[i]), "вид " + i);
+                assertTrue(same(originals[i], fresh[i]), "kind " + i);
             }
         }
     }
@@ -243,19 +243,19 @@ class SmallTypesTest {
 
     @Test
     void gpuExceptionCarriesDiagnostics() {
-        Diagnostic a = new Diagnostic("RT-X", Diagnostic.Severity.ERROR, -1, -1, "первая");
-        Diagnostic b = new Diagnostic("RT-Y", Diagnostic.Severity.ERROR, -1, -1, "вторая");
+        Diagnostic a = new Diagnostic("RT-X", Diagnostic.Severity.ERROR, -1, -1, "first");
+        Diagnostic b = new Diagnostic("RT-Y", Diagnostic.Severity.ERROR, -1, -1, "second");
         GpuException e = new GpuException(List.of(a, b));
         assertEquals(List.of(a, b), e.diagnostics());
-        assertEquals("RT-X: первая\nRT-Y: вторая", e.getMessage());
-        assertEquals("ошибка рантайма", new GpuException(List.of()).getMessage());
+        assertEquals("RT-X: first\nRT-Y: second", e.getMessage());
+        assertEquals("runtime error", new GpuException(List.of()).getMessage());
     }
 
     // ---- слой доступа ---------------------------------------------------------------------------
 
     @Test
     void deviceApiExceptionCarriesStatusAndFunction() {
-        DeviceApiException e = new DeviceApiException(-5, "clFinish", "сбой");
+        DeviceApiException e = new DeviceApiException(-5, "clFinish", "failure");
         assertEquals(-5, e.status());
         assertEquals("clFinish", e.function());
         assertTrue(e.getMessage().contains("clFinish") && e.getMessage().contains("-5"));

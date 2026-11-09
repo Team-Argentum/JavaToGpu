@@ -75,9 +75,9 @@ final class Host {
             return arrayName(elem);
         }
         if (a instanceof Object[] arr) {
-            return "массив объектов, подходящий типу элемента: " + HostObjects.mismatch(m, elem, arr.getClass().getComponentType());
+            return "an array of objects matching the element type: " + HostObjects.mismatch(m, elem, arr.getClass().getComponentType());
         }
-        return "массив объектов (Object[]) с " + HostObjects.slots(m, elem) + " скалярными листьями в элементе";
+        return "an array of objects (Object[]) with " + HostObjects.slots(m, elem) + " scalar leaves per element";
     }
 
     /**
@@ -100,7 +100,7 @@ final class Host {
             try {
                 HostObjects.flatten(m, elem, arr[i], buf, i * k);
             } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("элемент " + i + ": " + e.getMessage());
+                throw new IllegalArgumentException("element " + i + ": " + e.getMessage());
             }
         }
         return buf;
@@ -136,9 +136,9 @@ final class Host {
     static String arrayName(int elem) {
         return switch (elem) {
             case Types.I8 -> "byte[]";
-            case Types.U8 -> "byte[] или boolean[]";
+            case Types.U8 -> "byte[] or boolean[]";
             case Types.I16 -> "short[]";
-            case Types.U16 -> "char[] или short[]";
+            case Types.U16 -> "char[] or short[]";
             case Types.I32, Types.U32 -> "int[]";
             case Types.I64, Types.U64 -> "long[]";
             case Types.F32 -> "float[]";

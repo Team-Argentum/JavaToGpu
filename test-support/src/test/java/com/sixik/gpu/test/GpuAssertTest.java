@@ -121,7 +121,7 @@ class GpuAssertTest {
             GpuAssert.Report r = GpuAssert.sameResult(kernels, "scale", KernelSample.named("jvm only")
                     .args(() -> new Object[]{new float[16], ramp(16), 2f}).without(Leg.DEVICE).build(), null);
             assertEquals(java.util.List.of(Leg.JVM, Leg.INTERPRETER), r.ran());
-            assertEquals(0, launches[0], "тело <имя>$jvm исполнилось на JVM, а не через фасад");
+            assertEquals(0, launches[0], "body <name>$jvm ran on the JVM, not through the facade");
             assertEquals(0, api.enqueues());
         }
     }
@@ -137,7 +137,7 @@ class GpuAssertTest {
             assertFalse(r.jvmThrew());
             assertEquals(1, launches[0]);
             assertTrue(r.device() != null && !r.device().isBlank());
-            assertEquals(0, r.ulps(), "умножение точное: допуск из IR нулевой");
+            assertEquals(0, r.ulps(), "multiplication is exact: the tolerance from the IR is zero");
         }
     }
 
@@ -147,9 +147,9 @@ class GpuAssertTest {
             AssertionFailedError e = assertThrows(AssertionFailedError.class, () -> GpuAssert.sameResult(kernels, "scale",
                     KernelSample.named("broken").args(() -> new Object[]{new float[16], ramp(16), 2f}).build(), ctx));
             assertTrue(e.getMessage().contains("Kernels.scale [broken]"), e.getMessage());
-            assertTrue(e.getMessage().contains("аргумент 0"), e.getMessage());
+            assertTrue(e.getMessage().contains("argument 0"), e.getMessage());
             assertTrue(e.getMessage().contains("[3]"), e.getMessage());
-            assertTrue(e.getMessage().contains("JVM против DEVICE"), e.getMessage());
+            assertTrue(e.getMessage().contains("JVM versus DEVICE"), e.getMessage());
         }
     }
 
@@ -206,7 +206,7 @@ class GpuAssertTest {
                     KernelSample.named("oob").args(() -> new Object[]{new int[16]}).build(), ctx);
             assertTrue(r.jvmThrew());
             assertEquals(java.util.List.of(Leg.INTERPRETER), r.ran());
-            assertTrue(r.skipped().get(Leg.DEVICE).contains("поведение на устройстве не определено"));
+            assertTrue(r.skipped().get(Leg.DEVICE).contains("device behavior is undefined"));
             assertEquals(0, launches[0]);
         }
     }
@@ -217,7 +217,7 @@ class GpuAssertTest {
         // без искусственного ядра, поэтому проверяем сообщение для исключённой ветви INTERPRETER
         AssertionFailedError e = assertThrows(AssertionFailedError.class, () -> GpuAssert.sameResult(kernels, "outOfBounds",
                 KernelSample.named("no interpreter").args(() -> new Object[]{new int[16]}).without(Leg.INTERPRETER, Leg.DEVICE).build(), null));
-        assertTrue(e.getMessage().contains("ветвь INTERPRETER исключена"), e.getMessage());
+        assertTrue(e.getMessage().contains("the INTERPRETER branch is excluded"), e.getMessage());
     }
 
     // ---- пропуск ветвей и ошибки использования -----------------------------------------------------
@@ -226,7 +226,7 @@ class GpuAssertTest {
     void withoutADeviceTheBranchIsSkippedAndReported() {
         GpuAssert.Report r = GpuAssert.sameResult(kernels, "plain", KernelSample.named("plain")
                 .args(() -> new Object[]{new int[8]}).build(), null);
-        assertEquals("нет устройства", r.skipped().get(Leg.DEVICE));
+        assertEquals("no device", r.skipped().get(Leg.DEVICE));
         assertEquals(java.util.List.of(Leg.JVM, Leg.INTERPRETER), r.ran());
         assertEquals(null, r.device());
     }
@@ -236,7 +236,7 @@ class GpuAssertTest {
         GpuAssert.Report r = GpuAssert.sameResult(kernels, "plain", KernelSample.named("jvm")
                 .args(() -> new Object[]{new int[8]}).only(Leg.JVM).build(), null);
         assertEquals(java.util.List.of(Leg.JVM), r.ran());
-        assertEquals("исключена образцом", r.skipped().get(Leg.INTERPRETER));
+        assertEquals("excluded by the sample", r.skipped().get(Leg.INTERPRETER));
     }
 
     @Test
@@ -249,7 +249,7 @@ class GpuAssertTest {
         wrong[5] = 8;
         AssertionFailedError e = assertThrows(AssertionFailedError.class, () -> GpuAssert.sameResult(kernels, "plain",
                 KernelSample.named("expected wrong").args(() -> new Object[]{new int[8]}).expected((Object) wrong).build(), null));
-        assertTrue(e.getMessage().contains("[5]") && e.getMessage().contains("ожидаемое"), e.getMessage());
+        assertTrue(e.getMessage().contains("[5]") && e.getMessage().contains("expected"), e.getMessage());
     }
 
     @Test
@@ -257,6 +257,6 @@ class GpuAssertTest {
         assertThrows(IllegalArgumentException.class, () -> GpuAssert.sameResult(kernels, "plain", new int[8], 1));
         AssertionFailedError e = assertThrows(AssertionFailedError.class,
                 () -> GpuAssert.sameResult(String.class, "length", KernelSample.of("x", new int[1])));
-        assertTrue(e.getMessage().contains("IR ядра не найден"), e.getMessage());
+        assertTrue(e.getMessage().contains("kernel IR not found"), e.getMessage());
     }
 }

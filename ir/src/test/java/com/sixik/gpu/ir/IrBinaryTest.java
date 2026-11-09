@@ -29,7 +29,7 @@ class IrBinaryTest {
         for (IrModule m : new IrModule[]{Fixtures.computeSine(), Fixtures.rich()}) {
             byte[] first = IrBinary.write(m);
             IrModule back = readOk(first);
-            assertArrayEquals(first, IrBinary.write(back), "write(read(write(m))) должен совпасть с write(m)");
+            assertArrayEquals(first, IrBinary.write(back), "write(read(write(m))) must equal write(m)");
             assertArrayEquals(IrBinary.hash(m), IrBinary.hash(back));
             assertEquals(m.nodeCount(), back.nodeCount());
             assertEquals(m.functionCount(), back.functionCount());
@@ -62,7 +62,7 @@ class IrBinaryTest {
         ByteBuffer bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
         assertEquals(IrBinary.FORMAT, bb.getShort(4));
         assertEquals(Builtins.VERSION, bb.getShort(6));
-        assertEquals(0, bb.getInt(8), "flags зарезервированы");
+        assertEquals(0, bb.getInt(8), "flags are reserved");
     }
 
     @Test
@@ -70,10 +70,10 @@ class IrBinaryTest {
         IrModule withDebug = Fixtures.computeSine();
         IrModule noDebug = Fixtures.computeSineWithoutDebug();
         assertArrayEquals(IrBinary.hash(withDebug), IrBinary.hash(noDebug),
-                "имена и позиции не должны влиять на хэш кэша");
+                "names and positions must not affect the cache hash");
         assertEquals(IrBinary.kernelId(withDebug), IrBinary.kernelId(noDebug));
         assertNotEquals(IrBinary.write(withDebug).length, IrBinary.write(noDebug).length,
-                "а в самом файле debug-секция есть");
+                "while the file itself has a debug section");
     }
 
     @Test
@@ -91,7 +91,7 @@ class IrBinaryTest {
         int value = b.binary(Op.ADD, b.intrinsic(Fixtures.SIN, load), b.constF32(3.0f));   // 3.0f вместо 2.0f
         int n13 = b.store(b.elemPtr(b.param(1), b.localGet(id)), value);
         b.endFunction(b.block(n2, n13));
-        assertFalse(Arrays.equals(base, IrBinary.hash(b.build())), "другая константа - другой хэш");
+        assertFalse(Arrays.equals(base, IrBinary.hash(b.build())), "another constant - another hash");
     }
 
     @Test
@@ -124,7 +124,7 @@ class IrBinaryTest {
         assertEquals("id", d.localName(0, 0));
         assertEquals(3, d.line(13));
         assertEquals(5, d.col(13));
-        assertEquals(0, d.line(2), "у узла без позиции - 0");
+        assertEquals(0, d.line(2), "a node without a position gets 0");
     }
 
     @Test
@@ -168,7 +168,7 @@ class IrBinaryTest {
         byte[] bytes = IrBinary.write(Fixtures.rich());
         for (int len = 0; len < bytes.length; len++) {
             Result<IrModule> r = IrBinary.read(Arrays.copyOf(bytes, len));
-            assertFalse(r.isOk(), "обрезанный на " + len + " байт файл не должен читаться");
+            assertFalse(r.isOk(), "a file truncated to " + len + " bytes must not be readable");
             assertFalse(r.diagnostics().isEmpty());
         }
     }
@@ -268,7 +268,7 @@ class IrBinaryTest {
                 assertNotNull(report.functions());
             }
         }
-        assertTrue(decoded > 15000, "семантический фазз должен доходить до валидатора, дошёл " + decoded + " раз");
+        assertTrue(decoded > 15000, "the semantic fuzz must reach the validator, reached it " + decoded + " times");
     }
 
     @Test
@@ -292,6 +292,6 @@ class IrBinaryTest {
                 IrBinary.hash(r.value());
             }
         }
-        assertTrue(decoded > 100, "фазз должен доходить до валидатора достаточно часто, дошёл " + decoded + " раз");
+        assertTrue(decoded > 100, "the fuzz must reach the validator often enough, reached it " + decoded + " times");
     }
 }

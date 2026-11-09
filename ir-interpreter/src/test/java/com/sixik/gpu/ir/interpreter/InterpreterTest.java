@@ -48,7 +48,7 @@ class InterpreterTest {
     }
 
     private static void assertCode(Result<?> r, String code) {
-        assertFalse(r.isOk(), "ожидалась ошибка " + code);
+        assertFalse(r.isOk(), "expected error " + code);
         assertEquals(code, r.diagnostics().get(0).code(), r.diagnostics().toString());
     }
 
@@ -154,7 +154,7 @@ class InterpreterTest {
         assertTrue(run(b.build(), NdRange.of1D(1), u, i16).isOk());
         assertEquals((byte) 44, u[0]);
         assertEquals((short) 4464, i16[0]);
-        assertEquals((short) 240, i16[1], "U8 загружается без знакового расширения");
+        assertEquals((short) 240, i16[1], "U8 is loaded without sign extension");
     }
 
     // =============================================================================================
@@ -175,7 +175,7 @@ class InterpreterTest {
     @Test
     void selectDoesNotEvaluateTheUnchosenBranch() {
         int[] out = new int[1];
-        assertTrue(run(lazySelect(true), NdRange.of1D(1), out, 0).isOk(), "деление на ноль в невыбранной ветке не вычисляется");
+        assertTrue(run(lazySelect(true), NdRange.of1D(1), out, 0).isOk(), "division by zero in an unselected branch is not evaluated");
         assertEquals(7, out[0]);
     }
 
@@ -184,7 +184,7 @@ class InterpreterTest {
         int[] out = new int[1];
         Result<?> r = run(lazySelect(false), NdRange.of1D(1), out, 0);
         assertCode(r, "IN-R02");
-        assertEquals(0, out[0], "при ошибке хостовые массивы не изменяются");
+        assertEquals(0, out[0], "on an error the host arrays are not changed");
         int[] ok = new int[1];
         assertTrue(run(lazySelect(false), NdRange.of1D(1), ok, 4).isOk());
         assertEquals(0, ok[0]);
@@ -239,7 +239,7 @@ class InterpreterTest {
         assertCode(r, "IN-R01");
         assertArrayEquals(new int[]{0, 0}, out);
         Diagnostic d = r.diagnostics().get(0);
-        assertTrue(d.message().contains("индекс 2"), d.message());
+        assertTrue(d.message().contains("index 2"), d.message());
         assertTrue(d.message().contains("work-item"), d.message());
     }
 
@@ -451,7 +451,7 @@ class InterpreterTest {
     void everyBuiltinOfTheTableIsExecutable() {
         for (int id = 0; id < Builtins.count(); id++) {
             if (Builtins.isValid(id)) {
-                assertTrue(Machine.supportsBuiltin(id), "интерпретатор не знает builtin " + Builtins.name(id));
+                assertTrue(Machine.supportsBuiltin(id), "the interpreter does not know builtin " + Builtins.name(id));
             }
         }
         assertFalse(Machine.supportsBuiltin(-1));

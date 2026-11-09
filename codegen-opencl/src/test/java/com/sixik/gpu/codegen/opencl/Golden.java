@@ -37,10 +37,10 @@ final class Golden {
                 return;
             }
             if (!Files.exists(file)) {
-                fail("нет golden-файла " + file + " (создать: -PgoldenUpdate)");
+                fail("no golden file " + file + " (create with: -PgoldenUpdate)");
             }
             assertEquals(Files.readString(file, StandardCharsets.UTF_8).replace("\r\n", "\n"), actual,
-                    "расхождение с golden " + file);
+                    "mismatch with golden " + file);
         } catch (IOException e) {
             throw new AssertionError(e);
         }

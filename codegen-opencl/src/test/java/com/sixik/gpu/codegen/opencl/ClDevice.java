@@ -77,7 +77,7 @@ final class ClDevice implements AutoCloseable {
     }
 
     private MethodHandle fn(String symbol, FunctionDescriptor fd) {
-        return linker.downcallHandle(lib.find(symbol).orElseThrow(() -> new ClException("нет " + symbol)), fd);
+        return linker.downcallHandle(lib.find(symbol).orElseThrow(() -> new ClException("no " + symbol)), fd);
     }
 
     private static final ValueLayout.OfInt I = ValueLayout.JAVA_INT;
@@ -136,7 +136,7 @@ final class ClDevice implements AutoCloseable {
 
     private static void check(int status, String what) {
         if (status != 0) {
-            throw new ClException(what + " вернул " + status);
+            throw new ClException(what + " returned " + status);
         }
     }
 
@@ -186,7 +186,7 @@ final class ClDevice implements AutoCloseable {
                 MemorySegment size = a.allocate(8);
                 fn("clGetProgramBuildInfo", FunctionDescriptor.of(I, A, A, I, L, A, A))
                         .invoke(program, device, CL_PROGRAM_BUILD_LOG, (long) (1 << 16), log, size);
-                throw new ClException("clBuildProgram вернул " + st + ":\n" + log.getString(0, StandardCharsets.UTF_8));
+                throw new ClException("clBuildProgram returned " + st + ":\n" + log.getString(0, StandardCharsets.UTF_8));
             }
             return new Program(program);
         } catch (ClException e) {
@@ -291,7 +291,7 @@ final class ClDevice implements AutoCloseable {
             case float[] x -> 4L * x.length;
             case long[] x -> 8L * x.length;
             case double[] x -> 8L * x.length;
-            default -> throw new IllegalArgumentException("неподдержанный массив " + arr.getClass());
+            default -> throw new IllegalArgumentException("unsupported array " + arr.getClass());
         };
     }
 
@@ -310,7 +310,7 @@ final class ClDevice implements AutoCloseable {
             case float[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_FLOAT, 0, x.length);
             case long[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_LONG, 0, x.length);
             case double[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_DOUBLE, 0, x.length);
-            default -> throw new IllegalArgumentException("неподдержанный массив " + arr.getClass());
+            default -> throw new IllegalArgumentException("unsupported array " + arr.getClass());
         }
         return seg.asSlice(0, byteSize(arr));
     }
@@ -329,7 +329,7 @@ final class ClDevice implements AutoCloseable {
             case float[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_FLOAT, 0, x, 0, x.length);
             case long[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_LONG, 0, x, 0, x.length);
             case double[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_DOUBLE, 0, x, 0, x.length);
-            default -> throw new IllegalArgumentException("неподдержанный массив " + arr.getClass());
+            default -> throw new IllegalArgumentException("unsupported array " + arr.getClass());
         }
     }
 
@@ -351,7 +351,7 @@ final class ClDevice implements AutoCloseable {
                 slot.set(ValueLayout.JAVA_DOUBLE, 0, x);
                 return 8;
             }
-            default -> throw new IllegalArgumentException("неподдержанный скаляр " + v.getClass());
+            default -> throw new IllegalArgumentException("unsupported scalar " + v.getClass());
         }
     }
 

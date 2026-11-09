@@ -115,13 +115,13 @@ class AggregateRuntimeTest {
         ByteBuffer up = ByteBuffer.wrap(seen.get(0)).order(java.nio.ByteOrder.LITTLE_ENDIAN);
         assertEquals(1.5f, up.getFloat(0));
         assertEquals(-2f, up.getFloat(4));
-        assertEquals(0, up.getLong(8), "выравнивающий промежуток нулевой");
+        assertEquals(0, up.getLong(8), "alignment padding is zero");
         assertEquals(10f, up.getFloat(16));
         assertEquals(40f, up.getFloat(28));
         assertEquals(7, up.getInt(32));
         assertEquals(3f, up.getFloat(PARTICLE_SIZE));
         ByteBuffer byValue = ByteBuffer.wrap(seen.get(1)).order(java.nio.ByteOrder.LITTLE_ENDIAN);
-        assertEquals(PARTICLE_SIZE, byValue.capacity(), "struct по значению - sizeof структуры");
+        assertEquals(PARTICLE_SIZE, byValue.capacity(), "struct by value - sizeof the structure");
         assertEquals(9f, byValue.getFloat(0));
         assertEquals(3, byValue.getInt(32));
         assertEquals(16, ByteBuffer.wrap(seen.get(2)).capacity());
@@ -131,10 +131,10 @@ class AggregateRuntimeTest {
         assertEquals(2.5f, a.x);
         assertEquals(-2f, a.y);
         assertEquals(14, a.id);
-        assertEquals(new Float4(10, 20, 30, 42), a.v, "вектор-поле заменён новым объектом");
+        assertEquals(new Float4(10, 20, 30, 42), a.v, "the vector field is replaced by a new object");
         assertEquals(4f, b.x);
         assertEquals(-10, b.id);
-        assertEquals(9f, init.x, "аргумент по значению не изменяется");
+        assertEquals(9f, init.x, "the by-value argument is not changed");
     }
 
     @Test
@@ -145,7 +145,7 @@ class AggregateRuntimeTest {
             assertEquals(2 * 16, buf.capacity());
             assertEquals(1f, buf.getFloat(0));
             assertEquals(3f, buf.getFloat(8));
-            assertEquals(0f, buf.getFloat(12), "четвёртая «компонента» float3 - пустое место");
+            assertEquals(0f, buf.getFloat(12), "the fourth 'component' of float3 is empty space");
             assertEquals(4f, buf.getFloat(16));
             buf.putFloat(16, 40f);
         });
@@ -175,9 +175,9 @@ class AggregateRuntimeTest {
             CompiledKernel k = ctx.compile(m).value();
             Particle ok = new Particle();
             Float4 scale = new Float4(1, 1, 1, 1);
-            assertMessage(ctx.launch(k, LaunchConfig.of1D(1), new Particle[]{ok, null}, ok, scale), "элемент 1 равен null");
+            assertMessage(ctx.launch(k, LaunchConfig.of1D(1), new Particle[]{ok, null}, ok, scale), "element 1 is null");
             assertMessage(ctx.launch(k, LaunchConfig.of1D(1), new WrongShape[]{new WrongShape()}, ok, scale), "WrongShape");
-            assertMessage(ctx.launch(k, LaunchConfig.of1D(1), new float[4], ok, scale), "массив объектов");
+            assertMessage(ctx.launch(k, LaunchConfig.of1D(1), new float[4], ok, scale), "array of objects");
             assertMessage(ctx.launch(k, LaunchConfig.of1D(1), new Particle[]{ok}, null, scale), "null");
             assertMessage(ctx.launch(k, LaunchConfig.of1D(1), new Particle[]{ok}, new WrongShape(), scale), "WrongShape");
             assertMessage(ctx.launch(k, LaunchConfig.of1D(1), new Particle[]{ok}, ok, new Float3(1, 2, 3)), "Float3");
@@ -208,10 +208,10 @@ class AggregateRuntimeTest {
         float[] result = new float[1];
         try (GpuContext ctx = open(fake)) {
             LaunchStats stats = ctx.run(b.build(), LaunchConfig.of1D(1), in, result);
-            assertEquals(4, stats.bytesDown(), "возвращается только записываемый массив");
+            assertEquals(4, stats.bytesDown(), "only the writable array is returned");
         }
         assertEquals(3f, result[0]);
-        assertSame(before, in[0], "читаемый массив объектов не пересоздаётся");
+        assertSame(before, in[0], "the readable array of objects is not recreated");
         assertNotSame(null, fake);
     }
 }

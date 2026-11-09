@@ -100,7 +100,7 @@ class WeaverTest {
         assertEquals("id1", idx.kernelId("a.B", "f", "([F)V"));
         assertEquals("id2", idx.kernelId("a.B", "g", "()V"));
         assertEquals("id3", idx.kernelId("a.C$D", "h", "(I)V"));
-        assertNull(idx.kernelId("a.B", "f", "()V"), "дескриптор различает перегрузки");
+        assertNull(idx.kernelId("a.B", "f", "()V"), "descriptor distinguishes overloads");
         assertNull(idx.kernelId("a.X", "f", "([F)V"));
         List<String> classes = new ArrayList<>();
         idx.classes().forEach(classes::add);
@@ -137,17 +137,17 @@ class WeaverTest {
         ClassNode after = parse(o.bytes());
 
         MethodNode jvm = method(after, "scale$jvm");
-        assertNotNull(jvm, "оригинал сохранён");
+        assertNotNull(jvm, "original preserved");
         assertEquals(method(before, "scale").desc, jvm.desc);
         assertEquals(method(before, "scale").access, jvm.access);
-        assertEquals(originalInstructions, jvm.instructions.size(), "тело перенесено без изменений");
-        assertTrue(jvm.invisibleAnnotations == null || jvm.invisibleAnnotations.isEmpty(), "у $jvm нет @Kernel");
+        assertEquals(originalInstructions, jvm.instructions.size(), "body moved unchanged");
+        assertTrue(jvm.invisibleAnnotations == null || jvm.invisibleAnnotations.isEmpty(), "$jvm has no @Kernel");
         assertNotNull(method(after, "fill$jvm"));
 
         MethodNode delegate = method(after, "scale");
         assertTrue(delegate.invisibleAnnotations.stream().anyMatch(a -> Weaver.KERNEL_ANNOTATION.equals(a.desc)),
-                "@Kernel остаётся на делегате");
-        assertNotNull(delegate.invisibleParameterAnnotations, "аннотации параметров остаются на делегате");
+                "@Kernel stays on the delegate");
+        assertNotNull(delegate.invisibleParameterAnnotations, "parameter annotations stay on the delegate");
         MethodInsnNode call = null;
         LdcInsnNode ownerConst = null;
         List<String> strings = new ArrayList<>();
@@ -175,10 +175,10 @@ class WeaverTest {
                 boxings++;
             }
         }
-        assertEquals(4, boxings, "float, int, long и double упакованы; массивы передаются как есть");
+        assertEquals(4, boxings, "float, int, long and double are boxed; arrays are passed as is");
         assertEquals(Opcodes.RETURN, delegate.instructions.getLast().getOpcode());
         assertEquals(0, delegate.tryCatchBlocks.size());
-        assertTrue(delegate.localVariables == null || delegate.localVariables.isEmpty(), "отладочные локали исходного тела убраны");
+        assertTrue(delegate.localVariables == null || delegate.localVariables.isEmpty(), "debug locals of the original body are removed");
     }
 
     @Test
@@ -188,7 +188,7 @@ class WeaverTest {
         ClassNode after = parse(Weaver.weave(read(dir.resolve("demo/Kernels.class")), idx).bytes());
         assertNull(method(after, "plain$jvm"));
         assertNull(method(after, "twice$jvm"));
-        assertTrue(method(after, "twice").instructions.size() > 3, "тело device-функции на месте");
+        assertTrue(method(after, "twice").instructions.size() > 3, "the device function body is in place");
         assertTrue(method(after, "plain").instructions.size() > 2);
     }
 
@@ -200,7 +200,7 @@ class WeaverTest {
         Weaver.Outcome second = Weaver.weave(first.bytes(), idx);
         assertEquals(0, second.woven());
         assertEquals(2, second.skipped());
-        assertSame(first.bytes(), second.bytes(), "нечего менять - те же байты");
+        assertSame(first.bytes(), second.bytes(), "nothing to change - the same bytes");
     }
 
     @Test
@@ -219,7 +219,7 @@ class WeaverTest {
         Weaver.Outcome o = Weaver.weave(read(dir.resolve("demo/Kernels.class")), KernelIndex.parse(""));
         assertEquals(0, o.woven());
         assertEquals(2, o.problems().size());
-        assertTrue(o.problems().get(0).contains("нет в kernels.idx"), o.problems().toString());
+        assertTrue(o.problems().get(0).contains("not in kernels.idx"), o.problems().toString());
     }
 
     @Test
@@ -267,7 +267,7 @@ class WeaverTest {
         assertEquals(2, second.skipped());
         assertEquals(java.util.Arrays.hashCode(afterFirst), java.util.Arrays.hashCode(read(dir.resolve("demo/Kernels.class"))));
         try (Stream<Path> files = Files.walk(dir)) {
-            assertTrue(files.noneMatch(p -> p.toString().endsWith(".weave")), "временные файлы убраны");
+            assertTrue(files.noneMatch(p -> p.toString().endsWith(".weave")), "temporary files removed");
         }
     }
 
@@ -292,6 +292,6 @@ class WeaverTest {
         assertEquals(3, o.problems().size(), o.problems().toString());
         assertTrue(o.problems().get(0).contains("static") || o.problems().get(1).contains("static"));
         assertTrue(o.problems().stream().anyMatch(p -> p.contains("void")));
-        assertTrue(o.problems().stream().anyMatch(p -> p.contains("нет в kernels.idx")));
+        assertTrue(o.problems().stream().anyMatch(p -> p.contains("not in kernels.idx")));
     }
 }

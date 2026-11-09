@@ -118,7 +118,7 @@ class HostObjectsTest {
         assertEquals(0, HostObjects.slotOffset(m, s, 0));
         assertEquals(1, HostObjects.slotOffset(m, s, 1));
         assertEquals(5, HostObjects.slotOffset(m, s, 2));
-        assertEquals(6, HostObjects.slotOffset(m, s, 3), "за последним полем - общее число листьев");
+        assertEquals(6, HostObjects.slotOffset(m, s, 3), "after the last field comes the total number of leaves");
     }
 
     @Test
@@ -147,7 +147,7 @@ class HostObjectsTest {
         assertEquals(255, HostObjects.canon(Types.U8, -1));
         assertEquals(-1, HostObjects.canon(Types.I16, 0xFFFF));
         assertEquals(65535, HostObjects.canon(Types.U16, -1));
-        assertEquals(-1, HostObjects.canon(Types.I32, 0xFFFFFFFFL), "32-битные расширяются знаком");
+        assertEquals(-1, HostObjects.canon(Types.I32, 0xFFFFFFFFL), "32-bit values are sign-extended");
         assertEquals(-1, HostObjects.canon(Types.U32, 0xFFFFFFFFL));
         assertEquals(Float.floatToRawIntBits(-2f), HostObjects.canon(Types.F32, Float.floatToRawIntBits(-2f) & 0xFFFFFFFFL));
         assertEquals(0x1_0000_0000L, HostObjects.canon(Types.I64, 0x1_0000_0000L));
@@ -163,14 +163,14 @@ class HostObjectsTest {
 
     @Test
     void mismatchesNameTheReason() {
-        assertTrue(HostObjects.mismatch(m, s, Wide.class).contains("4 открытых полей"));
-        assertTrue(HostObjects.mismatch(m, v4, S.class).contains("3 открытых полей"));
+        assertTrue(HostObjects.mismatch(m, s, Wide.class).contains("4 public fields"));
+        assertTrue(HostObjects.mismatch(m, v4, S.class).contains("3 public fields"));
         assertTrue(HostObjects.mismatch(m, s, WrongField.class).contains("WrongField.x"));
         String nested = HostObjects.mismatch(m, s, WrongNested.class);
         assertTrue(nested.contains("S"), nested);
         assertFalse(nested.isEmpty());
-        assertTrue(HostObjects.mismatch(m, v4, String.class).contains("полей"));
-        assertTrue(HostObjects.mismatch(m, small, S.class).contains("поле S.x"), "число полей совпало - различается тип");
+        assertTrue(HostObjects.mismatch(m, v4, String.class).contains("fields"));
+        assertTrue(HostObjects.mismatch(m, small, S.class).contains("field S.x"), "the field count matched - the type differs");
     }
 
     @Test
@@ -178,10 +178,10 @@ class HostObjectsTest {
         S value = new S(1.5f, new V4(1, -2, 3, 4), -5L);
         long[] out = new long[8];
         HostObjects.flatten(m, s, value, out, 1);
-        assertEquals(0, out[0], "запись идёт со смещения off");
+        assertEquals(0, out[0], "writing starts at offset off");
         assertEquals(Float.floatToRawIntBits(1.5f), out[1]);
         assertEquals(Float.floatToRawIntBits(1f), out[2]);
-        assertEquals(Float.floatToRawIntBits(-2f), out[3], "отрицательные float расширены знаком");
+        assertEquals(Float.floatToRawIntBits(-2f), out[3], "negative floats are sign-extended");
         assertEquals(Float.floatToRawIntBits(4f), out[5]);
         assertEquals(-5L, out[6]);
         assertEquals(0, out[7]);
@@ -219,7 +219,7 @@ class HostObjectsTest {
         assertSame(existing, result);
         assertEquals(9f, existing.x);
         assertEquals(77L, existing.id);
-        assertNotSame(oldVector, existing.v, "вектор неизменяем - создаётся новый объект");
+        assertNotSame(oldVector, existing.v, "the vector is immutable - a new object is created");
         assertEquals(7f, existing.v.z);
         assertEquals(8f, existing.v.w);
     }

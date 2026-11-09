@@ -52,7 +52,7 @@ public final class OpenClEmitter {
      */
     public static Result<Artifact> emit(IrModule m, Target target) {
         if (m == null) {
-            throw new IllegalArgumentException("module обязателен");
+            throw new IllegalArgumentException("module is required");
         }
         return emit(m, m.functionCount() - 1, target, EmitOptions.RELEASE);
     }
@@ -68,10 +68,10 @@ public final class OpenClEmitter {
      */
     public static Result<Artifact> emit(IrModule m, int kernel, Target target, EmitOptions options) {
         if (m == null || target == null || options == null) {
-            throw new IllegalArgumentException("module, target и options обязательны");
+            throw new IllegalArgumentException("module, target and options are required");
         }
         if (kernel < 0 || kernel >= m.functionCount()) {
-            return fail("CG-A00", kernel, -1, "в модуле нет функции " + kernel);
+            return fail("CG-A00", kernel, -1, "no function in the module " + kernel);
         }
         Validator.Report report = Validator.validate(m);
         if (report.hasErrors()) {
@@ -84,7 +84,7 @@ public final class OpenClEmitter {
             return Result.failed(errors);
         }
         if (m.fKind(kernel) != IrModule.KERNEL) {
-            return fail("CG-A01", kernel, -1, "функция " + kernel + " не является ядром");
+            return fail("CG-A01", kernel, -1, "function " + kernel + " is not a kernel");
         }
         boolean[] reach = Support.reachable(m, kernel);
         List<Diagnostic> unsupported = Support.check(m, kernel, reach);

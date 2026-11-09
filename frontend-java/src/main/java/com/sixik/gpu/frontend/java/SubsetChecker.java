@@ -327,7 +327,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         if (t.getClassBody() == null && type != null && Aggregates.isAggregate(type)) {
             checkAggType(p, type);
             if (Aggregates.isStruct(type) && t.getArguments().isEmpty()) {
-                rep.report(p, "GPU0192", type, "конструктор без аргументов оставил бы поля-объекты null; перечислите все поля");
+                rep.report(p, "GPU0192", type, "a no-arg constructor would leave object fields null; list all fields");
             }
             List<VariableElement> fields = Aggregates.isStruct(type) ? Aggregates.fields((TypeElement) ((DeclaredType) type).asElement()) : List.of();
             for (int i = 0; i < t.getArguments().size(); i++) {
@@ -342,9 +342,9 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         }
         if (t.getClassBody() == null && type != null && Aggregates.pointer(type) != null) {
             if (!Aggregates.pointer(type).ref()) {
-                rep.report(p, "GPU0198", type, "явный указатель создаётся методом of(массив, смещение), а не конструктором");
+                rep.report(p, "GPU0198", type, "an explicit pointer is created with of(array, offset), not a constructor");
             } else if (!(p.getParentPath().getLeaf() instanceof VariableTree vt && vt.getInitializer() == t)) {
-                rep.report(p, "GPU0198", type, "ссылка создаётся только в объявлении локальной переменной");
+                rep.report(p, "GPU0198", type, "a reference is created only in a local variable declaration");
             }
             for (ExpressionTree a : t.getArguments()) {
                 scan(a, v);
@@ -354,7 +354,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         if (t.getClassBody() != null) {
             rep.report(p, "GPU0108");
         } else {
-            rep.report(p, "GPU0107", "оператор new создаёт объект");
+            rep.report(p, "GPU0107", "the new operator creates an object");
         }
         return null;
     }
@@ -364,7 +364,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         TreePath p = getCurrentPath();
         TypeMirror type = Aggregates.typeOf(trees, p);
         if (type != null && JavaTypes.kindOf(type) == JavaTypes.K_PTR) {
-            rep.report(p, "GPU0198", type, "указатель нельзя выбирать условным выражением; используйте if с присваиванием");
+            rep.report(p, "GPU0198", type, "a pointer cannot be chosen by a conditional expression; use if with assignment");
         }
         return super.visitConditionalExpression(t, v);
     }
@@ -378,7 +378,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             if ((l != null && Aggregates.isAggregate(l)) || (r != null && Aggregates.isAggregate(r))) {
                 rep.report(p, "GPU0196", l);
             } else if ((l != null && Aggregates.pointer(l) != null) || (r != null && Aggregates.pointer(r) != null)) {
-                rep.report(p, "GPU0198", l, "указатели не сравниваются: сравнивайте значения (p.get(0)) или индексы");
+                rep.report(p, "GPU0198", l, "pointers are not compared: compare values (p.get(0)) or indices");
             }
         }
         return super.visitBinary(t, v);
@@ -407,7 +407,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
 
     @Override
     public Void visitSwitchExpression(SwitchExpressionTree t, Void v) {
-        rep.report(getCurrentPath(), "GPU0110", "switch как выражение");
+        rep.report(getCurrentPath(), "GPU0110", "switch as an expression");
         return null;
     }
 
@@ -436,7 +436,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         int tk = target == null ? JavaTypes.K_OTHER : JavaTypes.kindOf(target);
         int sk = source == null ? JavaTypes.K_OTHER : JavaTypes.kindOf(source);
         if (target != null && source != null && !(JavaTypes.isNumeric(tk) && JavaTypes.isNumeric(sk))) {
-            rep.report(p, "GPU0109", "приведение " + source + " к " + target);
+            rep.report(p, "GPU0109", "cast " + source + " to " + target);
         }
         return scan(t.getExpression(), v);
     }
@@ -448,7 +448,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         if (key != null) {
             int k = JavaTypes.kindOf(key);
             if (!(k == JavaTypes.K_INT || k == JavaTypes.K_SHORT || k == JavaTypes.K_BYTE || k == JavaTypes.K_CHAR)) {
-                rep.report(p, "GPU0110", "ключ типа " + key);
+                rep.report(p, "GPU0110", "key of type " + key);
             }
         }
         return super.visitSwitch(t, v);
@@ -459,11 +459,11 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         TreePath p = getCurrentPath();
         for (CaseLabelTree label : t.getLabels()) {
             if (label instanceof PatternCaseLabelTree) {
-                rep.report(new TreePath(p, label), "GPU0110", "pattern matching в case");
+                rep.report(new TreePath(p, label), "GPU0110", "pattern matching in case");
             }
         }
         if (t.getGuard() != null) {
-            rep.report(new TreePath(p, t.getGuard()), "GPU0110", "guard в case");
+            rep.report(new TreePath(p, t.getGuard()), "GPU0110", "guard in case");
         }
         return super.visitCase(t, v);
     }
@@ -524,10 +524,10 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             init = pt.getExpression();
         }
         if (ptr.ref() && !(init instanceof NewClassTree)) {
-            rep.report(p, "GPU0198", vt.getName(), "ссылка " + t + " создаётся только выражением 'new " + t
-                    + "(...)' в объявлении переменной");
+            rep.report(p, "GPU0198", vt.getName(), "reference " + t + " is created only by the expression 'new " + t
+                    + "(...)' in a variable declaration");
         } else if (!ptr.ref() && init == null) {
-            rep.report(p, "GPU0198", vt.getName(), "указатель должен быть инициализирован при объявлении");
+            rep.report(p, "GPU0198", vt.getName(), "a pointer must be initialized at declaration");
         }
     }
 
@@ -539,7 +539,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             return;
         }
         if (ck == JavaTypes.K_AGG) {
-            rep.report(p, "GPU0117", "локальный массив объектов " + comp + ": на JVM его элементы null, а на GPU нули");
+            rep.report(p, "GPU0117", "local array of objects " + comp + ": on the JVM its elements are null, and on the GPU zeros");
             return;
         }
         if (!JavaTypes.isPrimitive(ck)) {
@@ -547,8 +547,8 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             return;
         }
         if (!(vt.getInitializer() instanceof NewArrayTree)) {
-            rep.report(p, "GPU0116", "локальный массив " + vt.getName()
-                    + " должен создаваться как 'new " + comp + "[N]' (копии ссылок на массив запрещены)");
+            rep.report(p, "GPU0116", "local array " + vt.getName()
+                    + " must be created as 'new " + comp + "[N]' (copies of array references are forbidden)");
         }
         if (isLocalAnnotated) {
             boolean topLevel = kernel && p.getParentPath() != null
@@ -566,17 +566,17 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         TreePath p = getCurrentPath();
         Tree parent = p.getParentPath().getLeaf();
         if (!(parent instanceof VariableTree vt && vt.getInitializer() == na)) {
-            rep.report(p, "GPU0117", "создание массива вне объявления локальной переменной");
+            rep.report(p, "GPU0117", "array creation outside a local variable declaration");
             return null;
         }
         if (na.getInitializers() != null) {
-            rep.report(p, "GPU0117", "инициализатор вида {...}");
+            rep.report(p, "GPU0117", "initializer of the form {...}");
         } else if (na.getDimensions().size() != 1) {
             rep.report(p, "GPU0005", vt.getName());
         } else {
             Long size = ConstEval.evalIntegral(trees, new TreePath(p, na.getDimensions().get(0)));
             if (size == null || size <= 0 || size > Integer.MAX_VALUE) {
-                rep.report(p, "GPU0117", "размер должен быть положительной константой");
+                rep.report(p, "GPU0117", "size must be a positive constant");
             }
         }
         return null;
@@ -587,7 +587,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         TreePath p = getCurrentPath();
         ExpressionTree base = t.getExpression();
         if (!(base instanceof IdentifierTree)) {
-            rep.report(p, "GPU0116", "индексировать можно только массив, заданный именем (многомерные массивы и результаты вызовов не поддерживаются)");
+            rep.report(p, "GPU0116", "only an array given by name can be indexed (multidimensional arrays and call results are not supported)");
         } else {
             scan(base, v);
         }
@@ -614,7 +614,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
                 }
             }
             case FIELD -> checkFieldAccess(p, (VariableElement) el);
-            case ENUM_CONSTANT -> rep.report(p, "GPU0107", "константа перечисления " + id.getName());
+            case ENUM_CONSTANT -> rep.report(p, "GPU0107", "enum constant " + id.getName());
             default -> {
             }
         }
@@ -628,7 +628,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
                 && ms.getIdentifier().contentEquals("length"))
                 || (parent instanceof MethodInvocationTree mi && mi.getArguments().contains(id));
         if (!ok) {
-            rep.report(p, "GPU0116", "массив " + id.getName() + " нельзя присваивать, возвращать или использовать как значение");
+            rep.report(p, "GPU0116", "array " + id.getName() + " cannot be assigned, returned or used as a value");
         }
     }
 
@@ -655,8 +655,8 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         }
         if (!ok) {
             rep.report(p, "GPU0198", id.getName(), ptr.ref()
-                    ? "ссылку можно читать и менять через .value и передавать в @DeviceFunction"
-                    : "указатель используется через get/set/plus, передаётся в @DeviceFunction или присваивается указателю");
+                    ? "a reference can be read and changed via .value and passed to @DeviceFunction"
+                    : "a pointer is used via get/set/plus, passed to @DeviceFunction or assigned to a pointer");
         }
     }
 
@@ -671,7 +671,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         TreePath p = getCurrentPath();
         String name = ms.getIdentifier().toString();
         if (name.equals("class")) {
-            rep.report(p, "GPU0107", "литерал класса");
+            rep.report(p, "GPU0107", "class literal");
             return null;
         }
         if (name.equals("length")) {
@@ -698,7 +698,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         }
         if (el instanceof VariableElement ve) {
             if (ve.getKind() == ElementKind.ENUM_CONSTANT) {
-                rep.report(p, "GPU0107", "константа перечисления " + name);
+                rep.report(p, "GPU0107", "enum constant " + name);
             } else if (ve.getKind() == ElementKind.FIELD) {
                 checkFieldAccess(p, ve);
             }
@@ -763,7 +763,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             }
             if (el.getKind() == ElementKind.LOCAL_VARIABLE || el.getKind() == ElementKind.PARAMETER) {
                 if (el.asType().getKind() == TypeKind.ARRAY) {
-                    rep.report(tp, "GPU0116", "массив " + id.getName() + " нельзя переприсваивать");
+                    rep.report(tp, "GPU0116", "array " + id.getName() + " cannot be reassigned");
                 } else if (el.getKind() == ElementKind.PARAMETER && Ann.isConstantParam((VariableElement) el)) {
                     rep.report(tp, "GPU0118", id.getName());
                 } else if (Aggregates.pointer(el.asType()) != null) {
@@ -793,9 +793,9 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
      */
     private void checkPointerAssignment(TreePath parent, TreePath at, IdentifierTree id, Aggregates.Ptr ptr) {
         if (ptr.ref()) {
-            rep.report(at, "GPU0198", id.getName(), "ссылка не переприсваивается: меняйте значение через .value");
+            rep.report(at, "GPU0198", id.getName(), "a reference is not reassigned: change the value via .value");
         } else if (!(parent.getParentPath() != null && parent.getParentPath().getLeaf() instanceof ExpressionStatementTree)) {
-            rep.report(at, "GPU0198", id.getName(), "присваивание указателю допустимо только отдельным стейтментом");
+            rep.report(at, "GPU0198", id.getName(), "assignment to a pointer is allowed only as a standalone statement");
         }
     }
 
@@ -824,7 +824,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         while (root instanceof MemberSelectTree m) {
             TypeMirror qt = Aggregates.typeOf(trees, new TreePath(stripped, m.getExpression()));
             if (qt == null || !Aggregates.isStruct(qt)) {
-                rep.report(shown, "GPU0194", ms.getIdentifier(), "поле можно менять только у struct (векторы неизменяемы)");
+                rep.report(shown, "GPU0194", ms.getIdentifier(), "a field can be changed only on a struct (vectors are immutable)");
                 return;
             }
             root = m.getExpression();
@@ -836,10 +836,10 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             Element el = trees.getElement(new TreePath(stripped, id));
             if (el == null || el.getKind() != ElementKind.LOCAL_VARIABLE) {
                 rep.report(shown, "GPU0194", ms.getIdentifier(),
-                        "изменять поля можно у локальной переменной-struct и у элемента массива struct, но не у параметра");
+                        "fields can be changed on a local struct variable and on a struct array element, but not on a parameter");
             }
         } else if (!(root instanceof ArrayAccessTree)) {
-            rep.report(shown, "GPU0194", ms.getIdentifier(), "цель записи должна быть локальной переменной или элементом массива");
+            rep.report(shown, "GPU0194", ms.getIdentifier(), "the write target must be a local variable or an array element");
         }
     }
 
@@ -850,7 +850,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             q = pt.getExpression();
         }
         if (!(q instanceof IdentifierTree)) {
-            rep.report(shown, "GPU0198", ms.getIdentifier(), "поле value читается и меняется только у переменной или параметра");
+            rep.report(shown, "GPU0198", ms.getIdentifier(), "the value field is read and changed only on a variable or parameter");
         }
     }
 
@@ -925,7 +925,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             MethodInvocationTree mit = (MethodInvocationTree) p.getLeaf();
             if (!(mit.getArguments().get(0) instanceof IdentifierTree)) {
                 rep.report(new TreePath(p, mit.getArguments().get(0)), "GPU0116",
-                        "в " + owner.getSimpleName() + ".of массив задаётся именем параметра или локальной переменной");
+                        "in " + owner.getSimpleName() + ".of the array is given by a parameter name or a local variable");
             }
         }
     }
@@ -952,7 +952,7 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         }
         if (callee.getAnnotation(DeviceFunction.class) != null) {
             if (!isStatic) {
-                rep.report(p, "GPU0107", "вызов экземплярного метода " + shown);
+                rep.report(p, "GPU0107", "call of instance method " + shown);
             } else if (trees.getPath(callee) == null) {
                 rep.report(p, "GPU0114", shown);
             } else {

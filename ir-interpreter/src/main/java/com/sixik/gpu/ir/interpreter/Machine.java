@@ -478,9 +478,9 @@ final class Machine {
                 } catch (Coop.Abort ignored) {
                     // группа остановлена из-за нарушения другого work-item-а
                 } catch (StackOverflowError e) {
-                    item.fault("IN-R04", -1, "слишком глубокая вложенность вызовов");
+                    item.fault("IN-R04", -1, "call nesting is too deep");
                 } catch (Throwable t) {
-                    item.fault("IN-R06", -1, "внутренняя ошибка интерпретатора: " + t);
+                    item.fault("IN-R06", -1, "internal interpreter error: " + t);
                 } finally {
                     c.finish(index);
                 }
@@ -508,14 +508,14 @@ final class Machine {
                         int at = c.waitingAt(i);
                         if (barrierNode >= 0 && at != barrierNode) {
                             result = barrierMismatch(entry, at,
-                                    "work-item-ы ждут на разных барьерах: n" + barrierNode + " и n" + at);
+                                    "work-items wait at different barriers: n" + barrierNode + " and n" + at);
                         }
                         barrierNode = at;
                     }
                 }
                 if (result == null && finished > 0 && waiting > 0) {
-                    result = barrierMismatch(entry, barrierNode, "часть work-item-ов группы завершилась, не дойдя до барьера n"
-                            + barrierNode + ", а остальные " + waiting + " ждут на нём");
+                    result = barrierMismatch(entry, barrierNode, "some work-items of the group finished without reaching barrier n"
+                            + barrierNode + ", while the other " + waiting + " wait at it");
                 }
                 if (result == null && waiting == 0) {
                     break;
@@ -570,7 +570,7 @@ final class Machine {
 
     private int exec(int n) {
         if (++steps > limit) {
-            fault("IN-R03", n, "исчерпан бюджет шагов (" + limit + "): возможно, бесконечный цикл");
+            fault("IN-R03", n, "step budget exhausted (" + limit + "): possibly an infinite loop");
             return FAULT;
         }
         switch (m.op(n)) {
@@ -655,20 +655,20 @@ final class Machine {
             case Op.LOCAL_ARRAY_DECL:
                 // буфер уже выделен на группу (prepareLocals/installLocals): work-item лишь получает на него ссылку
                 if (localOrdinal[n] < 0) {
-                    fault("IN-U01", n, "local_array_decl не на верхнем уровне тела ядра");
+                    fault("IN-U01", n, "local_array_decl is not at the top level of the kernel body");
                     return FAULT;
                 }
                 stack[slot(m.a(n))] = hostCount + localOrdinal[n];
                 return NORMAL;
             case Op.BARRIER:
                 if (coop == null) {
-                    fault("IN-U01", n, "barrier вне группового планировщика");
+                    fault("IN-U01", n, "barrier outside the group scheduler");
                     return FAULT;
                 }
                 coop.arrive(itemIndex, n);
                 return NORMAL;
             default:
-                fault("IN-U01", n, "узел " + Op.nameOf(m.op(n)) + " не поддерживается интерпретатором");
+                fault("IN-U01", n, "node " + Op.nameOf(m.op(n)) + " is not supported by the interpreter");
                 return FAULT;
         }
     }
@@ -770,7 +770,7 @@ final class Machine {
             return false;
         }
         if (len <= 0 || len > MAX_PRIVATE_ARRAY) {
-            fault("IN-R04", n, "недопустимая длина private-массива: " + len);
+            fault("IN-R04", n, "invalid private array length: " + len);
             return false;
         }
         int s = slot(m.a(n));
@@ -825,12 +825,12 @@ final class Machine {
             return true;
         }
         int w = buf >= 0 && (buf == STACK || buf < bufCount) ? elemWidth(buf) : 1;
-        fault("IN-R01", n, what + " за границами: индекс " + Math.floorDiv(cell, w) + ", длина " + (len < 0 ? -1 : len / w));
+        fault("IN-R01", n, what + " out of bounds: index " + Math.floorDiv(cell, w) + ", length " + (len < 0 ? -1 : len / w));
         return false;
     }
 
     private boolean store(int n, long p, long v) {
-        if (!inside(n, p, 1, "запись")) {
+        if (!inside(n, p, 1, "write")) {
             return false;
         }
         memory((int) (p >>> 32))[(int) p] = v;
@@ -838,14 +838,14 @@ final class Machine {
     }
 
     private long load(int n, long p) {
-        if (!inside(n, p, 1, "чтение")) {
+        if (!inside(n, p, 1, "read")) {
             return 0;
         }
         return memory((int) (p >>> 32))[(int) p];
     }
 
     private boolean storeAgg(int n, long p, long[] v) {
-        if (!inside(n, p, v.length, "запись")) {
+        if (!inside(n, p, v.length, "write")) {
             return false;
         }
         System.arraycopy(v, 0, memory((int) (p >>> 32)), (int) p, v.length);
@@ -853,7 +853,7 @@ final class Machine {
     }
 
     private long[] loadAgg(int n, long p, int slots) {
-        if (!inside(n, p, slots, "чтение")) {
+        if (!inside(n, p, slots, "read")) {
             return new long[slots];
         }
         int cell = (int) p;
@@ -897,7 +897,7 @@ final class Machine {
                 long a = eval(m.a(n));
                 long b = eval(m.b(n));
                 if ((op == Op.DIV || op == Op.REM) && Alu.divisorIsZero(t, b)) {
-                    return fault("IN-R02", n, "целочисленное деление на ноль");
+                    return fault("IN-R02", n, "integer division by zero");
                 }
                 return Alu.arith(op, t, a, b);
             }
@@ -953,14 +953,14 @@ final class Machine {
                 return load(n, eval(m.a(n)));
             case Op.ARRAY_LEN: {
                 long id = eval(m.a(n));
-                return id >= 0 && id < bufCount ? lengthOf((int) id) : fault("IN-R01", n, "длина неинициализированного массива");
+                return id >= 0 && id < bufCount ? lengthOf((int) id) : fault("IN-R01", n, "length of an uninitialized array");
             }
             case Op.CALL:
                 return call(n);
             case Op.INTRINSIC:
                 return intrinsic(n);
             default:
-                return fault("IN-U01", n, "узел " + Op.nameOf(op) + " не поддерживается интерпретатором");
+                return fault("IN-U01", n, "node " + Op.nameOf(op) + " is not supported by the interpreter");
         }
     }
 
@@ -1097,7 +1097,7 @@ final class Machine {
             case Op.INTRINSIC:
                 return vectorIntrinsic(n, laneType(t), k);
             default:
-                fault("IN-U01", n, "узел " + Op.nameOf(op) + " с агрегатным результатом не поддерживается интерпретатором");
+                fault("IN-U01", n, "node " + Op.nameOf(op) + " with an aggregate result is not supported by the interpreter");
                 return new long[k];
         }
     }
@@ -1108,7 +1108,7 @@ final class Machine {
         boolean division = op == Op.DIV || op == Op.REM;
         for (int i = 0; i < k; i++) {
             if (division && Alu.divisorIsZero(st, b[i])) {
-                fault("IN-R02", n, "целочисленное деление на ноль в компоненте " + i);
+                fault("IN-R02", n, "integer division by zero in component " + i);
                 return a;
             }
             switch (op) {
@@ -1127,7 +1127,7 @@ final class Machine {
         int argc = m.c(n);
         if (code != B_SIN && code != B_COS && code != B_SQRT && code != B_FMA && code != B_MAX && code != B_MIN
                 && code != B_ASSUME_UNIFORM) {
-            fault("IN-U01", n, "builtin " + Builtins.name(m.a(n)) + " над векторами не поддерживается интерпретатором");
+            fault("IN-U01", n, "builtin " + Builtins.name(m.a(n)) + " over vectors is not supported by the interpreter");
             return new long[k];
         }
         long[][] args = new long[argc][];
@@ -1253,7 +1253,7 @@ final class Machine {
                 return old;
             }
             default:
-                return fault("IN-U01", n, "builtin " + Builtins.name(id) + " не поддерживается интерпретатором (аргументов: " + argc + ")");
+                return fault("IN-U01", n, "builtin " + Builtins.name(id) + " is not supported by the interpreter (arguments: " + argc + ")");
         }
     }
 
