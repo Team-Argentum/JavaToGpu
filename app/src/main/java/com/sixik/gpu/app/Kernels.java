@@ -1,10 +1,8 @@
 package com.sixik.gpu.app;
 
 import com.sixik.gpu.api.Gpu;
-import com.sixik.gpu.api.annotations.Constant;
-import com.sixik.gpu.api.annotations.DeviceFunction;
-import com.sixik.gpu.api.annotations.Global;
-import com.sixik.gpu.api.annotations.Kernel;
+import com.sixik.gpu.api.annotations.*;
+import com.sixik.gpu.api.enums.InlinePolicy;
 
 /** Примеры GPU-ядер для ручных экспериментов и интеграционных тестов приложения. */
 public final class Kernels {
@@ -44,5 +42,42 @@ public final class Kernels {
 
             return a * i + b + CONST;
         } while (true);
+    }
+
+    @Struct
+    public static class BlockPos {
+        public float x;
+        public float y;
+        public float z;
+
+        public BlockPos() {
+
+        }
+
+        public BlockPos(float x, float y, float z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        @Override
+        public String toString() {
+            return "BlockPos{" +
+                    "x=" + x +
+                    ", y=" + y +
+                    ", z=" + z +
+                    '}';
+        }
+    }
+
+    @Kernel
+    public static void calculatePositionRandom(@Global BlockPos[] pos, @Global BlockPos[] out) {
+        int id = Gpu.getGlobalId(0);
+
+        BlockPos pb = new BlockPos(pos[0].x, pos[0].y, pos[0].z);
+
+        out[id].x = pos[id].x * 2 + pb.z;
+        out[id].y = pos[id].y % 20 + pb.y;
+        out[id].z = pos[id].z + 8 + pb.x;
     }
 }

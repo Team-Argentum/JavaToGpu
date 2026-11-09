@@ -47,7 +47,26 @@ public final class Main {
                 right[i] = 0.5f;
             }
 
+            Kernels.BlockPos[] pos = new Kernels.BlockPos[size];
+            Kernels.BlockPos[] out = new Kernels.BlockPos[size];
+            for (int i = 0; i < size; i++) {
+                Kernels.BlockPos p = new Kernels.BlockPos();
+
+                p.x = i % 15;
+                p.y = i % 256;
+                p.z = 15 - i % 15;
+
+                pos[i] = p;
+                out[i] = new Kernels.BlockPos();
+            }
+
             Kernels.vectorAdd(left, right, output);
+
+            Kernels.calculatePositionRandom(pos, out);
+            for (Kernels.BlockPos blockPos : out) {
+                System.out.println(blockPos);
+            }
+
 
 //            for (int i = 0; i < size; i++) {
 //                // Целые до 255 и половины представляются в float точно.
