@@ -1,11 +1,17 @@
 package com.sixik.gpu.app.terrain;
 
+import com.sixik.gpu.runtime.JavaToGpu;
+
+import java.nio.file.Path;
+
 /** Дополнительный wall-clock прогон всего видимого окна; результаты следует отличать от статистики JMH. */
 public final class TerrainSweep {
 
     /** Запрещает создание экземпляров CLI. */
     private TerrainSweep() {
     }
+
+    private static final Path DEFAULT_DUMP_DIRECTORY = Path.of("build", "opencl");
 
     /**
      * Генерирует всё окно порциями по 64 чанка; последний неполный пакет дополняется повторными чанками.
@@ -21,6 +27,8 @@ public final class TerrainSweep {
                 TerrainBatch.VISIBLE_CHUNKS, sampling,
                 (long) TerrainBatch.VISIBLE_CHUNKS * sampling.samplesPerChunk(),
                 (long) launches * chunks * sampling.samplesPerChunk());
+
+        JavaToGpu.configureDefault(s -> s.dumpSources(DEFAULT_DUMP_DIRECTORY));
         for (TerrainExecutor.Backend backend : TerrainExecutor.Backend.values()) {
             TerrainBatch batch = new TerrainBatch(chunks, sampling);
             try (TerrainExecutor executor = new TerrainExecutor(backend, batch, 20)) {

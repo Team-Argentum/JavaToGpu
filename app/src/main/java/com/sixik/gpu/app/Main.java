@@ -77,6 +77,10 @@ public final class Main {
             }
             System.out.printf("vectorAdd: OK (%d elements)%n", size);
             System.out.println("First results: " + Arrays.toString(Arrays.copyOf(output, Math.min(size, 8))));
+
+
+
+
         } finally {
             JavaToGpu.resetDefault();
         }
