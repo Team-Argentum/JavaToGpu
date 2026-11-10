@@ -300,7 +300,7 @@ public final class KernelSplitter {
                     worst = Math.max(worst, RegisterPressure.weight(held, varWeight) + p.need());
                 }
             }
-            return worst + 1 + (scratchArrays > 0 ? 3 : 0);
+            return RegisterPressure.base(fn) + worst + 1 + (scratchArrays > 0 ? 3 : 0);
         }
 
         long spillWords(int a, int b) {

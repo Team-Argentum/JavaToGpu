@@ -28,8 +28,19 @@ public final class CompiledKernel {
      */
     Object boundTo;
 
+    private final DriverStats driverStats;
+    private final int estimatedRegisters;
+
     CompiledKernel(GpuContext owner, IrModule module, int function, Artifact artifact, String kernelId, int[] access,
                    long program, long kernel, long maxWorkGroupSize) {
+        this(owner, module, function, artifact, kernelId, access, program, kernel, maxWorkGroupSize, DriverStats.UNKNOWN,
+                -1);
+    }
+
+    CompiledKernel(GpuContext owner, IrModule module, int function, Artifact artifact, String kernelId, int[] access,
+                   long program, long kernel, long maxWorkGroupSize, DriverStats driverStats, int estimatedRegisters) {
+        this.driverStats = driverStats;
+        this.estimatedRegisters = estimatedRegisters;
         this.owner = owner;
         this.module = module;
         this.function = function;
@@ -82,5 +93,23 @@ public final class CompiledKernel {
     /** @return наибольший размер work-group для этого ядра на устройстве */
     public long maxWorkGroupSize() {
         return maxWorkGroupSize;
+    }
+
+    /**
+     * Ресурсы, которые реально выделил драйвер. Число регистров известно для NVIDIA (опция {@code -cl-nv-verbose}
+     * добавляется автоматически); при загрузке образа с диска оно берётся из лога повторной сборки, если драйвер его
+     * печатает.
+     *
+     * @return статистика драйвера (неизвестные поля - {@code -1})
+     */
+    public DriverStats driverStats() {
+        return driverStats;
+    }
+
+    /**
+     * @return оценка регистров по IR ({@code ir-optimizer}, {@code RegisterPressure}) для собранного модуля либо {@code -1}
+     */
+    public int estimatedRegisters() {
+        return estimatedRegisters;
     }
 }

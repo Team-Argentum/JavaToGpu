@@ -220,6 +220,17 @@ public interface DeviceApi extends AutoCloseable {
      */
     long kernelMaxWorkGroupSize(long kernel, long device);
 
+    /**
+     * Объём private-памяти ядра на work-item ({@code CL_KERNEL_PRIVATE_MEM_SIZE}): стек и «пролитые» значения.
+     *
+     * @param kernel ядро
+     * @param device устройство
+     * @return байты либо {@code -1}, если слой доступа этого не сообщает
+     */
+    default long kernelPrivateMemSize(long kernel, long device) {
+        return -1;
+    }
+
     // ---- аргументы и запуск ----------------------------------------------------------------------
 
     /**

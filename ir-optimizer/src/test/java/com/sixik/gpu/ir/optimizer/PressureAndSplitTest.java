@@ -83,7 +83,8 @@ class PressureAndSplitTest {
         assertTrue(big > small + 10, "registers: " + small + " vs " + big);
         RegisterPressure.FunctionPressure fp = RegisterPressure.analyze(phasedKernel(20, 12)).functions()[0];
         assertTrue(fp.registers() >= 20 + 12, "all long-lived values and one phase are alive: " + fp);
-        assertEquals(fp.registers(), fp.peakLiveWords() + fp.peakTempWords());
+        assertEquals(fp.registers(), fp.baseRegisters() + fp.peakLiveWords() + fp.peakTempWords());
+        assertEquals(RegisterPressure.KERNEL_BASE_REGISTERS, fp.baseRegisters());
     }
 
     @Test

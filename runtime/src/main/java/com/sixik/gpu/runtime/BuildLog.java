@@ -53,6 +53,10 @@ final class BuildLog {
                 severity = warning ? Diagnostic.Severity.WARNING : Diagnostic.Severity.ERROR;
                 current = new StringBuilder("line ").append(m.group(1)).append(':').append(m.group(2)).append(": ")
                         .append(m.group(4));
+            } else if (raw.strip().startsWith("ptxas")) {
+                // статистика ресурсов NVIDIA (-cl-nv-verbose) - не продолжение предыдущей диагностики
+                flush(out, current, code, severity, function);
+                current = null;
             } else if (current != null && !raw.isBlank()) {
                 current.append('\n').append(raw.stripTrailing());
             }

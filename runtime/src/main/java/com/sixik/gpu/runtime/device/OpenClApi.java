@@ -397,6 +397,18 @@ public final class OpenClApi implements DeviceApi {
         }
     }
 
+    @Override
+    public long kernelPrivateMemSize(long kernel, long device) {
+        try (Arena a = Arena.ofConfined()) {
+            MemorySegment v = a.allocate(8);
+            int st = (int) getKernelWorkGroupInfo.invoke(handle(kernel), handle(device),
+                    0x11B4 /* CL_KERNEL_PRIVATE_MEM_SIZE */, 8L, v, MemorySegment.NULL);
+            return st == 0 ? v.get(LONG, 0) : -1;
+        } catch (Throwable t) {
+            throw unexpected("clGetKernelWorkGroupInfo", t);
+        }
+    }
+
     // ---- аргументы и запуск ----------------------------------------------------------------------
 
     @Override

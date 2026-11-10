@@ -17,7 +17,9 @@ import java.util.Map;
  *   <li><b>Живые переменные.</b> Обратный анализ живости ({@link Liveness}) даёт на каждой точке вычисления
  *       множество локалей и параметров, значения которых нужны позже. Вес переменной - размер её значения в словах:
  *       {@code BOOL}, до 32 бит - 1; 64 бита - 2; вектор - {@code lanes * вес скаляра} (3 компоненты занимают как 4);
- *       struct - сумма полей; указатель - 2; массив-параметр (указатель плюс длина) - 3. Private-массивы в регистры
+ *       struct - сумма полей; указатель - 2; массив-параметр (указатель плюс длина) - 3. Параметры <b>ядра</b> живыми не
+ *       считаются: драйвер держит их в константном банке и загружает в регистр в точке использования (калибровка по
+ *       NVIDIA, {@code RegisterCalibrationDeviceTest}). Private-массивы в регистры
  *       не считаются и учитываются отдельно ({@code privateArrayWords}) - это кандидаты на spill в память.</li>
  *   <li><b>Временные значения выражения.</b> Число Сети-Ульмана: операнды вычисляются в порядке убывания потребности,
  *       пока вычисляется очередной, уже готовые держат свои регистры. Константы, параметры и чтение локалей
@@ -31,7 +33,24 @@ import java.util.Map;
  */
 public final class RegisterPressure {
 
+    /**
+     * Постоянные накладные расходы ядра в регистрах: индексы work-item, адреса аргументов, служебные значения, которые
+     * драйвер держит независимо от тела. Значение подобрано по NVIDIA (RTX 5070, драйвер 595.97,
+     * {@code RegisterCalibrationDeviceTest}): медиана разницы «драйвер минус модель» на 56 ядрах - 11; при базе 10 ошибка
+     * оценки на ядрах от 48 регистров - около 6%. Ядра меньше этой величины драйвер всё равно не делает.
+     */
+    public static final int KERNEL_BASE_REGISTERS = 10;
+
     private RegisterPressure() {
+    }
+
+    /**
+     * @param fn функция
+     * @return накладные расходы функции: {@link #KERNEL_BASE_REGISTERS} для ядра, 0 для device-функции (она встраивается
+     *         в ядро и разделяет его служебные регистры)
+     */
+    static int base(FnTree fn) {
+        return fn.kind == IrModule.KERNEL ? KERNEL_BASE_REGISTERS : 0;
     }
 
     /**
@@ -42,11 +61,13 @@ public final class RegisterPressure {
      * @param registers         оценка пикового числа 32-битных регистров
      * @param peakLiveWords     вклад живых переменных в пике
      * @param peakTempWords     вклад временных значений выражения в пике
+     * @param baseRegisters     постоянные накладные расходы ядра ({@link #KERNEL_BASE_REGISTERS}; у device-функций 0):
+     *                          {@code registers = baseRegisters + peakLiveWords + peakTempWords}
      * @param peakStatement     индекс стейтмента верхнего уровня тела, в котором достигнут пик (либо {@code -1})
      * @param privateArrayWords суммарный размер private-массивов в словах (кандидаты на spill)
      */
     public record FunctionPressure(int function, String name, int registers, int peakLiveWords, int peakTempWords,
-                                   int peakStatement, int privateArrayWords) {
+                                   int baseRegisters, int peakStatement, int privateArrayWords) {
     }
 
     /**
@@ -94,7 +115,7 @@ public final class RegisterPressure {
         int[] best = {0, 0, 0, -1};
         Liveness.scan(fn, src, fx, (t, across) -> {
             int live = weight(across, varWeight);
-            int temp = need(t, src);
+            int temp = need(t, src, kernel(fn));
             if (live + temp > best[0]) {
                 best[0] = live + temp;
                 best[1] = live;
@@ -103,7 +124,8 @@ public final class RegisterPressure {
                 best[3] = top == null ? best[3] : top;
             }
         });
-        return new FunctionPressure(index, fn.name, best[0], best[1], best[2], best[3], privateWords(fn, src));
+        return new FunctionPressure(index, fn.name, best[0] + base(fn), best[1], best[2], base(fn), best[3],
+                privateWords(fn, src));
     }
 
     /**
@@ -124,7 +146,7 @@ public final class RegisterPressure {
         Liveness.scan(fn, src, fx, (t, across) -> {
             Integer top = topIndex.get(t);
             if (top != null) {
-                peak[top] = Math.max(peak[top], weight(across, varWeight) + need(t, src));
+                peak[top] = Math.max(peak[top], base(fn) + weight(across, varWeight) + need(t, src, kernel(fn)));
             }
         });
         return peak;
@@ -152,7 +174,7 @@ public final class RegisterPressure {
         Liveness.scan(fn, src, fx, (t, across) -> {
             Integer top = topIndex.get(t);
             if (top != null) {
-                out.get(top).add(new Point((BitSet) across.clone(), need(t, src)));
+                out.get(top).add(new Point((BitSet) across.clone(), need(t, src, kernel(fn))));
             }
         });
         return out;
@@ -180,7 +202,9 @@ public final class RegisterPressure {
             w[l] = Types.kind(src, fn.locals[l]) == Types.KIND_ARRAY ? 0 : words(src, fn.locals[l]);
         }
         for (int p = 0; p < fn.params.length; p++) {
-            w[fn.localCount + p] = words(src, fn.params[p]);
+            // параметры ядра лежат в константном банке и читаются в регистр в точке использования (см. need);
+            // параметры device-функции - обычные значения в регистрах
+            w[fn.localCount + p] = kernel(fn) ? 0 : words(src, fn.params[p]);
         }
         return w;
     }
@@ -231,7 +255,32 @@ public final class RegisterPressure {
      * @param src модуль
      * @return число слов сверх уже занятых живыми переменными
      */
+    private static boolean kernel(FnTree fn) {
+        return fn.kind == IrModule.KERNEL;
+    }
+
+    /**
+     * Потребность выражения во временных регистрах для device-функции (параметры уже в регистрах).
+     *
+     * @param t   выражение либо стейтмент
+     * @param src модуль
+     * @return число слов
+     */
     static int need(Tree t, IrModule src) {
+        return need(t, src, false);
+    }
+
+    /**
+     * Потребность выражения во временных регистрах (число Сети-Ульмана с учётом размера значений).
+     *
+     * @param t            выражение либо стейтмент
+     * @param src          модуль
+     * @param kernelParams {@code true} для ядра: чтение параметра загружает значение из константного банка в регистр
+     *                     (так делает драйвер NVIDIA, {@code cmem} в логе {@code ptxas}), поэтому лист {@code PARAM}
+     *                     занимает регистр на время вычисления, а между использованиями не живёт
+     * @return число слов сверх уже занятых живыми переменными
+     */
+    static int need(Tree t, IrModule src, boolean kernelParams) {
         int n = t.kids.length;
         if (n == 0) {
             return 0;
@@ -246,8 +295,9 @@ public final class RegisterPressure {
                 needs[i] = 0;
                 weights[i] = 0;
             } else {
-                needs[i] = need(c, src);
-                weights[i] = isLeaf(c) ? 0 : words(src, c.type);
+                needs[i] = need(c, src, kernelParams);
+                boolean loadedParam = kernelParams && c.op == Op.PARAM;
+                weights[i] = isLeaf(c) && !loadedParam ? 0 : words(src, c.type);
             }
             order[i] = i;
         }

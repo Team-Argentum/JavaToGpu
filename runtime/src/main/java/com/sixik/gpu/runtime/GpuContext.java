@@ -640,6 +640,32 @@ public final class GpuContext implements AutoCloseable {
         return bytes;
     }
 
+    /** @return {@code true}, если устройство NVIDIA: его драйвер умеет печатать ресурсы ядра в лог сборки */
+    private boolean isNvidia() {
+        return device.vendor() != null && device.vendor().toUpperCase(java.util.Locale.ROOT).contains("NVIDIA");
+    }
+
+    /**
+     * Опции {@code clBuildProgram}: опции кодогена плюс {@link DriverStats#NVIDIA_VERBOSE} на NVIDIA, чтобы получить число
+     * регистров (на код и производительность опция не влияет).
+     */
+    private String buildOptions(Artifact art) {
+        String o = art.buildOptions();
+        if (!isNvidia()) {
+            return o;
+        }
+        return o == null || o.isBlank() ? DriverStats.NVIDIA_VERBOSE : o + " " + DriverStats.NVIDIA_VERBOSE;
+    }
+
+    /** Оценка регистров по IR; ошибка оценки не мешает компиляции. */
+    private static int estimateRegisters(IrModule m, int kernel) {
+        try {
+            return com.sixik.gpu.ir.optimizer.RegisterPressure.analyze(m).functions()[kernel].registers();
+        } catch (RuntimeException e) {
+            return -1;
+        }
+    }
+
     /** Часть ключей кэша, зависящая от настроек оптимизатора. */
     private String optimizeKey() {
         OptimizeOptions o = optimizeOptions;
@@ -717,7 +743,8 @@ public final class GpuContext implements AutoCloseable {
         lock.lock();
         try {
             String diskKey = disk == null ? null : diskKey(m, kernel, options, art);
-            long[] cached = diskKey == null ? null : loadFromDisk(diskKey, art);
+            String[] driverLog = {""};
+            long[] cached = diskKey == null ? null : loadFromDisk(diskKey, art, driverLog);
             long kernelHandle;
             List<Diagnostic> log = List.of();
             if (cached != null) {
@@ -726,7 +753,8 @@ public final class GpuContext implements AutoCloseable {
                 how[0] = "disk-hit";
             } else {
                 program = api.createProgram(contextHandle, art.source());
-                DeviceApi.BuildOutcome outcome = api.build(program, device.handle(), art.buildOptions());
+                DeviceApi.BuildOutcome outcome = api.build(program, device.handle(), buildOptions(art));
+                driverLog[0] = outcome.log();
                 log = BuildLog.parse(outcome.log(), kernel, !outcome.ok());
                 if (!outcome.ok()) {
                     api.release(DeviceApi.HandleKind.PROGRAM, program);
@@ -738,7 +766,10 @@ public final class GpuContext implements AutoCloseable {
                 }
             }
             long maxWg = api.kernelMaxWorkGroupSize(kernelHandle, device.handle());
-            CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(original), access, program, kernelHandle, maxWg);
+            DriverStats stats = (isNvidia() ? DriverStats.parseNvidiaLog(driverLog[0], art.entry()) : DriverStats.UNKNOWN)
+                    .withPrivateBytes(api.kernelPrivateMemSize(kernelHandle, device.handle()));
+            CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(original), access, program, kernelHandle,
+                    maxWg, stats, estimateRegisters(m, kernel));
             compiled.add(ck);
             for (Diagnostic d : log) {
                 emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, d.message());
@@ -778,7 +809,7 @@ public final class GpuContext implements AutoCloseable {
      */
     private String diskKey(IrModule m, int kernel, EmitOptions o, Artifact art) {
         return "gbc1|codegen=" + codegenVersion + "|" + optimizeKey() + "|ir=" + kernelIdOf(m) + "#" + kernel
-                + "|emit=" + o.debug() + "," + o.fastMath() + "|build=" + art.buildOptions()
+                + "|emit=" + o.debug() + "," + o.fastMath() + "|build=" + buildOptions(art)
                 + "|device=" + device.vendor() + "/" + device.name() + "|driver=" + device.driverVersion()
                 + "|opencl=" + device.openClVersion()
                 + "|src=" + java.util.HexFormat.of().formatHex(DiskCache.sha256(
@@ -791,7 +822,7 @@ public final class GpuContext implements AutoCloseable {
      *
      * @return {@code {программа, ядро}} либо {@code null}
      */
-    private long[] loadFromDisk(String key, Artifact art) {
+    private long[] loadFromDisk(String key, Artifact art, String[] logOut) {
         byte[] image = disk.get(key);
         if (image == null) {
             diskMisses.incrementAndGet();
@@ -800,7 +831,8 @@ public final class GpuContext implements AutoCloseable {
         long program = 0;
         try {
             program = api.createProgramWithBinary(contextHandle, device.handle(), image);
-            DeviceApi.BuildOutcome outcome = api.build(program, device.handle(), art.buildOptions());
+            DeviceApi.BuildOutcome outcome = api.build(program, device.handle(), buildOptions(art));
+            logOut[0] = outcome.log();
             if (outcome.ok()) {
                 long k = api.createKernel(program, art.entry());
                 diskHits.incrementAndGet();

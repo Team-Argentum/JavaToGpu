@@ -47,6 +47,9 @@ tasks.register('deviceTest', Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
+    // Собственный кэш драйвера NVIDIA: при попадании ptxas не запускается и не печатает число регистров, нужное
+    // RegisterCalibrationDeviceTest. На других драйверах переменная ни на что не влияет.
+    environment 'CUDA_CACHE_DISABLE', '1'
     useJUnitPlatform {
         includeTags 'device'
     }
