@@ -58,8 +58,9 @@ def allowedProjectDeps = [
         'api'           : [],
         'ir'            : [],
         'ir-interpreter': ['ir'],
+        'ir-optimizer'  : ['ir'],
         'codegen-opencl': ['ir'],
-        'runtime'       : ['api', 'ir', 'codegen-opencl'],
+        'runtime'       : ['api', 'ir', 'ir-optimizer', 'codegen-opencl'],
         'frontend-java' : ['api', 'ir'],
         'weaver'        : [],
         'gradle-plugin' : ['weaver'],
@@ -75,8 +76,8 @@ def allowedExternalGroups = [
 ]
 
 // Модули «чистого ядра»: данные и чистые функции, без файлового ввода-вывода и нативов.
-def pureCore = ['ir', 'codegen-opencl']
-def coreModules = ['api', 'ir', 'ir-interpreter', 'codegen-opencl']
+def pureCore = ['ir', 'ir-optimizer', 'codegen-opencl']
+def coreModules = ['api', 'ir', 'ir-optimizer', 'ir-interpreter', 'codegen-opencl']
 
 def forbiddenInCore = [
         'java.lang.foreign', 'javax.annotation.processing', 'javax.lang.model', 'javax.tools',

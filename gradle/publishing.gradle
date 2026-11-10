@@ -1,5 +1,5 @@
 // Репозиторий принадлежит сборке: публикация не меняет ~/.m2 и не обращается к внешней площадке.
-def publishedModules = ['api', 'ir', 'ir-interpreter', 'codegen-opencl', 'runtime',
+def publishedModules = ['api', 'ir', 'ir-optimizer', 'ir-interpreter', 'codegen-opencl', 'runtime',
                         'frontend-java', 'weaver', 'gradle-plugin', 'test-support']
 def localRepository = rootProject.layout.buildDirectory.dir('local-maven')
 

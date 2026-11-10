@@ -4,6 +4,9 @@ import com.sixik.gpu.codegen.opencl.Artifact;
 import com.sixik.gpu.codegen.opencl.EmitOptions;
 import com.sixik.gpu.codegen.opencl.KernelArg;
 import com.sixik.gpu.codegen.opencl.OpenClEmitter;
+import com.sixik.gpu.ir.optimizer.OptimizeOptions;
+import com.sixik.gpu.ir.optimizer.OptimizeResult;
+import com.sixik.gpu.ir.optimizer.Optimizer;
 import com.sixik.gpu.codegen.opencl.Target;
 import com.sixik.gpu.ir.AbiLayout;
 import com.sixik.gpu.ir.AddressSpace;
@@ -91,11 +94,13 @@ public final class GpuContext implements AutoCloseable {
     private final DiskCache disk;
     private final Path sourceDump;
     private final String codegenVersion;
+    private final OptimizeOptions optimizeOptions;
     volatile boolean closed;
 
     private GpuContext(DeviceApi api, boolean ownsApi, DeviceInfo device, long contextHandle, long queue,
                        EventListener listener, EmitOptions emitOptions, Fallback fallback, DiskCache disk,
-                       Path sourceDump, String codegenVersion) {
+                       Path sourceDump, String codegenVersion, OptimizeOptions optimizeOptions) {
+        this.optimizeOptions = optimizeOptions;
         this.disk = disk;
         this.sourceDump = sourceDump;
         this.codegenVersion = codegenVersion;
@@ -139,6 +144,10 @@ public final class GpuContext implements AutoCloseable {
     public static final String DUMP_PROPERTY = "javatogpu.dump";
     /** Переменная окружения с каталогом выгрузки сгенерированного OpenCL C ({@code off} - не выгружать). */
     public static final String DUMP_ENVIRONMENT = "JAVATOGPU_DUMP";
+    /** Системное свойство с уровнем оптимизатора IR ({@code 0..3} либо {@code off}). */
+    public static final String OPTIMIZE_PROPERTY = "javatogpu.optimize";
+    /** Переменная окружения с уровнем оптимизатора IR ({@code 0..3} либо {@code off}). */
+    public static final String OPTIMIZE_ENVIRONMENT = "JAVATOGPU_OPTIMIZE";
 
     /** Построитель {@link GpuContext}. */
     public static final class Builder {
@@ -153,8 +162,50 @@ public final class GpuContext implements AutoCloseable {
         private long diskCacheMaxBytes = DiskCache.DEFAULT_MAX_BYTES;
         private Path sourceDumpPath;
         private String codegenVersion = OpenClEmitter.VERSION;
+        private OptimizeOptions optimizeOptions = OptimizeOptions.DEFAULT;
 
         private Builder() {
+        }
+
+        /**
+         * Настройки оптимизатора IR, применяемого перед генерацией OpenCL C (модуль {@code ir-optimizer}). По умолчанию -
+         * {@link OptimizeOptions#DEFAULT}: только точные преобразования, результат ядра побитово тот же. В режиме
+         * {@link EmitOptions#debug()} оптимизатор не запускается, чтобы исходник соответствовал Java-коду. Если не вызван
+         * {@link #ignoreEnvironment()}, уровень переопределяется свойством {@code javatogpu.optimize} либо переменной
+         * {@code JAVATOGPU_OPTIMIZE} ({@code 0..3} либо {@code off}).
+         *
+         * @param options настройки ({@link OptimizeOptions#NONE} выключает оптимизатор)
+         * @return этот построитель
+         */
+        public Builder optimize(OptimizeOptions options) {
+            if (options == null) {
+                throw new IllegalArgumentException("optimize options are required");
+            }
+            this.optimizeOptions = options;
+            return this;
+        }
+
+        /** Настройки оптимизатора с учётом свойства и переменной окружения. */
+        OptimizeOptions effectiveOptimizeOptions() {
+            if (!environment) {
+                return optimizeOptions;
+            }
+            String v = System.getProperty(OPTIMIZE_PROPERTY);
+            if (v == null) {
+                v = System.getenv(OPTIMIZE_ENVIRONMENT);
+            }
+            if (v == null || v.isBlank()) {
+                return optimizeOptions;
+            }
+            v = v.strip();
+            if (v.equalsIgnoreCase("off")) {
+                return optimizeOptions.withLevel(0);
+            }
+            try {
+                return optimizeOptions.withLevel(Math.max(0, Math.min(3, Integer.parseInt(v))));
+            } catch (NumberFormatException e) {
+                return optimizeOptions;
+            }
         }
 
         /**
@@ -333,7 +384,8 @@ public final class GpuContext implements AutoCloseable {
                     throw e;
                 }
                 GpuContext gc = new GpuContext(a, owns, d, ctx, q, listener == null ? EventListener.NONE : listener,
-                        emitOptions, fallback == null ? Fallback.ALLOWED : fallback, openDiskCache(owns), openSourceDump(), codegenVersion);
+                        emitOptions, fallback == null ? Fallback.ALLOWED : fallback, openDiskCache(owns), openSourceDump(), codegenVersion,
+                        effectiveOptimizeOptions());
                 gc.emit(GpuEvent.Kind.DEVICE_SELECTED, d.describe(), 0, 0, d.platformName() + ", driver " + d.driverVersion());
                 return Result.ok(gc);
             } catch (DeviceApiException e) {
@@ -559,7 +611,8 @@ public final class GpuContext implements AutoCloseable {
     }
 
     private String cacheKey(IrModule m, int kernel, EmitOptions o) {
-        return kernelIdOf(m) + "#" + kernel + "|" + o.debug() + "," + o.fastMath() + "|" + target.id() + "|"
+        return kernelIdOf(m) + "#" + kernel + "|" + o.debug() + "," + o.fastMath() + "|" + optimizeKey() + "|"
+                + target.id() + "|"
                 + device.name() + "|" + device.driverVersion();
     }
 
@@ -587,7 +640,60 @@ public final class GpuContext implements AutoCloseable {
         return bytes;
     }
 
-    private Result<CompiledKernel> build(IrModule m, int kernel, EmitOptions options, String[] how) {
+    /** Часть ключей кэша, зависящая от настроек оптимизатора. */
+    private String optimizeKey() {
+        OptimizeOptions o = optimizeOptions;
+        return "opt" + o.level() + (o.fastMath() ? "f" : "") + (o.contractFma() ? "c" : "") + "/" + o.registerBudget();
+    }
+
+    /** @return настройки оптимизатора IR этого контекста */
+    public OptimizeOptions optimizeOptions() {
+        return optimizeOptions;
+    }
+
+    /**
+     * Оптимизирует модуль перед генерацией (REWORK_ARCHITECTURE.md, 7.1). Типы и параметры ядра оптимизатор не меняет,
+     * поэтому проверка аргументов и раскладка буферов по оптимизированному модулю те же, что по исходному; меняется только
+     * индекс функции (недостижимые device-функции выбрасываются). Отвергнутые проходы и превышение бюджета регистров
+     * сообщаются предупреждениями.
+     *
+     * @param m       исходный модуль
+     * @param kernel  индекс ядра в нём
+     * @param options параметры генерации
+     * @return результат оптимизации либо {@code null}, если модуль генерируется как есть
+     */
+    private OptimizeResult optimizeForEmit(IrModule m, int kernel, EmitOptions options) {
+        if (options.debug() || optimizeOptions.level() <= 0) {
+            return null;
+        }
+        long t0 = System.nanoTime();
+        OptimizeResult r;
+        try {
+            r = Optimizer.optimize(m, optimizeOptions);
+        } catch (RuntimeException e) {
+            emit(GpuEvent.Kind.WARNING, "f" + kernel, 0, 0, "IR optimizer failed, the kernel is compiled unoptimized: " + e);
+            return null;
+        }
+        int nk = r.newIndexOf(kernel);
+        if (nk < 0) {
+            return null;
+        }
+        for (String failure : r.failures()) {
+            emit(GpuEvent.Kind.WARNING, "f" + kernel, 0, 0, "IR optimizer pass rejected: " + failure);
+        }
+        if (r.overBudget().contains(nk)) {
+            int regs = r.pressureAfter().functions()[nk].registers();
+            emit(GpuEvent.Kind.WARNING, "f" + kernel, System.nanoTime() - t0, 0, "estimated register pressure " + regs
+                    + " exceeds the budget " + optimizeOptions.registerBudget()
+                    + "; the kernel may spill (KernelSplitter can split it into stages)");
+        }
+        return r;
+    }
+
+    private Result<CompiledKernel> build(IrModule original, int originalKernel, EmitOptions options, String[] how) {
+        OptimizeResult optimized = optimizeForEmit(original, originalKernel, options);
+        IrModule m = optimized == null ? original : optimized.module();
+        int kernel = optimized == null ? originalKernel : optimized.newIndexOf(originalKernel);
         Result<Artifact> emitted = OpenClEmitter.emit(m, kernel, target, options);
         if (!emitted.isOk()) {
             return Result.failed(emitted.diagnostics());
@@ -632,7 +738,7 @@ public final class GpuContext implements AutoCloseable {
                 }
             }
             long maxWg = api.kernelMaxWorkGroupSize(kernelHandle, device.handle());
-            CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(m), access, program, kernelHandle, maxWg);
+            CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(original), access, program, kernelHandle, maxWg);
             compiled.add(ck);
             for (Diagnostic d : log) {
                 emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, d.message());
@@ -671,7 +777,7 @@ public final class GpuContext implements AutoCloseable {
      * образ годится только для того же драйвера; опции - потому что от них зависят и текст, и сборка.
      */
     private String diskKey(IrModule m, int kernel, EmitOptions o, Artifact art) {
-        return "gbc1|codegen=" + codegenVersion + "|ir=" + kernelIdOf(m) + "#" + kernel
+        return "gbc1|codegen=" + codegenVersion + "|" + optimizeKey() + "|ir=" + kernelIdOf(m) + "#" + kernel
                 + "|emit=" + o.debug() + "," + o.fastMath() + "|build=" + art.buildOptions()
                 + "|device=" + device.vendor() + "/" + device.name() + "|driver=" + device.driverVersion()
                 + "|opencl=" + device.openClVersion()

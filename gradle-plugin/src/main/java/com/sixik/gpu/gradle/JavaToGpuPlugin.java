@@ -16,7 +16,7 @@ import java.util.List;
  * {@code build.gradle} сам делает три вещи.
  *
  * <ol>
- *   <li><b>Зависимости.</b> Подключает библиотеки ({@code api, ir, codegen-opencl, runtime}) и annotation processor
+ *   <li><b>Зависимости.</b> Подключает библиотеки ({@code api, ir, ir-optimizer, codegen-opencl, runtime}) и annotation processor
  *       {@code frontend-java} (с его {@code api} и {@code ir}) к {@code main} и {@code test}. Отключается
  *       {@code gpu { autoDependencies = false }}.</li>
  *   <li><b>Weave-шаг.</b> После каждой задачи {@code JavaCompile} подменяет тела {@code @Kernel}-методов
@@ -42,7 +42,7 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
     public static final String DEFAULT_GROUP = "io.github.deussixik";
 
     /** Модули, которые попадают в classpath приложения. */
-    static final List<String> RUNTIME_MODULES = List.of("api", "ir", "codegen-opencl", "runtime");
+    static final List<String> RUNTIME_MODULES = List.of("api", "ir", "ir-optimizer", "codegen-opencl", "runtime");
     /** Модули processor path. */
     static final List<String> PROCESSOR_MODULES = List.of("frontend-java", "api", "ir");
 

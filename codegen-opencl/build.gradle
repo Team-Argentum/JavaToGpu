@@ -11,6 +11,8 @@ dependencies {
     testImplementation project(':api')
     testImplementation project(':ir-interpreter')
     testImplementation testFixtures(project(':ir-interpreter'))
+    //  * ir-optimizer - device-тест исполняет и оптимизированные образцы.
+    testImplementation project(':ir-optimizer')
 }
 
 tasks.named('test') {

@@ -17,7 +17,7 @@
 внешняя площадка и итоговые координаты alpha остаются открытым вопросом O8.
 
 Потребителю нужны JDK 25 для приложения и **JDK 25 для запуска Gradle с плагином**. Сам репозиторий библиотеки
-можно собирать Gradle на 21+ с установленным toolchain 25. Плагин подключает `api`, `ir`, `codegen-opencl`,
+можно собирать Gradle на 21+ с установленным toolchain 25. Плагин подключает `api`, `ir`, `ir-optimizer`, `codegen-opencl`,
 `runtime`, processor `frontend-java` и подменяет тела `@Kernel` после javac. Для `Test` и `JavaExec` он добавляет
 `--enable-native-access=ALL-UNNAMED`; в `applicationDefaultJvmArgs` для скриптов `installDist` этот флаг задаётся отдельно.
 
@@ -203,6 +203,24 @@ GpuAssert.sameResult(Kernels.class, "scale", sample);
 Для строгой проверки барьеров: `gpu { strictBarriers = true }`.
 `Gpu.assumeUniform(x)` — утверждение автора ядра, а не синхронизация work-item.
 Дамп исходника: `builder.dumpSources(path)`, `-Djavatogpu.dump=...` или `JAVATOGPU_DUMP`.
+
+## Оптимизатор IR
+
+Перед генерацией OpenCL C контекст прогоняет IR через `ir-optimizer`: свёртка констант и алгебра, удаление мёртвого
+кода, протяжка значений по локалям, общие подвыражения и вынос инвариантов из циклов. По умолчанию
+(`OptimizeOptions.DEFAULT`, уровень 2) все преобразования точные: результат ядра побитово тот же, что без оптимизатора.
+В режиме `EmitOptions.DEBUG` оптимизатор не запускается, чтобы исходник совпадал с Java-кодом.
+
+```java
+GpuContext ctx = GpuContext.builder()
+        .optimize(OptimizeOptions.DEFAULT.withRegisterBudget(48)) // бюджет регистров для CSE/LICM
+        .build();
+```
+
+`OptimizeOptions.NONE` выключает оптимизатор; `-Djavatogpu.optimize=0..3|off` или `JAVATOGPU_OPTIMIZE` меняют уровень
+без пересборки. `withFastMath(true)` разрешает преобразования, меняющие вещественный результат (`x/c → x*(1/c)`, слияние в
+`fma`, `x*0 → 0`). Если оценка давления на регистры ядра выше бюджета, контекст пишет предупреждение в `EventListener`;
+`KernelSplitter` умеет разрезать такое ядро на последовательные запуски (запуск стадий рантаймом пока не подключён).
 
 ## Кэш и ограничения
 

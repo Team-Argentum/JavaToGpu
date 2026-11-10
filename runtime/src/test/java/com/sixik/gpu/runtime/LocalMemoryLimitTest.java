@@ -5,6 +5,7 @@ import com.sixik.gpu.ir.IrBuilder;
 import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Result;
 import com.sixik.gpu.ir.Types;
+import com.sixik.gpu.ir.optimizer.OptimizeOptions;
 import com.sixik.gpu.runtime.device.FakeDeviceApi;
 import org.junit.jupiter.api.Test;
 
@@ -47,7 +48,8 @@ class LocalMemoryLimitTest {
     @Test
     void kernelWithMoreLocalMemoryThanTheDeviceHasIsRejectedBeforeTheDriver() {
         FakeDeviceApi fake = FakeDeviceApi.withGpu();
-        try (GpuContext ctx = GpuContext.builder().api(fake).ignoreEnvironment().build()) {
+        // оптимизатор выключен: иначе он законно выбросит local-массив, который ядро не читает
+        try (GpuContext ctx = GpuContext.builder().api(fake).ignoreEnvironment().optimize(OptimizeOptions.NONE).build()) {
             Result<CompiledKernel> tooBig = ctx.compile(kernelWithLocal(Types.I32, 16 * 1024)); // 64 КиБ при 48 КиБ у фейка
             assertTrue(!tooBig.isOk());
             assertEquals("RT-D04", tooBig.diagnostics().get(0).code());

@@ -1,0 +1,24 @@
+description = 'IR optimizer: dead code, math simplification, propagation, CSE/LICM under register pressure, kernel splitting. IrModule -> IrModule.'
+
+dependencies {
+    api project(':ir')
+
+    // Только тесты (production-граф проверяет verifyModuleBoundaries и этих связей не видит):
+    //  * ir-interpreter - эталон: оптимизированный модуль обязан давать тот же результат, что исходный;
+    //  * образцы-ядра (настоящие Java-методы @Kernel, собранные фронтендом) - из фикстур ir-interpreter;
+    //  * фикстуры ir - модули, собранные вручную.
+    testImplementation testFixtures(project(':ir'))
+    testImplementation project(':api')
+    testImplementation project(':ir-interpreter')
+    testImplementation testFixtures(project(':ir-interpreter'))
+    //  * codegen-opencl - оптимизированный IR обязан проходить генерацию OpenCL C.
+    testImplementation project(':codegen-opencl')
+}
+
+// JMH: время оптимизации образцов (оптимизатор работает при каждой компиляции ядра, до кэша).
+apply from: rootProject.file('gradle/jmh.gradle')
+
+dependencies {
+    jmhImplementation testFixtures(project(':ir'))
+    jmhImplementation testFixtures(project(':ir-interpreter'))
+}

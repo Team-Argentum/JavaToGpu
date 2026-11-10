@@ -9,6 +9,7 @@ dependencies {
     api project(':api')
     api project(':ir')
     api project(':codegen-opencl')
+    api project(':ir-optimizer')
 
     // Только тесты (production-граф проверяет verifyModuleBoundaries и этих связей не видит):
     //  * фикстуры ir - модули, собранные вручную; ir-interpreter и его образцы - эталон для device-теста.

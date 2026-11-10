@@ -4,6 +4,7 @@ rootProject.name = 'gpu'
 
 include 'api'              // аннотации, типы, builtins (генерируются). Без нативов.
 include 'ir'               // плоский IR (SoA), типы, сериализация, валидатор. 0 зависимостей.
+include 'ir-optimizer'     // оптимизатор IR: DCE, математика, давление на регистры, разбиение ядер. Зависит только от ir.
 include 'ir-interpreter'   // эталонный CPU-интерпретатор IR (для тестов и конформанса).
 include 'codegen-opencl'   // IR -> OpenCL C. Чистая функция.
 include 'runtime'          // GpuContext, устройства, буферы, кэш, запуск, JVM-fallback. FFM (Panama).

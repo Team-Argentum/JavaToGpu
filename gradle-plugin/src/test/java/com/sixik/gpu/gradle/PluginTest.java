@@ -215,6 +215,6 @@ class PluginTest {
         BuildResult r = runner(dir, "inspect", "-q").build();
         assertTrue(r.getOutput().contains("JAVA true"), r.getOutput());
         assertTrue(r.getOutput().contains("EXT true"));
-        assertTrue(r.getOutput().contains("[api, codegen-opencl, ir, runtime]"), r.getOutput());
+        assertTrue(r.getOutput().contains("[api, codegen-opencl, ir, ir-optimizer, runtime]"), r.getOutput());
     }
 }

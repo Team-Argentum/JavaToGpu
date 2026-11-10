@@ -17,6 +17,7 @@
 | `api` | аннотации, типы (vec/ptr/struct), builtins `Gpu.*` |
 | `ir` | плоский IR (SoA), типы, бинарная сериализация, валидатор |
 | `ir-interpreter` | эталонный CPU-интерпретатор IR |
+| `ir-optimizer` | оптимизатор IR: мёртвый код, математика, CSE/LICM под бюджетом регистров, оценка давления, разбиение ядер |
 | `codegen-opencl` | IR → OpenCL C |
 | `runtime` | `GpuContext`, устройства (FFM), `GpuBuffer`, кэш, запуск, JVM-fallback |
 | `frontend-java` | annotation processor (javac Tree API) → IR |

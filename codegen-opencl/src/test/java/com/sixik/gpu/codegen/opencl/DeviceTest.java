@@ -66,9 +66,26 @@ class DeviceTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("sampleNames")
     void samples(String label) {
+        sample(label, false);
+    }
+
+    /** Те же образцы после оптимизатора IR (модуль ir-optimizer): драйвер принимает код, результат прежний. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sampleNames")
+    void optimizedSamples(String label) {
+        sample(label, true);
+    }
+
+    private void sample(String label, boolean optimize) {
         SampleKernels.Kernel k = SampleKernels.all().stream().filter(x -> x.label().equals(label)).findFirst()
                 .orElseThrow();
         IrModule m = k.module();
+        if (optimize) {
+            com.sixik.gpu.ir.optimizer.OptimizeResult r = com.sixik.gpu.ir.optimizer.Optimizer.optimize(m,
+                    com.sixik.gpu.ir.optimizer.OptimizeOptions.DEFAULT);
+            assertTrue(r.ok(), label + ": " + r.failures());
+            m = r.module();
+        }
         int f = m.functionCount() - 1;
         NdRange range = m.fReqWorkGroup(f, 0) > 0 ? NdRange.of2D(8, 4) : NdRange.of1D(16);
         boolean floats = false;
