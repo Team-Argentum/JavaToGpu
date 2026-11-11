@@ -211,13 +211,70 @@ class ResidentArrayTest {
     }
 
     @Test
-    void preparedLaunchRejectsResidentArrays() {
+    void preparedLaunchKeepsGpuArraysOnTheDevice() {
         FakeDeviceApi fake = device();
         try (GpuContext ctx = open(fake)) {
             CompiledKernel k = ctx.compile(scaled()).value();
-            Result<PreparedLauncher> r = ctx.prepare(k, GpuFloatArray.of(1, 2, 3, 4), new GpuFloatArray(4), 0, 1f);
+            GpuFloatArray in = GpuFloatArray.of(1, 2, 3, 4);
+            GpuFloatArray out = new GpuFloatArray(4);
+            Result<PreparedLauncher> r = ctx.prepare(k, in, out, 0, 2f);
+            assertTrue(r.isOk(), r.diagnostics().toString());
+            PreparedLauncher p = r.value();
+            int writes = fake.writes();
+            int finishes = fake.finishes();
+            for (int s = 0; s < 3; s++) {
+                p.run(LaunchConfig.of1D(4));
+            }
+            assertEquals(writes + 1, fake.writes(), "`in` is uploaded once, `out` is overwritten entirely");
+            assertEquals(finishes, fake.finishes(), "a launch with only GpuArray and scalars does not wait");
+            assertArrayEquals(new float[]{2, 4, 6, 8}, out.toArray());
+
+            in.set(0, 10f);
+            p.set(2, 1).run(LaunchConfig.of1D(4));
+            assertEquals(writes + 2, fake.writes(), "a changed input is uploaded again");
+            assertArrayEquals(new float[]{21, 5, 7, 9}, out.toArray());
+
+            GpuFloatArray other = GpuFloatArray.of(1, 1, 1, 1);
+            p.set(0, other).run(LaunchConfig.of1D(4));
+            assertArrayEquals(new float[]{3, 3, 3, 3}, out.toArray(), "a GpuArray argument can be replaced");
+            p.close();
+            assertArrayEquals(new float[]{1, 1, 1, 1}, other.toArray(), "the array outlives the launch");
+        }
+    }
+
+    @Test
+    void preparedLaunchRejectsGpuArrayOfWrongType() {
+        FakeDeviceApi fake = device();
+        try (GpuContext ctx = open(fake)) {
+            CompiledKernel k = ctx.compile(scaled()).value();
+            Result<PreparedLauncher> r = ctx.prepare(k, new com.sixik.gpu.api.types.GpuIntArray(4),
+                    new GpuFloatArray(4), 0, 1f);
             assertFalse(r.isOk());
             assertEquals("RT-A02", r.diagnostics().get(0).code());
+        }
+    }
+
+    @Test
+    void deviceErrorAfterDeferredLaunchesNamesThem() {
+        FakeDeviceApi fake = device();
+        try (GpuContext ctx = open(fake)) {
+            CompiledKernel k = ctx.compile(scaled()).value();
+            GpuFloatArray a = GpuFloatArray.of(1, 2, 3, 4);
+            GpuFloatArray b = new GpuFloatArray(4);
+            run(ctx, k, a, b, 1, 1f);
+            run(ctx, k, b, a, 1, 1f);
+            fake.failNext("readBuffer", -5);
+            GpuException e = org.junit.jupiter.api.Assertions.assertThrows(GpuException.class, () -> a.get(0));
+            String message = e.diagnostics().get(0).message();
+            assertTrue(message.contains("launched earlier without waiting"), message);
+            assertTrue(message.contains(k.artifact().entry()), message);
+
+            // после ошибки отложенное сброшено: следующая ошибка не приписывается тем же ядрам
+            fake.failNext("readBuffer", -5);
+            GpuException again = org.junit.jupiter.api.Assertions.assertThrows(GpuException.class, () -> a.get(0));
+            assertFalse(again.diagnostics().get(0).message().contains("launched earlier"),
+                    again.diagnostics().get(0).message());
+            assertArrayEquals(new float[]{3, 4, 5, 6}, a.toArray(), "the data is still readable after the errors");
         }
     }
 

@@ -1,5 +1,7 @@
 package com.sixik.gpu.api.types;
 
+import com.sixik.gpu.api.internal.GpuArrayAccess;
+
 /**
  * Базовый класс массивов, данные которых могут жить на устройстве между вызовами ядер ({@link GpuFloatArray},
  * {@link GpuIntArray}, {@link GpuLongArray}, {@link GpuDoubleArray}).
@@ -20,24 +22,16 @@ package com.sixik.gpu.api.types;
  *
  * <p>Объект <b>не потокобезопасен</b>, как и {@code float[]}: один массив нельзя менять конкурентно из разных потоков.</p>
  *
- * <p>Методы, помеченные «для рантайма», - служебный протокол между этим классом и рантаймом (модуль {@code api} не
- * зависит от рантайма); пользовательскому коду они не нужны.</p>
+ * <p>Состояние синхронизации с устройством меняет только рантайм, через служебный {@link GpuArrayAccess} (модуль
+ * {@code api} не зависит от рантайма).</p>
  */
 public abstract sealed class GpuArray permits GpuFloatArray, GpuIntArray, GpuLongArray, GpuDoubleArray {
 
-    /**
-     * Синхронизация с устройством, которую предоставляет рантайм (для рантайма).
-     */
-    public interface Residency {
-        /**
-         * Переносит свежие данные с устройства в память хоста массива и снимает отметку {@link #hostStale()}.
-         *
-         * @param array массив, у которого свежие данные на устройстве
-         */
-        void toHost(GpuArray array);
+    static {
+        GpuArrayAccess.install(new Access());
     }
 
-    private Residency residency;
+    private GpuArrayAccess.Residency residency;
     private Object residence;
     private boolean hostStale;
     private boolean deviceStale = true;
@@ -48,59 +42,56 @@ public abstract sealed class GpuArray permits GpuFloatArray, GpuIntArray, GpuLon
     /** @return число элементов */
     public abstract int length();
 
-    // ---- служебный протокол с рантаймом ---------------------------------------------------------
+    /** @return примитивный массив Java с данными хоста (без синхронизации) */
+    abstract Object hostData();
 
-    /**
-     * Память хоста массива (для рантайма). Перед чтением рантайм обязан убедиться, что {@link #hostStale()} ложно.
-     *
-     * @return примитивный массив Java с данными хоста
-     */
-    public abstract Object hostArray();
+    /** Реализация служебного протокола с рантаймом ({@link GpuArrayAccess}). */
+    private static final class Access extends GpuArrayAccess {
+        @Override
+        public Object hostArray(GpuArray a) {
+            return a.hostData();
+        }
 
-    /** @return состояние, которое рантайм связал с массивом (буфер устройства), либо {@code null} (для рантайма) */
-    public final Object residence() {
-        return residence;
-    }
+        @Override
+        public Object residence(GpuArray a) {
+            return a.residence;
+        }
 
-    /**
-     * Связывает массив с копией на устройстве (для рантайма).
-     *
-     * @param residency синхронизация, вызываемая при обращении хоста к устаревшим данным
-     * @param residence состояние рантайма (буфер устройства)
-     */
-    public final void attach(Residency residency, Object residence) {
-        this.residency = residency;
-        this.residence = residence;
-    }
+        @Override
+        public void attach(GpuArray a, Residency residency, Object residence) {
+            a.residency = residency;
+            a.residence = residence;
+        }
 
-    /** Разрывает связь с устройством; данные хоста должны быть свежими (для рантайма). */
-    public final void detach() {
-        this.residency = null;
-        this.residence = null;
-        this.hostStale = false;
-        this.deviceStale = true;
-    }
+        @Override
+        public void detach(GpuArray a) {
+            a.residency = null;
+            a.residence = null;
+            a.hostStale = false;
+            a.deviceStale = true;
+        }
 
-    /** @return {@code true}, если свежие данные только на устройстве (для рантайма) */
-    public final boolean hostStale() {
-        return hostStale;
-    }
+        @Override
+        public boolean hostStale(GpuArray a) {
+            return a.hostStale;
+        }
 
-    /** @return {@code true}, если копия на устройстве устарела или её нет (для рантайма) */
-    public final boolean deviceStale() {
-        return deviceStale;
-    }
+        @Override
+        public boolean deviceStale(GpuArray a) {
+            return a.deviceStale;
+        }
 
-    /** Ядро записало массив: свежие данные на устройстве (для рантайма). */
-    public final void markWrittenOnDevice() {
-        hostStale = true;
-        deviceStale = false;
-    }
+        @Override
+        public void markWrittenOnDevice(GpuArray a) {
+            a.hostStale = true;
+            a.deviceStale = false;
+        }
 
-    /** Копия на устройстве совпадает с хостом (после загрузки либо чтения) (для рантайма). */
-    public final void markInSync() {
-        hostStale = false;
-        deviceStale = false;
+        @Override
+        public void markInSync(GpuArray a) {
+            a.hostStale = false;
+            a.deviceStale = false;
+        }
     }
 
     // ---- для подклассов -------------------------------------------------------------------------
@@ -108,7 +99,7 @@ public abstract sealed class GpuArray permits GpuFloatArray, GpuIntArray, GpuLon
     /** Перед чтением хоста: подтянуть свежие данные с устройства, если они там. */
     final void syncHost() {
         if (hostStale) {
-            Residency r = residency;
+            GpuArrayAccess.Residency r = residency;
             if (r == null) {
                 throw new IllegalStateException("the array data is on a device that is no longer available");
             }

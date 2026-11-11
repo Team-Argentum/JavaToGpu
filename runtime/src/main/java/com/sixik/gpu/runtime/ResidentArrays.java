@@ -1,5 +1,6 @@
 package com.sixik.gpu.runtime;
 
+import com.sixik.gpu.api.internal.GpuArrayAccess;
 import com.sixik.gpu.api.types.GpuArray;
 
 import java.lang.ref.Cleaner;
@@ -24,6 +25,8 @@ import java.util.Map;
 final class ResidentArrays {
 
     private static final Cleaner CLEANER = Cleaner.create();
+    /** Служебный протокол синхронизации {@link GpuArray}. */
+    static final GpuArrayAccess ACCESS = GpuArrayAccess.get();
 
     private ResidentArrays() {
     }
@@ -40,10 +43,10 @@ final class ResidentArrays {
     }
 
     /** Чтение свежих данных с устройства на хост при обращении хоста к массиву. */
-    static final GpuArray.Residency RESIDENCY = array -> {
-        Resident r = (Resident) array.residence();
-        r.buffer.read(array.hostArray());
-        array.markInSync();
+    static final GpuArrayAccess.Residency RESIDENCY = array -> {
+        Resident r = (Resident) ACCESS.residence(array);
+        r.buffer.read(ACCESS.hostArray(array));
+        ACCESS.markInSync(array);
     };
 
     /**
@@ -92,13 +95,13 @@ final class ResidentArrays {
             int[] ps = byArray.get(a).stream().mapToInt(Integer::intValue).toArray();
             params.add(ps);
             Resident r = residentIn(ctx, a);
-            if (a.deviceStale()) {
+            if (ACCESS.deviceStale(a)) {
                 if (kernel.uploadSkippable(ps, ps.length, a.length(), config)) {
                     skipped[j] = true;
                 } else {
                     // без ожидания: in-order очередь выполнит загрузку раньше ядра
-                    ctx.uploadAsync(r.buffer, a.hostArray());
-                    a.markInSync();
+                    ctx.uploadAsync(r.buffer, ACCESS.hostArray(a));
+                    ACCESS.markInSync(a);
                 }
             }
             for (int p : ps) {
@@ -121,28 +124,40 @@ final class ResidentArrays {
                 written |= (kernel.access(p) & com.sixik.gpu.ir.Validator.ACCESS_WRITE) != 0;
             }
             if (written || bound.skipped()[j]) {
-                bound.arrays().get(j).markWrittenOnDevice();
+                ACCESS.markWrittenOnDevice(bound.arrays().get(j));
             }
         }
     }
 
+    /**
+     * Буфер устройства, закреплённый за массивом в контексте (создаётся при необходимости, без загрузки данных). Под
+     * замком контекста.
+     *
+     * @param ctx контекст
+     * @param a   массив
+     * @return буфер массива в этом контексте
+     */
+    static GpuBuffer bufferOf(GpuContext ctx, GpuArray a) {
+        return residentIn(ctx, a).buffer;
+    }
+
     /** Копия массива в контексте {@code ctx}: существующая либо новая (с переносом из другого контекста). */
     private static Resident residentIn(GpuContext ctx, GpuArray a) {
-        if (a.residence() instanceof Resident r) {
+        if (ACCESS.residence(a) instanceof Resident r) {
             if (r.ctx == ctx && !r.buffer.isClosed()) {
                 return r;
             }
             // массив жил в другом контексте: сначала свежие данные на хост, затем освободить старую копию
-            if (a.hostStale() && !r.ctx.isClosed() && !r.buffer.isClosed()) {
+            if (ACCESS.hostStale(a) && !r.ctx.isClosed() && !r.buffer.isClosed()) {
                 RESIDENCY.toHost(a);
             }
             r.buffer.close();
-            a.detach();
+            ACCESS.detach(a);
         }
-        int type = Marshal.elementTypeOf(a.hostArray());
+        int type = Marshal.elementTypeOf(ACCESS.hostArray(a));
         GpuBuffer buffer = ctx.allocate(type, a.length());
         Resident r = new Resident(ctx, buffer);
-        a.attach(RESIDENCY, r);
+        ACCESS.attach(a, RESIDENCY, r);
         ctx.registerResident(a);
         // массив собран GC - освободить буфер; действие не должно ссылаться на сам массив
         CLEANER.register(a, buffer::close);
@@ -158,15 +173,15 @@ final class ResidentArrays {
      */
     static void syncAll(GpuContext ctx, Iterable<GpuArray> residents) {
         for (GpuArray a : residents) {
-            if (a.residence() instanceof Resident r && r.ctx == ctx) {
-                if (a.hostStale() && !r.buffer.isClosed()) {
+            if (ACCESS.residence(a) instanceof Resident r && r.ctx == ctx) {
+                if (ACCESS.hostStale(a) && !r.buffer.isClosed()) {
                     try {
                         RESIDENCY.toHost(a);
                     } catch (RuntimeException e) {
                         // устройство отказало при закрытии: данные массива остаются прежними на хосте
                     }
                 }
-                a.detach();
+                ACCESS.detach(a);
             }
         }
     }

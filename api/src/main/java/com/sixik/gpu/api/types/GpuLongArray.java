@@ -112,7 +112,7 @@ public final class GpuLongArray extends GpuArray {
     }
 
     @Override
-    public Object hostArray() {
+    Object hostData() {
         return data;
     }
 

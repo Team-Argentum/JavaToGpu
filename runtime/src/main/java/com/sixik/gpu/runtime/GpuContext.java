@@ -165,6 +165,11 @@ public final class GpuContext implements AutoCloseable {
     private long pendingBytes;
     /** Запусков, поставленных без ожидания с последней синхронизации. */
     private int pendingLaunches;
+    /**
+     * Ядра, поставленные без ожидания с последней синхронизации ({@code "имя размеры"}): ошибка исполнения такого ядра
+     * проявится в ближайшей блокирующей операции, и сообщение об ошибке перечисляет их как возможных виновников.
+     */
+    private final List<String> pendingKernels = new ArrayList<>();
     /** Текущему запуску разрешено не ждать завершения ядра (выставляется на время запуска с {@code GpuArray}). */
     private boolean deferAllowed;
     /** Больше стольких отложенных запусков подряд не накапливается: следующий ждёт завершения. */
@@ -1047,7 +1052,7 @@ public final class GpuContext implements AutoCloseable {
             buffers.add(b);
             return b;
         } catch (DeviceApiException e) {
-            throw new GpuException(List.of(error("RT-X01", "driver error while allocating a buffer: " + e.getMessage())));
+            throw new GpuException(List.of(error("RT-X01", driverError("allocating a buffer", e))));
         } finally {
             lock.unlock();
         }
@@ -1086,7 +1091,7 @@ public final class GpuContext implements AutoCloseable {
             }
             emit(GpuEvent.Kind.UPLOAD, b.toString(), System.nanoTime() - t0, bytes, "");
         } catch (DeviceApiException e) {
-            throw new GpuException(List.of(error("RT-X01", "driver error while writing a buffer: " + e.getMessage())));
+            throw new GpuException(List.of(error("RT-X01", driverError("writing a buffer", e))));
         } finally {
             lock.unlock();
         }
@@ -1104,7 +1109,7 @@ public final class GpuContext implements AutoCloseable {
             }
             emit(GpuEvent.Kind.READBACK, b.toString(), System.nanoTime() - t0, bytes, "");
         } catch (DeviceApiException e) {
-            throw new GpuException(List.of(error("RT-X01", "driver error while reading a buffer: " + e.getMessage())));
+            throw new GpuException(List.of(error("RT-X01", driverError("reading a buffer", e))));
         } finally {
             lock.unlock();
         }
@@ -1282,7 +1287,7 @@ public final class GpuContext implements AutoCloseable {
             emit(GpuEvent.Kind.READBACK, b.toString(), System.nanoTime() - t0, bytes, "view");
             return mem.asSlice(0, bytes).asReadOnly();
         } catch (DeviceApiException e) {
-            throw new GpuException(List.of(error("RT-X01", "driver error while reading a buffer: " + e.getMessage())));
+            throw new GpuException(List.of(error("RT-X01", driverError("reading a buffer", e))));
         } finally {
             lock.unlock();
         }
@@ -1336,7 +1341,7 @@ public final class GpuContext implements AutoCloseable {
      * под массивы хоста и нативную память упаковки один раз. Подробности и правила владения - в {@link PreparedLauncher}.
      *
      * @param kernel ядро этого контекста
-     * @param args   значения параметров ядра по порядку: {@link GpuBuffer}, Java-массив или скаляр
+     * @param args   значения параметров ядра по порядку: {@link GpuBuffer}, {@code GpuArray}, Java-массив или скаляр
      * @return запуск либо диагностики {@code RT-A01/RT-A02/RT-A04} (аргументы), {@code RT-X01} (драйвер), {@code RT-X02}
      *         (контекст закрыт или ядро чужого контекста)
      */
@@ -1350,13 +1355,26 @@ public final class GpuContext implements AutoCloseable {
         if (kernel.owner() != this) {
             return failure("RT-A02", "the kernel was compiled in another context");
         }
-        for (Object a : args == null ? new Object[0] : args) {
-            if (a instanceof com.sixik.gpu.api.types.GpuArray) {
-                return failure("RT-A02", "a prepared launch does not take " + a.getClass().getSimpleName()
-                        + ": call the kernel directly (its data stays on the device between calls) or pass a GpuBuffer");
+        Object[] given = args == null ? new Object[0] : args.clone();
+        // GpuArray - буфер, закреплённый за массивом в этом контексте; синхронизация - при каждом запуске
+        com.sixik.gpu.api.types.GpuArray[] resident = new com.sixik.gpu.api.types.GpuArray[given.length];
+        lock.lock();
+        try {
+            requireOpen();
+            for (int i = 0; i < given.length; i++) {
+                if (given[i] instanceof com.sixik.gpu.api.types.GpuArray a) {
+                    resident[i] = a;
+                    given[i] = ResidentArrays.bufferOf(this, a);
+                }
             }
+        } catch (GpuException e) {
+            return Result.failed(e.diagnostics());
+        } catch (DeviceApiException e) {
+            return failure("RT-X01", driverError("allocating a buffer", e));
+        } finally {
+            lock.unlock();
         }
-        Result<PreparedLauncher> r = PreparedLauncher.create(this, kernel, args == null ? new Object[0] : args);
+        Result<PreparedLauncher> r = PreparedLauncher.create(this, kernel, given, resident);
         if (r.isOk()) {
             launchers.add(r.value());
         }
@@ -1401,6 +1419,8 @@ public final class GpuContext implements AutoCloseable {
                     bound = ResidentArrays.bind(this, kernel, config, args);
                 } catch (GpuException e) {
                     return Result.failed(e.diagnostics());
+                } catch (DeviceApiException e) {
+                    return failure("RT-X01", driverError("uploading a GpuArray", e));
                 }
             }
             Result<LaunchStats> r;
@@ -1457,6 +1477,38 @@ public final class GpuContext implements AutoCloseable {
         pendingStaging.clear(); // память auto-арен освободит GC
         pendingBytes = 0;
         pendingLaunches = 0;
+        pendingKernels.clear();
+    }
+
+    /**
+     * Сообщение об ошибке драйвера в точке синхронизации. Если с прошлой синхронизации ядра ставились без ожидания,
+     * ошибка могла произойти в любом из них - они перечисляются. Очередь после ошибки считается дошедшей до точки
+     * синхронизации: отложенное сбрасывается, чтобы следующая ошибка не приписывалась тем же ядрам. Под замком.
+     *
+     * @param what что делалось ({@code "reading a buffer"})
+     * @param e    ошибка драйвера
+     * @return текст диагностики
+     */
+    String driverError(String what, DeviceApiException e) {
+        StringBuilder sb = new StringBuilder("driver error while ").append(what).append(": ").append(e.getMessage());
+        if (!pendingKernels.isEmpty()) {
+            sb.append("; the error may come from a kernel launched earlier without waiting for completion: ")
+                    .append(String.join(", ", pendingKernels));
+        }
+        afterSync();
+        return sb.toString();
+    }
+
+    /**
+     * Разрешает либо запрещает текущему запуску не ждать завершения ядра (под замком).
+     *
+     * @param allowed новое значение
+     * @return прежнее значение (восстановить после запуска)
+     */
+    boolean allowDefer(boolean allowed) {
+        boolean previous = deferAllowed;
+        deferAllowed = allowed;
+        return previous;
     }
 
     /** @return разрешено ли текущему запуску не ждать завершения ядра (под замком) */
@@ -1493,7 +1545,7 @@ public final class GpuContext implements AutoCloseable {
             }
             return execute(kernel, config, local, actual);
         } catch (DeviceApiException e) {
-            return failure("RT-X01", "driver error during launch: " + e.getMessage());
+            return failure("RT-X01", driverError("launching a kernel", e));
         } finally {
             lock.unlock();
         }
@@ -1698,6 +1750,7 @@ public final class GpuContext implements AutoCloseable {
         api.enqueue(queue, k.kernel, cfg.dim(), global, local);
         if (defer && pendingLaunches < MAX_DEFERRED_LAUNCHES) {
             pendingLaunches++;
+            pendingKernels.add(k.artifact().entry() + " " + cfg);
         } else {
             synchronizeQueue();
         }

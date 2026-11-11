@@ -1,5 +1,6 @@
 package com.sixik.gpu.runtime;
 
+import com.sixik.gpu.api.types.GpuArray;
 import com.sixik.gpu.codegen.opencl.KernelArg;
 import com.sixik.gpu.ir.Diagnostic;
 import com.sixik.gpu.ir.HostObjects;
@@ -33,6 +34,10 @@ import java.util.Map;
  *       запуском массив целиком записывается в буфер (как и при обычном вызове: нетронутые ядром элементы обязаны
  *       сохраниться, а пользователь мог изменить массив между запусками); после запуска назад в массив возвращается
  *       только то, что ядро <b>записывает</b> (режим доступа считает валидатор IR). Длина массива не должна меняться.</li>
+ *   <li><b>{@code GpuArray}</b> ({@code GpuFloatArray} и др.) - буфер закреплён за самим массивом, как при прямом вызове
+ *       ядра: перед запуском массив загружается, только если хост его менял (и ядро его читает); записанный ядром
+ *       массив остаётся свежим на устройстве и читается на хост лениво. Запуск только с {@code GpuArray},
+ *       {@link GpuBuffer} и скалярами не ждёт завершения ядра (асинхронная цепочка).</li>
  *   <li><b>Скаляр или вектор/struct по значению</b> - заменяется {@link #set}, остальные аргументы остаются привязанными.</li>
  * </ul>
  *
@@ -91,12 +96,14 @@ public final class PreparedLauncher implements AutoCloseable {
     private final long[] handles;
     private final long[] lengths;
     private final boolean[] dirty;
+    /** По параметру - массив {@code GpuArray}, переданный в нём, либо {@code null}. */
+    private final GpuArray[] residents;
     private final boolean hasValueAggregates;
     private final Arena staging;
     private boolean closed;
 
     private PreparedLauncher(GpuContext ctx, CompiledKernel kernel, Object[] args, Slot[] slotOf, Slot[] slots,
-                             long[] handles, long[] lengths, Arena staging) {
+                             long[] handles, long[] lengths, Arena staging, GpuArray[] residents) {
         this.ctx = ctx;
         this.kernel = kernel;
         this.module = kernel.module();
@@ -106,6 +113,7 @@ public final class PreparedLauncher implements AutoCloseable {
         this.handles = handles;
         this.lengths = lengths;
         this.dirty = new boolean[args.length];
+        this.residents = residents;
         this.staging = staging;
         boolean aggregates = false;
         for (int i = 0; i < args.length; i++) {
@@ -120,7 +128,8 @@ public final class PreparedLauncher implements AutoCloseable {
      *
      * @return запуск либо диагностики ({@code RT-A01/A02/A04}, {@code RT-X01}, {@code RT-X02})
      */
-    static Result<PreparedLauncher> create(GpuContext ctx, CompiledKernel kernel, Object[] given) {
+    static Result<PreparedLauncher> create(GpuContext ctx, CompiledKernel kernel, Object[] given,
+                                           GpuArray[] residents) {
         Object[] args = given.clone();
         List<Diagnostic> problems = new ArrayList<>();
         ctx.checkArguments(kernel, args, problems);
@@ -185,12 +194,12 @@ public final class PreparedLauncher implements AutoCloseable {
                 }
             }
             staging.close();
-            return GpuContext.failure("RT-X01", "driver error while preparing the launch: " + e.getMessage());
+            return GpuContext.failure("RT-X01", ctx.driverError("preparing the launch", e));
         } finally {
             ctx.lock.unlock();
         }
         PreparedLauncher launcher = new PreparedLauncher(ctx, kernel, args, slotOf, slots.toArray(new Slot[0]), handles,
-                lengths, staging);
+                lengths, staging, residents.clone());
         Arrays.fill(launcher.dirty, true);
         return Result.ok(launcher);
     }
@@ -234,6 +243,10 @@ public final class PreparedLauncher implements AutoCloseable {
                     + " is a host array with this launch's buffer: it cannot be replaced, prepare a new launch or "
                     + "pass a GpuBuffer")));
         }
+        if (value instanceof GpuArray a) {
+            setResident(param, a);
+            return this;
+        }
         List<Diagnostic> problems = new ArrayList<>();
         ctx.checkArgument(kernel, param, value, problems);
         boolean array = module.typeKind(module.fParamType(kernel.function(), param)) == Types.KIND_ARRAY;
@@ -246,6 +259,7 @@ public final class PreparedLauncher implements AutoCloseable {
             throw new GpuException(problems);
         }
         args[param] = value;
+        residents[param] = null;
         if (array) {
             GpuBuffer b = (GpuBuffer) value;
             handles[param] = b.handle();
@@ -253,6 +267,34 @@ public final class PreparedLauncher implements AutoCloseable {
         }
         dirty[param] = true;
         return this;
+    }
+
+    /** {@link #set} с массивом {@code GpuArray}: буфер, закреплённый за массивом в этом контексте. */
+    private void setResident(int param, GpuArray a) {
+        ctx.lock.lock();
+        try {
+            if (ctx.closed) {
+                throw new GpuException(List.of(GpuContext.error("RT-X02", "context is closed")));
+            }
+            GpuBuffer b;
+            try {
+                b = ResidentArrays.bufferOf(ctx, a);
+            } catch (DeviceApiException e) {
+                throw new GpuException(List.of(GpuContext.error("RT-X01", ctx.driverError("allocating a buffer", e))));
+            }
+            List<Diagnostic> problems = new ArrayList<>();
+            ctx.checkArgument(kernel, param, b, problems);
+            if (!problems.isEmpty()) {
+                throw new GpuException(problems);
+            }
+            residents[param] = a;
+            args[param] = b;
+            handles[param] = b.handle();
+            lengths[param] = b.length();
+            dirty[param] = true;
+        } finally {
+            ctx.lock.unlock();
+        }
     }
 
     /**
@@ -293,7 +335,7 @@ public final class PreparedLauncher implements AutoCloseable {
             }
         }
         for (int i = 0; i < args.length; i++) {
-            if (args[i] instanceof GpuBuffer b && b.isClosed()) {
+            if (residents[i] == null && args[i] instanceof GpuBuffer b && b.isClosed()) {
                 problems.add(GpuContext.error("RT-A02", "argument " + i + ": the buffer is closed"));
             }
         }
@@ -305,13 +347,61 @@ public final class PreparedLauncher implements AutoCloseable {
             if (ctx.closed) {
                 return GpuContext.failure("RT-X02", "context is closed");
             }
-            return execute(config, local);
+            return residentCount() == 0 ? execute(config, local) : executeWithResidents(config, local);
+        } catch (GpuException e) {
+            kernel.boundTo = null;
+            return Result.failed(e.diagnostics());
         } catch (DeviceApiException e) {
             kernel.boundTo = null;
-            return GpuContext.failure("RT-X01", "driver error during launch: " + e.getMessage());
+            return GpuContext.failure("RT-X01", ctx.driverError("launching a kernel", e));
         } finally {
             ctx.lock.unlock();
         }
+    }
+
+    /** @return число параметров, которым передан {@code GpuArray} */
+    private int residentCount() {
+        int c = 0;
+        for (GpuArray a : residents) {
+            if (a != null) {
+                c++;
+            }
+        }
+        return c;
+    }
+
+    /**
+     * Запуск с {@code GpuArray} под замком контекста: загрузить устаревшие копии, подставить буферы массивов (буфер
+     * меняется, если массив побывал в другом контексте), запустить и отметить записанные массивы свежими на устройстве.
+     */
+    private Result<LaunchStats> executeWithResidents(LaunchConfig config, long[] local) {
+        Object[] template = args.clone();
+        for (int i = 0; i < residents.length; i++) {
+            if (residents[i] != null) {
+                template[i] = residents[i];
+            }
+        }
+        ResidentArrays.Bound bound = ResidentArrays.bind(ctx, kernel, config, template);
+        for (int i = 0; i < residents.length; i++) {
+            if (residents[i] != null && bound.args()[i] != args[i]) {
+                GpuBuffer b = (GpuBuffer) bound.args()[i];
+                args[i] = b;
+                handles[i] = b.handle();
+                lengths[i] = b.length();
+                dirty[i] = true;
+            }
+        }
+        boolean previous = ctx.allowDefer(true);
+        Result<LaunchStats> r;
+        try {
+            r = execute(config, local);
+        } finally {
+            ctx.allowDefer(previous);
+        }
+        if (r.isOk()) {
+            ResidentArrays.afterSuccess(kernel, bound);
+        }
+        return r;
     }
 
     /** Один запуск под замком контекста. */
