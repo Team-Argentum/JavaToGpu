@@ -34,9 +34,41 @@ class ReductionTest {
 
             import com.sixik.gpu.api.Gpu;
             import com.sixik.gpu.api.annotations.Reduction;
+            import com.sixik.gpu.api.annotations.Struct;
             import com.sixik.gpu.api.types.GpuFloatArray;
+            import com.sixik.gpu.api.types.Int2;
 
             public class Sums {
+
+                @Struct
+                public static final class MinMax {
+                    public float lo;
+                    public float hi;
+                    public MinMax() { }
+                    public MinMax(float lo, float hi) { this.lo = lo; this.hi = hi; }
+                }
+
+                @Reduction
+                public static MinMax range(float[] v) {
+                    float lo = 1e30f;
+                    float hi = -1e30f;
+                    for (int i = 0; i < v.length; i++) {
+                        lo = Gpu.min(lo, v[i]);
+                        hi = Gpu.max(hi, v[i]);
+                    }
+                    return new MinMax(lo, hi);
+                }
+
+                @Reduction
+                public static Int2 signs(float[] v, int n) {
+                    int neg = 0;
+                    int pos = 0;
+                    for (int i = 0; i < n; i++) {
+                        neg += v[i] < 0f ? 1 : 0;
+                        pos += v[i] > 0f ? 1 : 0;
+                    }
+                    return new Int2(neg, pos);
+                }
 
                 @Reduction
                 public static int positives(float[] v, int n) {
@@ -69,7 +101,7 @@ class ReductionTest {
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
         Weaver.Report report = Weaver.weaveTree(dir);
-        assertEquals(2, report.kernels(), report.problems().toString());
+        assertEquals(4, report.kernels(), report.problems().toString());
         holder[0] = new URLClassLoader(new URL[]{dir.toUri().toURL()}, ReductionTest.class.getClassLoader());
         return holder[0].loadClass("demo.Sums");
     }
@@ -127,6 +159,70 @@ class ReductionTest {
                 }
                 long launches = fake.journal().stream().filter("enqueue"::equals).count();
                 assertEquals(4, launches, "one launch per call: " + fake.journal());
+            }
+        } finally {
+            holder[0].close();
+        }
+    }
+
+    /** Поле {@code name} объекта результата (класс загружен своим загрузчиком - через отражение). */
+    private static Object field(Object o, String name) throws ReflectiveOperationException {
+        return o.getClass().getField(name).get(o);
+    }
+
+    @Test
+    void severalAccumulatorsReturnAStructAndAVector(@TempDir Path dir) throws Exception {
+        URLClassLoader[] holder = new URLClassLoader[1];
+        try {
+            Class<?> sums = woven(dir, holder);
+            FakeDeviceApi fake = FakeDeviceApi.withGpu();
+            try (GpuContext ctx = GpuContext.builder().api(fake).ignoreEnvironment()
+                    .fallback(GpuContext.Fallback.NEVER).build(); JavaToGpu.Scope s = JavaToGpu.use(ctx)) {
+                CompiledKernel range = install(fake, ctx, sums, "range");
+                CompiledKernel signs = install(fake, ctx, sums, "signs");
+                // оба ядра в release называются k0, а фейк ищет тело по имени: тело выбирает ядро по числу аргументов
+                assertTrue(range.artifact().args().size() != signs.artifact().args().size());
+                fake.onKernel(range.artifact().entry(), l -> SplitLaunchTest.interpreting(
+                        l.argCount() == range.artifact().args().size() ? range : signs).run(l));
+                assertEquals(1 + 2, range.module().fParamCount(range.function()), "v plus a partial per accumulator");
+                for (int n : new int[]{1, 300, 2000}) {
+                    float[] v = values(n);
+                    float lo = 1e30f;
+                    float hi = -1e30f;
+                    int neg = 0;
+                    int pos = 0;
+                    for (float x : v) {
+                        lo = Math.min(lo, x);
+                        hi = Math.max(hi, x);
+                        neg += x < 0f ? 1 : 0;
+                        pos += x > 0f ? 1 : 0;
+                    }
+                    Object r = call(sums, "range", (Object) v);
+                    assertEquals("demo.Sums$MinMax", r.getClass().getName());
+                    assertEquals(lo, field(r, "lo"), "n=" + n);
+                    assertEquals(hi, field(r, "hi"), "n=" + n);
+                    Object g = call(sums, "signs", v, n);
+                    assertEquals(neg, field(g, "x"), "n=" + n);
+                    assertEquals(pos, field(g, "y"), "n=" + n);
+                    assertTrue(call(sums, "range", (Object) v) != r, "every call returns a new object");
+                }
+            }
+        } finally {
+            holder[0].close();
+        }
+    }
+
+    @Test
+    void aStructReductionFallsBackToTheJvmBody(@TempDir Path dir) throws Exception {
+        URLClassLoader[] holder = new URLClassLoader[1];
+        try {
+            Class<?> sums = woven(dir, holder);
+            FakeDeviceApi fake = FakeDeviceApi.withGpu().rejectBuildWhen(src -> true, "no");
+            try (GpuContext ctx = GpuContext.builder().api(fake).ignoreEnvironment()
+                    .fallback(GpuContext.Fallback.ALLOWED).build(); JavaToGpu.Scope s = JavaToGpu.use(ctx)) {
+                Object r = call(sums, "range", (Object) new float[]{3f, -2f, 7f});
+                assertEquals(-2f, field(r, "lo"));
+                assertEquals(7f, field(r, "hi"));
             }
         } finally {
             holder[0].close();

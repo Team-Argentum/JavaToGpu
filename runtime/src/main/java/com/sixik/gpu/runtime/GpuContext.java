@@ -1402,12 +1402,13 @@ public final class GpuContext implements AutoCloseable {
     /**
      * Исполняет свёртку ({@code @Reduction}) на устройстве - путь вызова метода свёртки через фасад {@link JavaToGpu}.
      *
-     * @param module модуль фронтенда, последняя функция - свёртка
-     * @param args   аргументы метода: массивы Java, {@code GpuArray}, {@link GpuBuffer}, упакованные скаляры
-     * @return упакованный результат либо диагностики: {@code OPT-R01/R02} (тело не свёртка либо ядро не строится),
-     *         ошибки компиляции ({@code RT-C01}, ...) и запуска, как у {@link #launch}
+     * @param module      модуль фронтенда, последняя функция - свёртка
+     * @param args        аргументы метода: массивы Java, {@code GpuArray}, {@link GpuBuffer}, упакованные скаляры
+     * @param resultClass Java-класс результата, если это вектор или {@code @Struct} (иначе может быть {@code null})
+     * @return упакованный скаляр или новый объект результата либо диагностики: {@code OPT-R01/R02} (тело не свёртка
+     *         либо ядро не строится), ошибки компиляции ({@code RT-C01}, ...) и запуска, как у {@link #launch}
      */
-    Result<Object> reduce(IrModule module, Object[] args) {
+    Result<Object> reduce(IrModule module, Object[] args, Class<?> resultClass) {
         if (closed) {
             return failure("RT-X02", "context is closed");
         }
@@ -1415,7 +1416,7 @@ public final class GpuContext implements AutoCloseable {
         if (!k.isOk()) {
             return Result.failed(k.diagnostics());
         }
-        return reductions.run(k.value(), args);
+        return reductions.run(k.value(), args, resultClass);
     }
 
     /**

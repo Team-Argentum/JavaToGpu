@@ -8,6 +8,7 @@ import com.sixik.gpu.ir.optimizer.Reductions;
 
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,8 +21,9 @@ import java.util.Map;
  * вычислительный блок (дальше work-item'ы проходят по несколько итераций). Если число итераций на хосте неизвестно
  * ({@link Reductions.Bound.Kind#UNKNOWN}), берётся предел.</p>
  *
- * <p>Буфер сумм групп - один на тип результата, растёт по требованию (степенью двойки), освобождается с контекстом.
- * Всё исполнение идёт под замком контекста: буфер общий для свёрток этого типа.</p>
+ * <p>Буфер итогов групп - один на «номер аккумулятора, тип», растёт по требованию (степенью двойки), освобождается с
+ * контекстом. Всё исполнение идёт под замком контекста: буферы общие для всех свёрток. Результат-агрегат (вектор или
+ * {@code @Struct}) собирается из итогов аккумуляторов в новый объект класса метода.</p>
  */
 final class DeviceReductions {
 
@@ -30,15 +32,21 @@ final class DeviceReductions {
     /** Абсолютный предел числа групп. */
     static final int MAX_GROUPS = 1 << 16;
 
-    /** Построенное и скомпилированное ядро свёртки. */
-    record Kernel(Reductions.Lowered lowered, CompiledKernel compiled) {
+    /**
+     * Построенное и скомпилированное ядро свёртки.
+     *
+     * @param source   модуль фронтенда (типы результата {@code Plan.result} - его)
+     * @param lowered  построенное ядро
+     * @param compiled скомпилированное ядро
+     */
+    record Kernel(IrModule source, Reductions.Lowered lowered, CompiledKernel compiled) {
     }
 
     private final GpuContext ctx;
     /** Ядра по исходному модулю (по идентичности; модули фасада живут в кэше классов). */
     private final Map<IrModule, Result<Kernel>> kernels =
             java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
-    /** Буферы сумм групп по типу результата. */
+    /** Буферы итогов групп по ключу «номер аккумулятора, тип» ({@link #partialKey}). */
     private final Map<Integer, GpuBuffer> partials = new HashMap<>();
 
     DeviceReductions(GpuContext ctx) {
@@ -78,7 +86,7 @@ final class DeviceReductions {
             }
             long limit = compiled.value().maxWorkGroupSize();
             if (limit <= 0 || limit >= wg || wg == 1) {
-                return Result.ok(new Kernel(lowered.value(), compiled.value()));
+                return Result.ok(new Kernel(module, lowered.value(), compiled.value()));
             }
             // ядро тяжелее, чем позволяет группа: строится заново с наибольшей допустимой степенью двойки
             wg = Integer.highestOneBit((int) Math.min(limit, wg - 1));
@@ -88,13 +96,19 @@ final class DeviceReductions {
     /**
      * Исполняет свёртку на устройстве.
      *
-     * @param k    ядро свёртки этого контекста
-     * @param args аргументы исходного метода (массивы Java, {@link GpuArray}, {@link GpuBuffer}, упакованные скаляры)
-     * @return упакованный результат того же типа, что у метода, либо диагностики запуска
+     * @param k           ядро свёртки этого контекста
+     * @param args        аргументы исходного метода (массивы Java, {@link GpuArray}, {@link GpuBuffer}, упакованные
+     *                    скаляры)
+     * @param resultClass Java-класс результата-агрегата (вектор или {@code @Struct}); для скалярного результата не нужен
+     * @return упакованный скаляр либо новый объект результата, либо диагностики запуска
      */
-    Result<Object> run(Kernel k, Object[] args) {
+    Result<Object> run(Kernel k, Object[] args, Class<?> resultClass) {
         Reductions.Lowered lowered = k.lowered();
         Reductions.Plan plan = lowered.plan();
+        List<Reductions.Accumulator> accs = plan.accumulators();
+        if (plan.aggregate() && resultClass == null) {
+            throw new IllegalArgumentException("a reduction with an aggregate result needs its Java class");
+        }
         int wg = lowered.workGroup();
         long trip = trip(plan, args);
         int maxGroups = (int) Math.min(MAX_GROUPS, Math.max(1L, (long) Math.max(1, ctx.device().computeUnits())
@@ -102,26 +116,56 @@ final class DeviceReductions {
         int groups = trip < 0 ? maxGroups : (int) Math.max(1, Math.min(maxGroups, (trip + wg - 1) / wg));
         ctx.lock.lock();
         try {
-            GpuBuffer partial = partialBuffer(plan.type(), groups);
-            Object[] full = Arrays.copyOf(args, args.length + 1);
-            full[args.length] = partial;
+            GpuBuffer[] partial = new GpuBuffer[accs.size()];
+            Object[] full = Arrays.copyOf(args, args.length + accs.size());
+            for (int j = 0; j < partial.length; j++) {
+                partial[j] = partialBuffer(j, accs.get(j).type(), groups);
+                full[lowered.partialParam() + j] = partial[j];
+            }
             Result<LaunchStats> launched = ctx.launchReusing(k.compiled(), LaunchConfig.of1D((long) groups * wg, wg), full);
             if (!launched.isOk()) {
                 return Result.failed(launched.diagnostics());
             }
-            Object sums = switch (plan.type()) {
-                case Types.I32 -> new int[groups];
-                case Types.I64 -> new long[groups];
-                case Types.F32 -> new float[groups];
-                default -> new double[groups];
-            };
-            partial.read(sums); // блокирующее чтение - точка синхронизации очереди
-            return Result.ok(combine(plan.combine(), sums));
+            Object[] values = new Object[accs.size()];
+            for (int j = 0; j < values.length; j++) {
+                Object sums = switch (accs.get(j).type()) {
+                    case Types.I32 -> new int[groups];
+                    case Types.I64 -> new long[groups];
+                    case Types.F32 -> new float[groups];
+                    default -> new double[groups];
+                };
+                partial[j].read(sums); // блокирующее чтение - точка синхронизации очереди
+                values[j] = combine(accs.get(j).combine(), sums);
+            }
+            return Result.ok(plan.aggregate() ? assemble(k.source(), plan.result(), resultClass, values) : values[0]);
         } catch (GpuException e) {
             return Result.failed(e.diagnostics());
         } finally {
             ctx.lock.unlock();
         }
+    }
+
+    /**
+     * Собирает объект результата-агрегата из итогов аккумуляторов (компонента {@code j} - аккумулятор {@code j}).
+     *
+     * @param module      модуль фронтенда
+     * @param type        тип результата в нём
+     * @param resultClass Java-класс результата
+     * @param values      итоги аккумуляторов ({@code Integer/Long/Float/Double})
+     * @return новый объект
+     */
+    static Object assemble(IrModule module, int type, Class<?> resultClass, Object[] values) {
+        long[] leaves = new long[values.length];
+        for (int j = 0; j < values.length; j++) {
+            leaves[j] = switch (values[j]) {
+                case Integer v -> v;
+                case Long v -> v;
+                case Float v -> Float.floatToRawIntBits(v);
+                case Double v -> Double.doubleToRawLongBits(v);
+                default -> throw new IllegalStateException("unexpected accumulator value " + values[j]);
+            };
+        }
+        return com.sixik.gpu.ir.HostObjects.rebuild(module, type, resultClass, null, leaves, 0);
     }
 
     /** Число итераций цикла, если границы вычислимы на хосте, иначе {@code -1}. */
@@ -162,9 +206,15 @@ final class DeviceReductions {
         }
     }
 
-    /** Буфер сумм групп не короче {@code groups} (под замком). */
-    private GpuBuffer partialBuffer(int type, int groups) {
-        GpuBuffer b = partials.get(type);
+    /** Ключ буфера итогов групп: аккумулятор {@code j} типа {@code type}. */
+    private static int partialKey(int j, int type) {
+        return j * 1024 + type;
+    }
+
+    /** Буфер итогов групп аккумулятора {@code j} не короче {@code groups} (под замком). */
+    private GpuBuffer partialBuffer(int j, int type, int groups) {
+        int key = partialKey(j, type);
+        GpuBuffer b = partials.get(key);
         if (b != null && !b.isClosed() && b.length() >= groups) {
             return b;
         }
@@ -173,7 +223,7 @@ final class DeviceReductions {
         }
         int capacity = Integer.highestOneBit(Math.max(1, groups - 1)) << 1;
         GpuBuffer fresh = ctx.allocate(type, Math.max(capacity, groups));
-        partials.put(type, fresh);
+        partials.put(key, fresh);
         return fresh;
     }
 

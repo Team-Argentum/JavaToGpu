@@ -155,7 +155,10 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             if (e.getAnnotation(Kernel.class) != null) {
                 rep.report(path, "GPU0017", name);
             }
-            if (!(ret == JavaTypes.K_INT || ret == JavaTypes.K_LONG || ret == JavaTypes.K_FLOAT
+            if (ret == JavaTypes.K_AGG) {
+                // вектор или @Struct: компоненты - аккумуляторы; их типы проверяет Reductions.analyze (GPU0018)
+                checkAggType(path, e.getReturnType());
+            } else if (!(ret == JavaTypes.K_INT || ret == JavaTypes.K_LONG || ret == JavaTypes.K_FLOAT
                     || ret == JavaTypes.K_DOUBLE)) {
                 rep.report(path, "GPU0016", name);
             }

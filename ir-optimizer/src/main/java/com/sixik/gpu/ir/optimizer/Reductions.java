@@ -16,27 +16,30 @@ import java.util.List;
 /**
  * Свёртка ({@code @Reduction}): распознавание шаблона и построение параллельного ядра (REWORK_ARCHITECTURE.md, 7.1).
  *
- * <p>Исходная функция - последняя функция модуля, device-функция с результатом {@code int/long/float/double}, тело
- * которой имеет вид</p>
+ * <p>Исходная функция - последняя функция модуля, device-функция, тело которой имеет вид</p>
  * <pre>{@code
  *   <пролог: объявления и вычисления без записи в память>
- *   T acc = <начальное значение>;          // где угодно в прологе
+ *   T acc = <начальное значение>;          // где угодно в прологе; аккумуляторов может быть несколько
  *   for (int i = start; i < end; i++) {
- *       <тело: acc меняется только как acc = acc OP e>
+ *       <тело: каждый acc меняется только как acc = acc OP e>
  *   }
- *   return acc;
+ *   return acc;                            // либо return new R(acc1, acc2, ...)
  * }</pre>
- * <p>где {@code OP} - одна операция на всё тело: {@code +} ({@code -=} читается как прибавление {@code -e}),
- * {@code Gpu.min}, {@code Gpu.max}, {@code &}, {@code |}, {@code ^}. Итерации тела независимы: тело не пишет в память
- * (кроме своих private-массивов), не меняет переменные, объявленные вне тела, и не выходит из цикла {@code break} или
- * {@code return}; {@code end} и {@code start} не зависят от тела.</p>
+ * <p>где {@code OP} - одна операция на аккумулятор: {@code +} ({@code -=} читается как прибавление {@code -e}),
+ * {@code Gpu.min}, {@code Gpu.max}, {@code &}, {@code |}, {@code ^}. Результат - скаляр {@code int/long/float/double}
+ * (один аккумулятор) либо вектор или {@code @Struct} из таких скаляров, каждая компонента которого - свой аккумулятор
+ * (не больше {@link #MAX_ACCUMULATORS}): так за один проход считаются, например, минимум и максимум или сумма и
+ * количество. Итерации тела независимы: тело не пишет в память (кроме своих private-массивов), не меняет переменные,
+ * объявленные вне тела, кроме аккумуляторов, не читает аккумуляторы иначе как в их обновлении и не выходит из цикла
+ * {@code break} или {@code return}; {@code end} и {@code start} не зависят от тела.</p>
  *
  * <p>Построенное ядро ({@link #lower}) - work-group фиксированного размера, каждый work-item проходит итерации
- * {@code start + gid, start + gid + G, ...} ({@code G} - число work-item'ов запуска), начиная с нейтрального элемента
- * операции (work-item 0 - с исходного начального значения), затем группа складывает свои значения деревом в
- * local-памяти, и work-item 0 группы пишет сумму группы в последний, добавленный параметр {@code partial}. Хосту
- * остаётся свернуть {@code partial} по порядку групп. Порядок сложения отличается от последовательного, поэтому для
- * {@code float/double} результат может отличаться в младших битах: аннотация {@code @Reduction} - согласие на это.</p>
+ * {@code start + gid, start + gid + G, ...} ({@code G} - число work-item'ов запуска), начиная с нейтральных элементов
+ * операций (work-item 0 - с исходных начальных значений), затем группа сворачивает свои значения деревом в
+ * local-памяти (по массиву на аккумулятор, одно дерево на все), и work-item 0 группы пишет итог группы по каждому
+ * аккумулятору в добавленные параметры {@code partial0, partial1, ...}. Хосту остаётся свернуть их по порядку групп.
+ * Порядок сложения отличается от последовательного, поэтому для {@code float/double} результат может отличаться в
+ * младших битах: аннотация {@code @Reduction} - согласие на это.</p>
  */
 public final class Reductions {
 
@@ -46,6 +49,13 @@ public final class Reductions {
     public static final String NOT_A_REDUCTION = "OPT-R01";
     /** Код диагностики: внутренняя ошибка построения ядра. */
     public static final String LOWERING_FAILED = "OPT-R02";
+    /** Наибольшее число переменных-аккумуляторов одной свёртки (каждая занимает массив local-памяти на группу). */
+    public static final int MAX_ACCUMULATORS = 8;
+    /**
+     * Наибольший суммарный размер аккумуляторов в байтах (по {@code AbiLayout}): столько local-памяти нужно на
+     * work-item, при группе 256 - не больше 16 КиБ.
+     */
+    public static final int MAX_ACCUMULATOR_BYTES = 64;
 
     private Reductions() {
     }
@@ -89,24 +99,45 @@ public final class Reductions {
     }
 
     /**
-     * Распознанная свёртка.
+     * Скалярная компонента результата свёртки: аккумулятор-скаляр либо одна компонента аккумулятора-вектора (векторы
+     * сворачиваются покомпонентно).
      *
      * @param combine операция
-     * @param type    тип результата ({@code Types.I32/I64/F32/F64})
-     * @param start   начало цикла
-     * @param end     конец цикла (исключительно)
+     * @param type    тип ({@code Types.I32/I64/F32/F64})
      */
-    public record Plan(Combine combine, int type, Bound start, Bound end) {
+    public record Accumulator(Combine combine, int type) {
+    }
+
+    /**
+     * Распознанная свёртка.
+     *
+     * @param accumulators скалярные компоненты в порядке листьев результата ({@code HostObjects}): для скалярного
+     *                     результата - одна, у вектора - по компоненте, у struct - листья полей подряд
+     * @param result       тип результата: скаляр (тип единственного аккумулятора), вектор или struct из скаляров
+     * @param start        начало цикла
+     * @param end          конец цикла (исключительно)
+     */
+    public record Plan(List<Accumulator> accumulators, int result, Bound start, Bound end) {
+
+        public Plan {
+            accumulators = List.copyOf(accumulators);
+        }
+
+        /** @return {@code true}, если результат - вектор или struct (компоненты собираются из аккумуляторов) */
+        public boolean aggregate() {
+            return !Types.isScalar(result);
+        }
     }
 
     /**
      * Построенное ядро свёртки.
      *
      * @param module       модуль, последняя функция - ядро; его параметры - параметры исходной функции и затем
-     *                     {@code partial} (global-массив типа результата, по элементу на группу)
+     *                     по параметру {@code partialJ} на скалярную компоненту (global-массив её типа, по элементу на
+     *                     группу)
      * @param plan         распознанная свёртка
      * @param workGroup    размер work-group ({@code reqd_work_group_size} ядра)
-     * @param partialParam индекс параметра {@code partial}
+     * @param partialParam индекс параметра {@code partial0}; компоненте {@code j} соответствует {@code partialParam + j}
      */
     public record Lowered(IrModule module, Plan plan, int workGroup, int partialParam) {
     }
@@ -206,12 +237,14 @@ public final class Reductions {
         int fn;
         FnTree f;
         Tree[] prologue;
-        int acc;
+        /** Локали аккумуляторов в порядке компонент результата. */
+        int[] accs;
         int index;
         Tree start;
         Tree end;
         Tree loopBody;
-        Combine combine;
+        /** Операция по аккумулятору ({@code null}, пока обновление не встречено). */
+        Combine[] combines;
         Bound startBound;
         Bound endBound;
 
@@ -219,8 +252,36 @@ public final class Reductions {
             return f == null || f.name == null ? "f" + fn : f.name;
         }
 
+        /** @return номер аккумулятора с локалью {@code l} либо -1 */
+        int accOf(int l) {
+            for (int j = 0; j < accs.length; j++) {
+                if (accs[j] == l) {
+                    return j;
+                }
+            }
+            return -1;
+        }
+
+        /** @return число скалярных компонент аккумулятора {@code j} (у вектора - его ширина) */
+        int lanes(int j) {
+            int t = f.localType(accs[j]);
+            return Types.isScalar(t) ? 1 : mt.source.typeB(t);
+        }
+
+        /** @return скалярный тип компонент аккумулятора {@code j} */
+        int laneType(int j) {
+            int t = f.localType(accs[j]);
+            return Types.isScalar(t) ? t : mt.source.typeA(t);
+        }
+
         Plan plan() {
-            return new Plan(combine, f.ret, startBound, endBound);
+            List<Accumulator> list = new ArrayList<>();
+            for (int j = 0; j < accs.length; j++) {
+                for (int c = 0; c < lanes(j); c++) {
+                    list.add(new Accumulator(combines[j], laneType(j)));
+                }
+            }
+            return new Plan(list, f.ret, startBound, endBound);
         }
 
         Reject reject(String why) {
@@ -250,16 +311,11 @@ public final class Reductions {
         if (f.kind != IrModule.DEVICE) {
             throw s.reject("the entry function is a kernel, not a reduction");
         }
-        if (f.ret != Types.I32 && f.ret != Types.I64 && f.ret != Types.F32 && f.ret != Types.F64) {
-            throw s.reject("a reduction returns int, long, float or double");
-        }
         Tree[] top = f.body.kids;
         int n = top.length;
         Tree ret = n > 0 ? top[n - 1] : null;
-        if (ret == null || ret.op != Op.RETURN || ret.n() != 1 || ret.kid(0).op != Op.LOCAL_GET) {
-            throw s.reject("the method must end with `return <accumulator>;` right after the loop");
-        }
-        s.acc = ret.kid(0).imm;
+        s.accs = accumulators(s, ret);
+        s.combines = new Combine[s.accs.length];
         Tree loopBlock = n > 1 ? top[n - 2] : null;
         if (loopBlock == null || loopBlock.op != Op.BLOCK || loopBlock.n() != 2
                 || loopBlock.kid(0).op != Op.LOCAL_DECL || loopBlock.kid(1).op != Op.LOOP) {
@@ -288,15 +344,14 @@ public final class Reductions {
             throw s.reject("the loop must step by one: `i++`");
         }
         s.loopBody = loop.kid(1);
-        if (f.localType(s.acc) != f.ret) {
-            throw s.reject("the accumulator " + s.localName(s.acc) + " must have the result type");
-        }
-        boolean declared = false;
-        for (Tree t : s.prologue) {
-            declared |= t.op == Op.LOCAL_DECL && t.imm == s.acc;
-        }
-        if (!declared) {
-            throw s.reject("the accumulator " + s.localName(s.acc) + " must be declared before the loop");
+        for (int acc : s.accs) {
+            boolean declared = false;
+            for (Tree t : s.prologue) {
+                declared |= t.op == Op.LOCAL_DECL && t.imm == acc;
+            }
+            if (!declared) {
+                throw s.reject("the accumulator " + s.localName(acc) + " must be declared before the loop");
+            }
         }
 
         Calls calls = Calls.analyze(s.mt);
@@ -308,12 +363,85 @@ public final class Reductions {
         markDeclared(s.loopBody, bodyLocal);
         checkInvariant(s, calls, s.end, bodyLocal);
         checkBody(s, calls, s.loopBody, bodyLocal, 0);
-        if (s.combine == null) {
-            throw s.reject("the loop never updates the accumulator " + s.localName(s.acc));
+        for (int j = 0; j < s.accs.length; j++) {
+            if (s.combines[j] == null) {
+                throw s.reject("the loop never updates the accumulator " + s.localName(s.accs[j]));
+            }
         }
         s.startBound = bound(s, s.start);
         s.endBound = bound(s, s.end);
         return s;
+    }
+
+    /**
+     * Аккумуляторы по последнему стейтменту {@code return}: {@code return acc;} для скалярного или векторного
+     * результата (вектор сворачивается покомпонентно), {@code return new R(acc1, acc2, ...)} (узел
+     * {@code build}/{@code struct_build} из чтений разных локалей) - для вектора или struct, чьи компоненты - скаляры
+     * {@code int/long/float/double} (у struct - и векторы из них).
+     */
+    private static int[] accumulators(Shape s, Tree ret) {
+        FnTree f = s.f;
+        IrModule src = s.mt.source;
+        if (ret == null || ret.op != Op.RETURN || ret.n() != 1) {
+            throw s.reject("the method must end with `return <accumulator>;` right after the loop");
+        }
+        Tree v = ret.kid(0);
+        int[] accs;
+        if (v.op == Op.LOCAL_GET && f.localType(v.imm) == f.ret) {
+            if (!isReducible(src, f.ret)) {
+                throw s.reject("a reduction returns int, long, float or double, or a vector or @Struct of them");
+            }
+            accs = new int[]{v.imm};
+        } else if (Types.isScalar(f.ret)) {
+            throw s.reject(isReducible(src, f.ret)
+                    ? "the method must end with `return <accumulator>;` right after the loop"
+                    : "a reduction returns int, long, float or double, or a vector or @Struct of them");
+        } else {
+            int kind = src.typeKind(f.ret);
+            if ((kind != Types.KIND_VEC && kind != Types.KIND_STRUCT) || (v.op != Op.BUILD && v.op != Op.STRUCT_BUILD)) {
+                throw s.reject("a reduction with a vector or @Struct result must end with `return acc;` or "
+                        + "`return new R(acc1, acc2, ...);` right after the loop");
+            }
+            if (v.n() > MAX_ACCUMULATORS) {
+                throw s.reject("a reduction has at most " + MAX_ACCUMULATORS + " accumulators, the result has " + v.n()
+                        + " components");
+            }
+            accs = new int[v.n()];
+            for (int j = 0; j < accs.length; j++) {
+                Tree c = v.kid(j);
+                int ct = kind == Types.KIND_VEC ? src.typeA(f.ret) : src.structFieldType(f.ret, j);
+                if (!isReducible(src, ct)) {
+                    throw s.reject("component " + j + " of the result is not int, long, float or double "
+                            + "or a vector of them");
+                }
+                if (c.op != Op.LOCAL_GET || f.localType(c.imm) != ct) {
+                    throw s.reject("component " + j + " of the result must be an accumulator variable of the same "
+                            + "type, returned as is");
+                }
+                for (int i = 0; i < j; i++) {
+                    if (accs[i] == c.imm) {
+                        throw s.reject("the accumulator " + s.localName(c.imm)
+                                + " is used for two components of the result");
+                    }
+                }
+                accs[j] = c.imm;
+            }
+        }
+        long bytes = 0;
+        for (int acc : accs) {
+            bytes += com.sixik.gpu.ir.AbiLayout.sizeOf(src, f.localType(acc));
+        }
+        if (bytes > MAX_ACCUMULATOR_BYTES) {
+            throw s.reject("the accumulators take " + bytes + " bytes, at most " + MAX_ACCUMULATOR_BYTES
+                    + " are supported (each needs local memory for the whole work-group)");
+        }
+        return accs;
+    }
+
+    /** Тип сворачивается: скаляр {@code int/long/float/double} либо вектор из них. */
+    private static boolean isReducible(IrModule m, int type) {
+        int scalar = Types.isScalar(type) ? type : m.typeKind(type) == Types.KIND_VEC ? m.typeA(type) : -1;
+        return scalar == Types.I32 || scalar == Types.I64 || scalar == Types.F32 || scalar == Types.F64;
     }
 
     private static boolean isIntConst(Tree t, long v) {
@@ -345,7 +473,7 @@ public final class Reductions {
     /** {@code end} вычисляется заново на каждой итерации: он не должен зависеть от тела и счётчика. */
     private static void checkInvariant(Shape s, Calls calls, Tree t, boolean[] bodyLocal) {
         if ((t.op == Op.LOCAL_GET || t.op == Op.LOCAL_ADDR)
-                && (t.imm == s.acc || t.imm == s.index || bodyLocal[t.imm])) {
+                && (s.accOf(t.imm) >= 0 || t.imm == s.index || bodyLocal[t.imm])) {
             throw s.reject("the loop end must not depend on the loop index or the accumulator");
         }
         if (t.op == Op.STORE || t.op == Op.LOCAL_SET || t.op == Op.LOCAL_DECL) {
@@ -452,8 +580,9 @@ public final class Reductions {
     private static void checkBody(Shape s, Calls calls, Tree t, boolean[] bodyLocal, int breakable) {
         switch (t.op) {
             case Op.LOCAL_SET -> {
-                if (t.imm == s.acc) {
-                    Tree e = updateOperand(s, t.kid(0));
+                int j = s.accOf(t.imm);
+                if (j >= 0) {
+                    Tree e = updateOperand(s, j, t.kid(0));
                     checkBody(s, calls, e, bodyLocal, breakable);
                     return;
                 }
@@ -466,13 +595,13 @@ public final class Reductions {
                 }
             }
             case Op.LOCAL_GET -> {
-                if (t.imm == s.acc) {
-                    throw s.reject("the accumulator " + s.localName(s.acc) + " may only be updated as `acc = acc op e`"
+                if (s.accOf(t.imm) >= 0) {
+                    throw s.reject("the accumulator " + s.localName(t.imm) + " may only be updated as `acc = acc op e`"
                             + " (+=, -=, ++, Gpu.min, Gpu.max, &=, |=, ^=), not read otherwise");
                 }
             }
             case Op.LOCAL_ADDR -> {
-                if (t.imm == s.acc || t.imm == s.index || !bodyLocal[t.imm]) {
+                if (s.accOf(t.imm) >= 0 || t.imm == s.index || !bodyLocal[t.imm]) {
                     throw s.reject("taking a reference to " + s.localName(t.imm) + " in the loop body is not supported");
                 }
             }
@@ -501,8 +630,10 @@ public final class Reductions {
         }
     }
 
-    /** Разбирает {@code acc = acc OP e}, запоминает операцию и возвращает {@code e}. */
-    private static Tree updateOperand(Shape s, Tree v) {
+    /** Разбирает {@code acc = acc OP e} для аккумулятора {@code j}, запоминает операцию и возвращает {@code e}. */
+    private static Tree updateOperand(Shape s, int j, Tree v) {
+        int acc = s.accs[j];
+        int type = s.f.localType(acc);
         Combine c;
         Tree a;
         Tree b;
@@ -521,29 +652,30 @@ public final class Reductions {
             a = v.kid(0);
             b = v.kid(1);
         } else {
-            throw s.reject("the accumulator " + s.localName(s.acc) + " may only be updated as `acc = acc op e`"
+            throw s.reject("the accumulator " + s.localName(acc) + " may only be updated as `acc = acc op e`"
                     + " (+=, -=, ++, Gpu.min, Gpu.max, &=, |=, ^=)");
         }
-        if (v.type != s.f.ret) {
-            throw s.reject("the accumulator update changes the type");
+        if (v.type != type) {
+            throw s.reject("the update of the accumulator " + s.localName(acc) + " changes its type");
         }
         Tree e;
-        if (isAcc(s, a)) {
+        if (isLocal(a, acc)) {
             e = b;
-        } else if (isAcc(s, b) && v.op != Op.SUB) {
+        } else if (isLocal(b, acc) && v.op != Op.SUB) {
             e = a;
         } else {
-            throw s.reject("the accumulator " + s.localName(s.acc) + " may only be updated as `acc = acc op e`");
+            throw s.reject("the accumulator " + s.localName(acc) + " may only be updated as `acc = acc op e`");
         }
-        if (s.combine != null && s.combine != c) {
-            throw s.reject("the accumulator is updated with different operations (" + s.combine + " and " + c + ")");
+        if (s.combines[j] != null && s.combines[j] != c) {
+            throw s.reject("the accumulator " + s.localName(acc) + " is updated with different operations ("
+                    + s.combines[j] + " and " + c + ")");
         }
-        s.combine = c;
+        s.combines[j] = c;
         return e;
     }
 
-    private static boolean isAcc(Shape s, Tree t) {
-        return t.op == Op.LOCAL_GET && t.imm == s.acc;
+    private static boolean isLocal(Tree t, int local) {
+        return t.op == Op.LOCAL_GET && t.imm == local;
     }
 
     /** Граница, вычислимая на хосте: константа, параметр, длина массива-параметра (в том числе через локаль пролога). */
@@ -704,40 +836,67 @@ public final class Reductions {
 
     private static IrModule build(Shape s, int wg) {
         Codec.ModuleTree mt = s.mt;
-        int t = s.f.ret;
-        int localArray = mt.typeId(Types.KIND_ARRAY, AddressSpace.LOCAL, t);
-        int localPtr = mt.typeId(Types.KIND_PTR, AddressSpace.LOCAL, t);
-        int globalArray = mt.typeId(Types.KIND_ARRAY, AddressSpace.GLOBAL, t);
-        int globalPtr = mt.typeId(Types.KIND_PTR, AddressSpace.GLOBAL, t);
+        int count = s.accs.length;
+        int[] type = new int[count];
+        int[] localPtr = new int[count];
+        int[] firstLeaf = new int[count];
+        int leaves = 0;
+        for (int j = 0; j < count; j++) {
+            type[j] = s.f.localType(s.accs[j]);
+            localPtr[j] = mt.typeId(Types.KIND_PTR, AddressSpace.LOCAL, type[j]);
+            firstLeaf[j] = leaves;
+            leaves += s.lanes(j);
+        }
 
         FnTree k = s.f.copy();
         k.kind = IrModule.KERNEL;
         k.ret = Types.VOID;
         int partial = k.params.length;
-        k.params = Arrays.copyOf(k.params, partial + 1);
-        k.params[partial] = globalArray;
+        k.params = Arrays.copyOf(k.params, partial + leaves);
         if (k.paramNames != null) {
-            k.paramNames = Arrays.copyOf(k.paramNames, partial + 1);
-            k.paramNames[partial] = "partial";
+            k.paramNames = Arrays.copyOf(k.paramNames, partial + leaves);
+        }
+        for (int j = 0; j < count; j++) {
+            for (int c = 0; c < s.lanes(j); c++) {
+                int p = partial + firstLeaf[j] + c;
+                k.params[p] = mt.typeId(Types.KIND_ARRAY, AddressSpace.GLOBAL, s.laneType(j));
+                if (k.paramNames != null) {
+                    k.paramNames[p] = leaves == 1 ? "partial" : "partial" + (firstLeaf[j] + c);
+                }
+            }
         }
         k.wgx = wg;
         k.wgy = 1;
         k.wgz = 1;
-        int tile = k.newLocal(localArray, "tile");
+        int[] tile = new int[count];
+        for (int j = 0; j < count; j++) {
+            tile[j] = k.newLocal(mt.typeId(Types.KIND_ARRAY, AddressSpace.LOCAL, type[j]), count == 1 ? "tile" : "tile" + j);
+        }
         int lid = k.newLocal(Types.I32, "lid");
         int gid = k.newLocal(Types.I32, "gid");
         int gsz = k.newLocal(Types.I32, "gsz");
 
         List<Tree> out = new ArrayList<>();
-        out.add(Tree.ofImm(Op.LOCAL_ARRAY_DECL, Types.VOID, tile, i32(wg)));
+        for (int j = 0; j < count; j++) {
+            out.add(Tree.ofImm(Op.LOCAL_ARRAY_DECL, Types.VOID, tile[j], i32(wg)));
+        }
         out.add(Tree.ofImm(Op.LOCAL_DECL, Types.VOID, lid, workItem("getLocalId")));
         out.add(Tree.ofImm(Op.LOCAL_DECL, Types.VOID, gid, workItem("getGlobalId")));
         out.add(Tree.ofImm(Op.LOCAL_DECL, Types.VOID, gsz, workItem("getGlobalSize")));
         out.addAll(Arrays.asList(s.prologue));
-        // начальное значение входит в сумму один раз - у work-item'а 0, остальные начинают с нейтрального элемента
-        Tree identity = Tree.constant(Types.isFloat(t) ? Op.CONST_FLOAT : Op.CONST_INT, t, identityBits(s.combine, t));
+        // начальное значение входит в итог один раз - у work-item'а 0, остальные начинают с нейтрального элемента
+        Tree[] resets = new Tree[count];
+        for (int j = 0; j < count; j++) {
+            int lane = s.laneType(j);
+            Tree identity = Tree.constant(Types.isFloat(lane) ? Op.CONST_FLOAT : Op.CONST_INT, lane,
+                    identityBits(s.combines[j], lane));
+            if (lane != type[j]) {
+                identity = Tree.of(Op.SPLAT, type[j], identity);
+            }
+            resets[j] = Tree.ofImm(Op.LOCAL_SET, Types.VOID, s.accs[j], identity);
+        }
         out.add(Tree.of(Op.IF, Types.VOID, Tree.of(Op.NE, Types.BOOL, get(k, gid), i32(0)),
-                Tree.of(Op.BLOCK, Types.VOID, Tree.ofImm(Op.LOCAL_SET, Types.VOID, s.acc, identity))));
+                Tree.of(Op.BLOCK, Types.VOID, resets)));
         // шаг по сетке без переполнения: i = end - i > G ? i + G : end
         Tree i = get(k, s.index);
         Tree next = Tree.of(Op.SELECT, Types.I32,
@@ -747,21 +906,44 @@ public final class Reductions {
                 Tree.ofImm(Op.LOCAL_SET, Types.VOID, s.index, next));
         out.add(Tree.of(Op.BLOCK, Types.VOID,
                 Tree.ofImm(Op.LOCAL_DECL, Types.VOID, s.index, Tree.of(Op.ADD, Types.I32, s.start, get(k, gid))), loop));
-        // дерево в local-памяти
-        out.add(Tree.of(Op.STORE, Types.VOID, Tree.of(Op.ELEM_PTR, localPtr, get(k, tile), get(k, lid)), get(k, s.acc)));
+        // дерево в local-памяти: по массиву на аккумулятор, общие шаги и барьеры
+        for (int j = 0; j < count; j++) {
+            out.add(Tree.of(Op.STORE, Types.VOID, Tree.of(Op.ELEM_PTR, localPtr[j], get(k, tile[j]), get(k, lid)),
+                    get(k, s.accs[j])));
+        }
         out.add(barrier());
         for (int step = wg / 2; step > 0; step >>= 1) {
-            Tree mine = Tree.of(Op.ELEM_PTR, localPtr, get(k, tile), get(k, lid));
-            Tree other = Tree.of(Op.ELEM_PTR, localPtr, get(k, tile), Tree.of(Op.ADD, Types.I32, get(k, lid), i32(step)));
-            Tree sum = combine(s.combine, t, Tree.of(Op.LOAD, t, mine), Tree.of(Op.LOAD, t, other));
+            Tree[] stores = new Tree[count];
+            for (int j = 0; j < count; j++) {
+                Tree mine = Tree.of(Op.ELEM_PTR, localPtr[j], get(k, tile[j]), get(k, lid));
+                Tree other = Tree.of(Op.ELEM_PTR, localPtr[j], get(k, tile[j]),
+                        Tree.of(Op.ADD, Types.I32, get(k, lid), i32(step)));
+                Tree sum = combine(s.combines[j], type[j], Tree.of(Op.LOAD, type[j], mine),
+                        Tree.of(Op.LOAD, type[j], other));
+                stores[j] = Tree.of(Op.STORE, Types.VOID, mine, sum);
+            }
             out.add(Tree.of(Op.IF, Types.VOID, Tree.of(Op.LT, Types.BOOL, get(k, lid), i32(step)),
-                    Tree.of(Op.BLOCK, Types.VOID, Tree.of(Op.STORE, Types.VOID, mine, sum))));
+                    Tree.of(Op.BLOCK, Types.VOID, stores)));
             out.add(barrier());
         }
-        Tree slot = Tree.of(Op.ELEM_PTR, globalPtr, Tree.ofImm(Op.PARAM, globalArray, partial), workItem("getGroupId"));
-        Tree first = Tree.of(Op.LOAD, t, Tree.of(Op.ELEM_PTR, localPtr, get(k, tile), i32(0)));
+        // итог группы - по скалярной компоненте в свой partial (вектор раскладывается по компонентам)
+        Tree[] writes = new Tree[leaves];
+        for (int j = 0; j < count; j++) {
+            int lane = s.laneType(j);
+            int globalArray = mt.typeId(Types.KIND_ARRAY, AddressSpace.GLOBAL, lane);
+            int globalPtr = mt.typeId(Types.KIND_PTR, AddressSpace.GLOBAL, lane);
+            for (int c = 0; c < s.lanes(j); c++) {
+                int p = partial + firstLeaf[j] + c;
+                Tree slot = Tree.of(Op.ELEM_PTR, globalPtr, Tree.ofImm(Op.PARAM, globalArray, p), workItem("getGroupId"));
+                Tree first = Tree.of(Op.LOAD, type[j], Tree.of(Op.ELEM_PTR, localPtr[j], get(k, tile[j]), i32(0)));
+                if (lane != type[j]) {
+                    first = Tree.ofImm(Op.EXTRACT, lane, c, first);
+                }
+                writes[firstLeaf[j] + c] = Tree.of(Op.STORE, Types.VOID, slot, first);
+            }
+        }
         out.add(Tree.of(Op.IF, Types.VOID, Tree.of(Op.EQ, Types.BOOL, get(k, lid), i32(0)),
-                Tree.of(Op.BLOCK, Types.VOID, Tree.of(Op.STORE, Types.VOID, slot, first))));
+                Tree.of(Op.BLOCK, Types.VOID, writes)));
         k.body = Tree.of(Op.BLOCK, Types.VOID, out.toArray(Tree.NONE));
 
         FnTree[] fns = Arrays.copyOf(mt.fns, mt.fns.length + 1);
@@ -800,7 +982,7 @@ public final class Reductions {
 
     /** {@code acc = acc - e} становится {@code acc = acc + (-e)}: сумма частичных значений складывается. */
     private static Tree rewriteUpdates(Shape s, Tree t) {
-        if (t.op == Op.LOCAL_SET && t.imm == s.acc && t.kid(0).op == Op.SUB) {
+        if (t.op == Op.LOCAL_SET && s.accOf(t.imm) >= 0 && t.kid(0).op == Op.SUB) {
             Tree v = t.kid(0);
             return t.withKid(0, Tree.of(Op.ADD, v.type, v.kid(0), Tree.of(Op.NEG, v.type, v.kid(1))));
         }

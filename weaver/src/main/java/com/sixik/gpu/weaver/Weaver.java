@@ -127,8 +127,9 @@ public final class Weaver {
             }
             boolean reduction = isReduction(m);
             int sort = Type.getReturnType(m.desc).getSort();
-            if (reduction && sort != Type.INT && sort != Type.LONG && sort != Type.FLOAT && sort != Type.DOUBLE) {
-                problems.add(where + ": the reduction must return int, long, float or double");
+            if (reduction && sort != Type.INT && sort != Type.LONG && sort != Type.FLOAT && sort != Type.DOUBLE
+                    && sort != Type.OBJECT) {
+                problems.add(where + ": the reduction must return int, long, float, double, or a vector or @Struct");
                 continue;
             }
             if (!reduction && sort != Type.VOID) {
@@ -264,18 +265,23 @@ public final class Weaver {
             code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FACADE, FACADE_METHOD, FACADE_DESCRIPTOR, false));
             code.add(new InsnNode(Opcodes.RETURN));
         } else {
-            // свёртка: фасад возвращает упакованный результат того же типа
+            // свёртка: фасад возвращает упакованный скаляр либо объект вектора/@Struct того же типа
             code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FACADE, REDUCE_METHOD, REDUCE_DESCRIPTOR, false));
-            String wrapper = switch (ret.getSort()) {
-                case Type.INT -> "java/lang/Integer";
-                case Type.LONG -> "java/lang/Long";
-                case Type.FLOAT -> "java/lang/Float";
-                default -> "java/lang/Double";
-            };
-            code.add(new TypeInsnNode(Opcodes.CHECKCAST, wrapper));
-            code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, wrapper, ret.getClassName() + "Value",
-                    "()" + ret.getDescriptor(), false));
-            code.add(new InsnNode(ret.getOpcode(Opcodes.IRETURN)));
+            if (ret.getSort() == Type.OBJECT) {
+                code.add(new TypeInsnNode(Opcodes.CHECKCAST, ret.getInternalName()));
+                code.add(new InsnNode(Opcodes.ARETURN));
+            } else {
+                String wrapper = switch (ret.getSort()) {
+                    case Type.INT -> "java/lang/Integer";
+                    case Type.LONG -> "java/lang/Long";
+                    case Type.FLOAT -> "java/lang/Float";
+                    default -> "java/lang/Double";
+                };
+                code.add(new TypeInsnNode(Opcodes.CHECKCAST, wrapper));
+                code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, wrapper, ret.getClassName() + "Value",
+                        "()" + ret.getDescriptor(), false));
+                code.add(new InsnNode(ret.getOpcode(Opcodes.IRETURN)));
+            }
         }
 
         m.instructions = code;

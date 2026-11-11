@@ -6,6 +6,7 @@ import com.sixik.gpu.ir.Diagnostic;
 import com.sixik.gpu.ir.IrBinary;
 import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Result;
+import com.sixik.gpu.ir.Types;
 import com.sixik.gpu.ir.Validator;
 
 import java.io.IOException;
@@ -278,7 +279,7 @@ public final class JavaToGpu {
      * @param method   имя метода
      * @param kernelId идентификатор модуля (хэш IR без отладочных данных)
      * @param args     аргументы вызова: Java-массивы, {@code GpuArray}, {@link GpuBuffer} и упакованные скаляры
-     * @return упакованный результат того же типа, что у метода
+     * @return упакованный скаляр либо новый объект вектора или {@code @Struct} - того же типа, что у метода
      * @throws GpuException если свёртку нельзя выполнить ни на устройстве, ни на JVM
      */
     public static Object reduce(Class<?> owner, String method, String kernelId, Object[] args) {
@@ -292,7 +293,11 @@ public final class JavaToGpu {
             policy = c.fallback();
             Result<CompiledKernel> compiled = c.compileReduction(module);
             if (compiled.isOk()) {
-                Result<Object> r = c.reduce(module, args);
+                // результат-агрегат собирается в объект класса метода: его даёт тип результата исходного тела
+                Class<?> resultClass = Types.isScalar(module.fRet(module.functionCount() - 1)) ? null
+                        : JVM_BODIES.get(owner).computeIfAbsent(kernelId, k -> jvmBody(owner, method, args.length))
+                        .type().returnType();
+                Result<Object> r = c.reduce(module, args, resultClass);
                 if (!r.isOk()) {
                     throw new GpuException(r.diagnostics());
                 }
