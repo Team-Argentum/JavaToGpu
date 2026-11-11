@@ -28,6 +28,34 @@ public final class CompiledKernel {
      */
     Object boundTo;
 
+    /**
+     * Исполнение по стадиям {@code KernelSplitter} либо {@code null}, если ядро запускается целиком. Выставляется при
+     * сборке, до первого запуска.
+     */
+    SplitPlan split;
+    /**
+     * Исполнять ли {@link #split}: {@code null} - ещё не решено (режим {@link KernelSplitMode#AUTO} меряет оба варианта
+     * на первых запусках), {@code TRUE}/{@code FALSE} - решено. Под замком контекста.
+     */
+    Boolean splitChosen;
+    /** Пробных запусков (режим {@link KernelSplitMode#AUTO}) и суммарное время целого ядра и стадий, нс. */
+    int trialLaunches;
+    long trialWholeNanos;
+    long trialSplitNanos;
+
+    /**
+     * Разделённое ядро: стадии запускаются подряд с тем же NDRange, промежуточные буферы общие для всех стадий.
+     *
+     * @param stages       скомпилированные стадии в порядке запуска (параметры исходного ядра, затем промежуточные буферы)
+     * @param scratchParam по буферу - номер параметра стадии
+     * @param scratchBytes по буферу - байт на work-item
+     * @param scratchPerItem по буферу - элементов на work-item
+     * @param maxWorkGroupSize наименьший из пределов work-group стадий
+     */
+    record SplitPlan(CompiledKernel[] stages, int[] scratchParam, long[] scratchBytes, int[] scratchPerItem,
+                     long maxWorkGroupSize) {
+    }
+
     private final DriverStats driverStats;
     private final int estimatedRegisters;
     private final boolean[] fullyWritten;
@@ -86,6 +114,38 @@ public final class CompiledKernel {
      */
     public int access(int param) {
         return access[param];
+    }
+
+    /**
+     * @return сколько запусков делает один вызов ядра: число стадий {@code KernelSplitter} либо {@code 1}, если ядро не
+     *         разделено (см. {@link KernelSplitMode})
+     */
+    public int stageCount() {
+        SplitPlan p = split;
+        return p == null || Boolean.FALSE.equals(splitChosen) ? 1 : p.stages().length;
+    }
+
+    /**
+     * @return {@code true}, если выбор между целым ядром и стадиями окончателен (деления нет, режим
+     *         {@link KernelSplitMode#ALWAYS} либо замер {@link KernelSplitMode#AUTO} завершён)
+     */
+    public boolean splitDecided() {
+        return split == null || splitChosen != null;
+    }
+
+    /**
+     * @return статистика драйвера по стадиям разделённого ядра (пусто, если ядро не разделено)
+     */
+    public java.util.List<DriverStats> stageDriverStats() {
+        SplitPlan p = split;
+        if (p == null) {
+            return java.util.List.of();
+        }
+        java.util.List<DriverStats> r = new java.util.ArrayList<>();
+        for (CompiledKernel k : p.stages()) {
+            r.add(k.driverStats());
+        }
+        return r;
     }
 
     /** @return число параметров ядра */

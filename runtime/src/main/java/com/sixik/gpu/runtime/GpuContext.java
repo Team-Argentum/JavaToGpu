@@ -104,6 +104,16 @@ public final class GpuContext implements AutoCloseable {
     private final Path sourceDump;
     private final String codegenVersion;
     private final OptimizeOptions optimizeOptions;
+    /** Когда исполнять ядра по стадиям {@code KernelSplitter}. */
+    private final KernelSplitMode splitMode;
+    /**
+     * Промежуточные буферы разделённых ядер: по порядковому номеру буфера в плане - дескриптор и размер в байтах. Общие
+     * для всех ядер контекста: очередь in-order, поэтому стадии разных запусков не пересекаются. Под {@link #lock}.
+     */
+    private long[] scratchHandles = new long[0];
+    private long[] scratchSizes = new long[0];
+    /** Больше стольких байт промежуточный буфер не бывает: запуск идёт целиком. */
+    static final long MAX_SCRATCH_BYTES = 1L << 30;
     /**
      * Кэш подготовленных запусков для вызовов через фасад ({@link #launchReusing}): ключ - ядро и идентичность массивов
      * хоста; порядок доступа (LRU). Под {@link #lock}.
@@ -188,8 +198,9 @@ public final class GpuContext implements AutoCloseable {
 
     private GpuContext(DeviceApi api, boolean ownsApi, DeviceInfo device, long contextHandle, long queue,
                        EventListener listener, EmitOptions emitOptions, Fallback fallback, DiskCache disk,
-                       Path sourceDump, String codegenVersion, OptimizeOptions optimizeOptions) {
+                       Path sourceDump, String codegenVersion, OptimizeOptions optimizeOptions, KernelSplitMode splitMode) {
         this.optimizeOptions = optimizeOptions;
+        this.splitMode = splitMode;
         this.disk = disk;
         this.sourceDump = sourceDump;
         this.codegenVersion = codegenVersion;
@@ -238,6 +249,11 @@ public final class GpuContext implements AutoCloseable {
     /** Переменная окружения с уровнем оптимизатора IR ({@code 0..3} либо {@code off}). */
     public static final String OPTIMIZE_ENVIRONMENT = "JAVATOGPU_OPTIMIZE";
 
+    /** Системное свойство с режимом деления ядер на стадии ({@code off}, {@code auto}, {@code always}). */
+    public static final String SPLIT_PROPERTY = "javatogpu.split";
+    /** Переменная окружения с режимом деления ядер на стадии ({@code off}, {@code auto}, {@code always}). */
+    public static final String SPLIT_ENVIRONMENT = "JAVATOGPU_SPLIT";
+
     /** Построитель {@link GpuContext}. */
     public static final class Builder {
         private DeviceApi api;
@@ -252,6 +268,7 @@ public final class GpuContext implements AutoCloseable {
         private Path sourceDumpPath;
         private String codegenVersion = OpenClEmitter.VERSION;
         private OptimizeOptions optimizeOptions = OptimizeOptions.DEFAULT;
+        private KernelSplitMode splitMode = KernelSplitMode.OFF;
 
         private Builder() {
         }
@@ -272,6 +289,41 @@ public final class GpuContext implements AutoCloseable {
             }
             this.optimizeOptions = options;
             return this;
+        }
+
+        /**
+         * Когда исполнять ядро по стадиям {@code KernelSplitter} (см. {@link KernelSplitMode}); по умолчанию
+         * {@link KernelSplitMode#OFF}. Если не вызван {@link #ignoreEnvironment()}, переопределяется свойством
+         * {@code javatogpu.split} либо переменной {@code JAVATOGPU_SPLIT} ({@code off}, {@code auto}, {@code always}).
+         *
+         * @param mode режим
+         * @return этот построитель
+         */
+        public Builder splitKernels(KernelSplitMode mode) {
+            if (mode == null) {
+                throw new IllegalArgumentException("split mode is required");
+            }
+            this.splitMode = mode;
+            return this;
+        }
+
+        /** Режим деления с учётом свойства и переменной окружения. */
+        KernelSplitMode effectiveSplitMode() {
+            if (!environment) {
+                return splitMode;
+            }
+            String v = System.getProperty(SPLIT_PROPERTY);
+            if (v == null) {
+                v = System.getenv(SPLIT_ENVIRONMENT);
+            }
+            if (v == null || v.isBlank()) {
+                return splitMode;
+            }
+            try {
+                return KernelSplitMode.valueOf(v.strip().toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                return splitMode;
+            }
         }
 
         /** Настройки оптимизатора с учётом свойства и переменной окружения. */
@@ -474,7 +526,7 @@ public final class GpuContext implements AutoCloseable {
                 }
                 GpuContext gc = new GpuContext(a, owns, d, ctx, q, listener == null ? EventListener.NONE : listener,
                         emitOptions, fallback == null ? Fallback.ALLOWED : fallback, openDiskCache(owns), openSourceDump(), codegenVersion,
-                        effectiveOptimizeOptions());
+                        effectiveOptimizeOptions(), effectiveSplitMode());
                 gc.emit(GpuEvent.Kind.DEVICE_SELECTED, d.describe(), 0, 0, d.platformName() + ", driver " + d.driverVersion());
                 return Result.ok(gc);
             } catch (DeviceApiException e) {
@@ -827,7 +879,13 @@ public final class GpuContext implements AutoCloseable {
     /** Часть ключей кэша, зависящая от настроек оптимизатора. */
     private String optimizeKey() {
         OptimizeOptions o = optimizeOptions;
-        return "opt" + o.level() + (o.fastMath() ? "f" : "") + (o.contractFma() ? "c" : "") + "/" + o.registerBudget();
+        return "opt" + o.level() + (o.fastMath() ? "f" : "") + (o.contractFma() ? "c" : "") + "/" + o.registerBudget()
+                + "/split=" + splitMode.name().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** @return режим деления ядер на стадии этого контекста */
+    public KernelSplitMode splitMode() {
+        return splitMode;
     }
 
     /** @return настройки оптимизатора IR этого контекста */
@@ -911,7 +969,7 @@ public final class GpuContext implements AutoCloseable {
                 how[0] = "disk-hit";
             } else {
                 program = api.createProgram(contextHandle, art.source());
-                DeviceApi.BuildOutcome outcome = api.build(program, device.handle(), buildOptions(art));
+                DeviceApi.BuildOutcome outcome = buildProgram(program, buildOptions(art));
                 driverLog[0] = outcome.log();
                 log = BuildLog.parse(outcome.log(), kernel, !outcome.ok());
                 if (!outcome.ok()) {
@@ -929,6 +987,7 @@ public final class GpuContext implements AutoCloseable {
             CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(original), access, program, kernelHandle,
                     maxWg, stats, estimateRegisters(m, kernel), fullyWritten(m, kernel));
             compiled.add(ck);
+            attachSplit(ck, m, kernel, options);
             for (Diagnostic d : log) {
                 emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, d.message());
             }
@@ -940,6 +999,191 @@ public final class GpuContext implements AutoCloseable {
             return failure("RT-X01", "driver error during compilation: " + e.getMessage());
         } finally {
             lock.unlock();
+        }
+    }
+
+    /**
+     * Решает, исполнять ли ядро по стадиям {@code KernelSplitter} (см. {@link KernelSplitMode}), и если да - собирает
+     * стадии. Любая неудача оставляет ядро целым: деление - оптимизация, а не условие работы. Под замком.
+     *
+     * @param ck      собранное целое ядро
+     * @param m       модуль, из которого оно собрано
+     * @param kernel  индекс ядра в модуле
+     * @param options параметры генерации
+     */
+    private void attachSplit(CompiledKernel ck, IrModule m, int kernel, EmitOptions options) {
+        if (splitMode == KernelSplitMode.OFF || options.debug()) {
+            return;
+        }
+        DriverStats stats = ck.driverStats();
+        boolean known = stats.registers() >= 0;
+        boolean want = splitMode == KernelSplitMode.ALWAYS
+                || (known ? stats.spills() : ck.estimatedRegisters() > optimizeOptions.registerBudget());
+        if (!want) {
+            return;
+        }
+        String entry = ck.artifact().entry();
+        com.sixik.gpu.ir.optimizer.KernelSplitter.SplitResult sr;
+        try {
+            // драйвер видит проливание (или деление запрошено всегда), а оценка укладывается в бюджет: цель стадий -
+            // заметно ниже оценки целого ядра, иначе KernelSplitter откажется делить
+            int estimate = ck.estimatedRegisters();
+            int budget = optimizeOptions.registerBudget();
+            OptimizeOptions target = estimate > budget || estimate <= 0 ? optimizeOptions
+                    : optimizeOptions.withRegisterBudget(Math.max(1, estimate * 2 / 3));
+            sr = com.sixik.gpu.ir.optimizer.KernelSplitter.split(m, kernel, target);
+        } catch (RuntimeException e) {
+            emit(GpuEvent.Kind.WARNING, entry, 0, 0, "kernel splitting failed, the kernel runs whole: " + e);
+            return;
+        }
+        if (!sr.isSplit()) {
+            if (splitMode == KernelSplitMode.AUTO) {
+                emit(GpuEvent.Kind.WARNING, entry, 0, 0, "the kernel spills registers but cannot be split: " + sr.reason());
+            }
+            return;
+        }
+        com.sixik.gpu.ir.optimizer.KernelSplitter.KernelSplit plan = sr.split();
+        IrModule sm = sr.module();
+        int[] stageFns = plan.stages();
+        CompiledKernel[] stages = new CompiledKernel[stageFns.length];
+        long t0 = System.nanoTime();
+        try {
+            long minWg = ck.maxWorkGroupSize();
+            for (int j = 0; j < stageFns.length; j++) {
+                stages[j] = buildStage(sm, stageFns[j], options, ck.kernelId() + "$s" + j);
+                if (stages[j] == null) {
+                    releaseStages(stages);
+                    return;
+                }
+                minWg = Math.min(minWg, stages[j].maxWorkGroupSize());
+            }
+            if (splitMode == KernelSplitMode.AUTO && known) {
+                long before = (long) stats.spillStoreBytes() + stats.spillLoadBytes();
+                long worst = 0;
+                for (CompiledKernel s : stages) {
+                    DriverStats st = s.driverStats();
+                    worst = Math.max(worst, st.registers() < 0 ? before : (long) st.spillStoreBytes() + st.spillLoadBytes());
+                }
+                if (worst >= before) {
+                    emit(GpuEvent.Kind.COMPILE, entry, System.nanoTime() - t0, 0, "split rejected: the stages still spill "
+                            + worst + " bytes (whole kernel: " + before + ")");
+                    releaseStages(stages);
+                    return;
+                }
+            }
+            int sc = plan.scratch().size();
+            int[] param = new int[sc];
+            long[] bytes = new long[sc];
+            int[] perItem = new int[sc];
+            for (int i = 0; i < sc; i++) {
+                com.sixik.gpu.ir.optimizer.KernelSplitter.Scratch s = plan.scratch().get(i);
+                param[i] = s.paramIndex();
+                perItem[i] = s.elementsPerWorkItem();
+                bytes[i] = (long) com.sixik.gpu.ir.AbiLayout.sizeOf(sm, s.elementType()) * s.elementsPerWorkItem();
+            }
+            ck.split = new CompiledKernel.SplitPlan(stages, param, bytes, perItem, minWg);
+            // ALWAYS - стадии сразу; AUTO - решит замер на первых запусках (SPLIT_TRIAL_LAUNCHES)
+            ck.splitChosen = splitMode == KernelSplitMode.ALWAYS ? Boolean.TRUE : null;
+            emit(GpuEvent.Kind.COMPILE, entry, System.nanoTime() - t0, 0, "split into " + stages.length
+                    + " stages, estimated registers " + plan.originalRegisters() + " -> "
+                    + java.util.Arrays.toString(plan.stageRegisters()));
+        } catch (DeviceApiException e) {
+            releaseStages(stages);
+            emit(GpuEvent.Kind.WARNING, entry, 0, 0, "driver error while building kernel stages, the kernel runs whole: "
+                    + e.getMessage());
+        }
+    }
+
+    /**
+     * Собирает одну стадию разделённого ядра из исходника (без дискового кэша). Под замком.
+     *
+     * @return стадия либо {@code null}, если генератор или драйвер её отверг (сообщается предупреждением)
+     */
+    private CompiledKernel buildStage(IrModule sm, int fn, EmitOptions options, String id) {
+        Result<Artifact> emitted = OpenClEmitter.emit(sm, fn, target, options);
+        if (!emitted.isOk()) {
+            emit(GpuEvent.Kind.WARNING, id, 0, 0, "kernel stage was not generated, the kernel runs whole: "
+                    + emitted.diagnostics());
+            return null;
+        }
+        Artifact art = emitted.value();
+        dumpSource(art);
+        long program = api.createProgram(contextHandle, art.source());
+        DeviceApi.BuildOutcome outcome = buildProgram(program, buildOptions(art));
+        if (!outcome.ok()) {
+            api.release(DeviceApi.HandleKind.PROGRAM, program);
+            emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, "the driver rejected a kernel stage, the kernel runs whole");
+            return null;
+        }
+        long handle;
+        try {
+            handle = api.createKernel(program, art.entry());
+        } catch (DeviceApiException e) {
+            api.release(DeviceApi.HandleKind.PROGRAM, program);
+            throw e;
+        }
+        long maxWg = api.kernelMaxWorkGroupSize(handle, device.handle());
+        DriverStats stats = (isNvidia() ? DriverStats.parseNvidiaLog(outcome.log(), art.entry()) : DriverStats.UNKNOWN)
+                .withPrivateBytes(api.kernelPrivateMemSize(handle, device.handle()));
+        int[] access = Validator.validate(sm).functions()[fn].paramAccess();
+        CompiledKernel stage = new CompiledKernel(this, sm, fn, art, id, access, program, handle, maxWg, stats, -1,
+                new boolean[access.length]);
+        compiled.add(stage);
+        return stage;
+    }
+
+    /**
+     * Стек потока, на котором драйвер собирает программу. Компилятор OpenCL C в драйвере рекурсивен по глубине выражения:
+     * на NVIDIA выражение глубиной ~200 скобок переполняет стек обычного потока, и процесс JVM падает без исключения
+     * (поток Java не может перехватить переполнение в нативном коде). Память стека выделяется по мере использования.
+     */
+    static final long BUILD_STACK_BYTES = 512L << 20;
+
+    /**
+     * Сборка программы драйвером на отдельном потоке с большим стеком ({@link #BUILD_STACK_BYTES}). Вызывающий ждёт её
+     * завершения; замок контекста остаётся за вызывающим (сборка - обычный вызов драйвера под ним).
+     *
+     * @param program программа
+     * @param options параметры сборки
+     * @return итог сборки
+     */
+    private DeviceApi.BuildOutcome buildProgram(long program, String options) {
+        DeviceApi.BuildOutcome[] outcome = new DeviceApi.BuildOutcome[1];
+        RuntimeException[] failure = new RuntimeException[1];
+        Thread t = new Thread(null, () -> {
+            try {
+                outcome[0] = api.build(program, device.handle(), options);
+            } catch (RuntimeException e) {
+                failure[0] = e;
+            }
+        }, "javatogpu-build", BUILD_STACK_BYTES);
+        t.setDaemon(true);
+        t.start();
+        boolean interrupted = false;
+        while (true) {
+            try {
+                t.join();
+                break;
+            } catch (InterruptedException e) {
+                interrupted = true; // сборку прервать нельзя: дождаться и восстановить флаг
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
+        if (failure[0] != null) {
+            throw failure[0];
+        }
+        return outcome[0];
+    }
+
+    /** Освобождает уже собранные стадии (под замком). */
+    private void releaseStages(CompiledKernel[] stages) {
+        for (CompiledKernel s : stages) {
+            if (s != null && compiled.remove(s)) {
+                api.release(DeviceApi.HandleKind.KERNEL, s.kernel);
+                api.release(DeviceApi.HandleKind.PROGRAM, s.program);
+            }
         }
     }
 
@@ -989,7 +1233,7 @@ public final class GpuContext implements AutoCloseable {
         long program = 0;
         try {
             program = api.createProgramWithBinary(contextHandle, device.handle(), image);
-            DeviceApi.BuildOutcome outcome = api.build(program, device.handle(), buildOptions(art));
+            DeviceApi.BuildOutcome outcome = buildProgram(program, buildOptions(art));
             logOut[0] = outcome.log();
             if (outcome.ok()) {
                 long k = api.createKernel(program, art.entry());
@@ -1748,15 +1992,181 @@ public final class GpuContext implements AutoCloseable {
         }
         long t1 = System.nanoTime();
         api.enqueue(queue, k.kernel, cfg.dim(), global, local);
-        if (defer && pendingLaunches < MAX_DEFERRED_LAUNCHES) {
-            pendingLaunches++;
-            pendingKernels.add(k.artifact().entry() + " " + cfg);
-        } else {
-            synchronizeQueue();
-        }
+        afterEnqueue(k.artifact().entry() + " " + cfg, defer);
         long nanos = System.nanoTime() - t1;
         emit(GpuEvent.Kind.KERNEL, k.artifact().entry(), nanos, 0, cfg.toString());
         return nanos;
+    }
+
+    /** После постановки запуска в очередь: отложить ожидание (если можно) либо дождаться очереди. Под замком. */
+    private void afterEnqueue(String what, boolean defer) {
+        if (defer && pendingLaunches < MAX_DEFERRED_LAUNCHES) {
+            pendingLaunches++;
+            pendingKernels.add(what);
+        } else {
+            synchronizeQueue();
+        }
+    }
+
+    /**
+     * План деления, если этот запуск исполняется по стадиям: ядро разделено, промежуточные буферы помещаются в память и
+     * индексы {@code int}, а заданная work-group допустима для всех стадий. Иначе {@code null} - запуск целиком.
+     *
+     * @param k     ядро
+     * @param cfg   размеры запуска
+     * @param local размер work-group либо {@code null}
+     * @return план либо {@code null}
+     */
+    CompiledKernel.SplitPlan splitFor(CompiledKernel k, LaunchConfig cfg, long[] local) {
+        CompiledKernel.SplitPlan p = k.split;
+        if (p == null || Boolean.FALSE.equals(k.splitChosen)) {
+            return null;
+        }
+        long items = 1;
+        for (int d = 0; d < cfg.dim(); d++) {
+            items *= cfg.global(d);
+        }
+        long maxBytes = device.maxAllocation() > 0 ? Math.min(device.maxAllocation(), MAX_SCRATCH_BYTES) : MAX_SCRATCH_BYTES;
+        for (int i = 0; i < p.scratchParam().length; i++) {
+            if (items * p.scratchPerItem()[i] > Integer.MAX_VALUE || items * p.scratchBytes()[i] > maxBytes) {
+                return null;
+            }
+        }
+        if (local != null) {
+            long wg = 1;
+            for (long l : local) {
+                wg *= l;
+            }
+            if (wg > p.maxWorkGroupSize()) {
+                return null;
+            }
+        }
+        return p;
+    }
+
+    /**
+     * Выставляет аргументы и ставит ядро в очередь: целиком либо по стадиям (если {@link #splitFor} даёт план). Стадии
+     * идут подряд без ожидания между ними (очередь in-order); промежуточные буферы выделяет и держит контекст. Под замком.
+     *
+     * @param k       ядро
+     * @param cfg     размеры запуска
+     * @param local   размер work-group либо {@code null}
+     * @param args    аргументы (по параметрам исходного ядра)
+     * @param handles дескрипторы буферов по параметрам
+     * @param lengths длины массивов по параметрам
+     * @param arena   память для упаковки значений struct/векторов
+     * @param defer   можно не ждать завершения
+     * @return время работы (либо постановки в очередь), нс
+     */
+    long dispatchKernel(CompiledKernel k, LaunchConfig cfg, long[] local, Object[] args, long[] handles, long[] lengths,
+                        Arena arena, boolean defer) {
+        CompiledKernel.SplitPlan p = splitFor(k, cfg, local);
+        if (p == null) {
+            setKernelArgs(k, args, handles, lengths, arena);
+            return dispatch(k, cfg, local, defer);
+        }
+        if (k.splitChosen == null) {
+            return trialDispatch(k, p, cfg, local, args, handles, lengths, arena);
+        }
+        long t1 = System.nanoTime();
+        enqueueStages(k, p, cfg, local, args, handles, lengths, arena);
+        afterEnqueue(k.artifact().entry() + " " + cfg + " (" + p.stages().length + " stages)", defer);
+        long nanos = System.nanoTime() - t1;
+        emit(GpuEvent.Kind.KERNEL, k.artifact().entry(), nanos, 0, cfg + ", " + p.stages().length + " stages");
+        return nanos;
+    }
+
+    /**
+     * Сколько первых запусков ядра-кандидата в режиме {@link KernelSplitMode#AUTO} уходит на замер: поочерёдно целиком и
+     * по стадиям, с ожиданием каждого; первые два (по одному каждого варианта) - прогрев и в замер не входят.
+     */
+    static final int SPLIT_TRIAL_LAUNCHES = 10;
+
+    /**
+     * Пробный запуск режима {@link KernelSplitMode#AUTO}: чередует целое ядро и стадии, меряет каждый вариант с
+     * ожиданием очереди и после {@link #SPLIT_TRIAL_LAUNCHES} запусков выбирает: стадии остаются, только если они
+     * быстрее целого ядра больше чем на 5%. Под замком.
+     */
+    private long trialDispatch(CompiledKernel k, CompiledKernel.SplitPlan p, LaunchConfig cfg, long[] local,
+                               Object[] args, long[] handles, long[] lengths, Arena arena) {
+        int n = k.trialLaunches++;
+        boolean stagesArm = n % 2 == 1;
+        synchronizeQueue(); // в замер не должна попасть чужая работа очереди
+        long t1 = System.nanoTime();
+        if (stagesArm) {
+            enqueueStages(k, p, cfg, local, args, handles, lengths, arena);
+        } else {
+            setKernelArgs(k, args, handles, lengths, arena);
+            long[] global = new long[cfg.dim()];
+            for (int d = 0; d < global.length; d++) {
+                global[d] = cfg.global(d);
+            }
+            api.enqueue(queue, k.kernel, cfg.dim(), global, local);
+        }
+        synchronizeQueue();
+        long nanos = System.nanoTime() - t1;
+        if (n >= 2) {
+            if (stagesArm) {
+                k.trialSplitNanos += nanos;
+            } else {
+                k.trialWholeNanos += nanos;
+            }
+        }
+        String entry = k.artifact().entry();
+        emit(GpuEvent.Kind.KERNEL, entry, nanos, 0, cfg + (stagesArm ? ", " + p.stages().length + " stages" : "")
+                + ", split trial");
+        if (k.trialLaunches >= SPLIT_TRIAL_LAUNCHES) {
+            boolean split = k.trialSplitNanos < k.trialWholeNanos * 0.95;
+            k.splitChosen = split;
+            int runs = (SPLIT_TRIAL_LAUNCHES - 2) / 2;
+            emit(GpuEvent.Kind.COMPILE, entry, 0, 0, (split ? "split kept" : "split rejected") + " by measurement: whole "
+                    + k.trialWholeNanos / runs / 1000 + " us, " + p.stages().length + " stages "
+                    + k.trialSplitNanos / runs / 1000 + " us");
+        }
+        return nanos;
+    }
+
+    /** Выставляет аргументы стадий (с промежуточными буферами) и ставит стадии в очередь подряд. Под замком. */
+    private void enqueueStages(CompiledKernel k, CompiledKernel.SplitPlan p, LaunchConfig cfg, long[] local,
+                               Object[] args, long[] handles, long[] lengths, Arena arena) {
+        long[] global = new long[cfg.dim()];
+        long items = 1;
+        for (int d = 0; d < global.length; d++) {
+            global[d] = cfg.global(d);
+            items *= global[d];
+        }
+        int total = args.length + p.scratchParam().length;
+        Object[] xa = java.util.Arrays.copyOf(args, total);
+        long[] xh = java.util.Arrays.copyOf(handles, total);
+        long[] xl = java.util.Arrays.copyOf(lengths, total);
+        for (int i = 0; i < p.scratchParam().length; i++) {
+            xh[p.scratchParam()[i]] = scratch(i, Math.max(4, items * p.scratchBytes()[i]));
+            xl[p.scratchParam()[i]] = items * p.scratchPerItem()[i];
+        }
+        for (CompiledKernel s : p.stages()) {
+            setKernelArgs(s, xa, xh, xl, arena);
+            api.enqueue(queue, s.kernel, cfg.dim(), global, local);
+        }
+    }
+
+    /**
+     * Промежуточный буфер номер {@code i} не меньше {@code bytes} байт (переиспользуется, растёт по требованию). Под
+     * замком. Прежний буфер освобождается сразу: драйвер держит память, пока её используют поставленные команды.
+     */
+    private long scratch(int i, long bytes) {
+        if (i >= scratchHandles.length) {
+            scratchHandles = java.util.Arrays.copyOf(scratchHandles, i + 1);
+            scratchSizes = java.util.Arrays.copyOf(scratchSizes, i + 1);
+        }
+        if (scratchSizes[i] < bytes) {
+            long h = api.createBuffer(contextHandle, bytes);
+            if (scratchHandles[i] != 0) {
+                api.release(DeviceApi.HandleKind.BUFFER, scratchHandles[i]);
+            }
+            scratchHandles[i] = h;
+            scratchSizes[i] = bytes;
+        }
+        return scratchHandles[i];
     }
 
     /** Выполняет запуск под замком; аргументы уже проверены. */
@@ -1823,13 +2233,12 @@ public final class GpuContext implements AutoCloseable {
             upNanos = System.nanoTime() - t0;
             emit(GpuEvent.Kind.UPLOAD, k.artifact().entry(), upNanos, up, "");
 
-            setKernelArgs(k, args, handles, lengths, arena);
             boolean readsBack = false;
             for (long[] v : hostBuffers.values()) {
                 readsBack |= (v[1] & Validator.ACCESS_WRITE) != 0;
             }
             // читать на хост нечего - ждать завершения ядра не нужно: дождётся первая блокирующая операция очереди
-            kernelNanos = dispatch(k, cfg, local, deferAllowed && !readsBack);
+            kernelNanos = dispatchKernel(k, cfg, local, args, handles, lengths, arena, deferAllowed && !readsBack);
 
             long t2 = System.nanoTime();
             for (Map.Entry<Object, long[]> e : hostBuffers.entrySet()) {
@@ -1895,6 +2304,13 @@ public final class GpuContext implements AutoCloseable {
                 api.release(DeviceApi.HandleKind.PROGRAM, k.program);
             }
             compiled.clear();
+            for (long h : scratchHandles) {
+                if (h != 0) {
+                    api.release(DeviceApi.HandleKind.BUFFER, h);
+                }
+            }
+            scratchHandles = new long[0];
+            scratchSizes = new long[0];
             for (GpuBuffer b : buffers) {
                 b.markClosed();
                 try {

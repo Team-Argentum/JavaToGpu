@@ -82,6 +82,15 @@ public final class FakeDeviceApi implements DeviceApi {
             this.local = local;
         }
 
+        /** @return сколько аргументов ядра выставлено (номера подряд с нуля) */
+        public int argCount() {
+            int n = 0;
+            while (n < args.length && args[n] != null) {
+                n++;
+            }
+            return n;
+        }
+
         /** @return размерность */
         public int dim() {
             return dim;

@@ -424,9 +424,18 @@ public final class PreparedLauncher implements AutoCloseable {
         long upNanos = System.nanoTime() - t0;
         ctx.emit(GpuEvent.Kind.UPLOAD, kernel.artifact().entry(), upNanos, up, "");
 
-        bindArguments();
         // без массивов хоста промежуточная память не переиспользуется и читать нечего: можно не ждать ядро
-        long kernelNanos = ctx.dispatch(kernel, config, local, slots.length == 0 && ctx.deferAllowedNow());
+        boolean defer = slots.length == 0 && ctx.deferAllowedNow();
+        long kernelNanos;
+        if (ctx.splitFor(kernel, config, local) == null) {
+            bindArguments();
+            kernelNanos = ctx.dispatch(kernel, config, local, defer);
+        } else {
+            // по стадиям: у каждой стадии свой cl_kernel, аргументы выставляются заново
+            try (Arena temp = Arena.ofConfined()) {
+                kernelNanos = ctx.dispatchKernel(kernel, config, local, args, handles, lengths, temp, defer);
+            }
+        }
 
         long t2 = System.nanoTime();
         long down = 0;
