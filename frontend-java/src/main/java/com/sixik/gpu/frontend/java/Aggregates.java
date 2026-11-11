@@ -154,6 +154,33 @@ final class Aggregates {
 
     private static final Pattern POINTER = Pattern.compile("(Global|Local|Constant)?(Float|Double|Int|Long)Ptr");
 
+    private static final Pattern RESIDENT = Pattern.compile("Gpu(Float|Double|Int|Long)Array");
+
+    /**
+     * Массив с резидентностью на устройстве ({@code api.types.GpuFloatArray} и др.). В GPU-коде это обычный массив
+     * пространства {@code global}: {@code a.get(i)}, {@code a.set(i, v)}, {@code a.length()} - то же, что {@code a[i]} и
+     * {@code a.length}.
+     *
+     * @param t тип Java
+     * @return вид элемента ({@code K_FLOAT, K_DOUBLE, K_INT, K_LONG}) либо {@code -1}, если тип не такой массив
+     */
+    static int residentArray(TypeMirror t) {
+        TypeElement te = element(t);
+        if (te == null || !te.getQualifiedName().toString().startsWith(VECTOR_PACKAGE)) {
+            return -1;
+        }
+        Matcher m = RESIDENT.matcher(te.getSimpleName());
+        if (!m.matches()) {
+            return -1;
+        }
+        return switch (m.group(1)) {
+            case "Float" -> JavaTypes.K_FLOAT;
+            case "Double" -> JavaTypes.K_DOUBLE;
+            case "Int" -> JavaTypes.K_INT;
+            default -> JavaTypes.K_LONG;
+        };
+    }
+
     /**
      * Описание pointer-типа (M9).
      *

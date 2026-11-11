@@ -45,6 +45,8 @@ public final class OpenClApi implements DeviceApi {
     private final MethodHandle createBuffer;
     private final MethodHandle writeBuffer;
     private final MethodHandle readBuffer;
+    private final MethodHandle mapBuffer;
+    private final MethodHandle unmap;
     private final MethodHandle createProgram;
     private final MethodHandle buildProgram;
     private final MethodHandle createProgramWithBinary;
@@ -72,6 +74,9 @@ public final class OpenClApi implements DeviceApi {
         createBuffer = fn("clCreateBuffer", FunctionDescriptor.of(PTR, PTR, LONG, LONG, PTR, PTR));
         writeBuffer = fn("clEnqueueWriteBuffer", FunctionDescriptor.of(INT, PTR, PTR, INT, LONG, LONG, PTR, INT, PTR, PTR));
         readBuffer = fn("clEnqueueReadBuffer", FunctionDescriptor.of(INT, PTR, PTR, INT, LONG, LONG, PTR, INT, PTR, PTR));
+        mapBuffer = fn("clEnqueueMapBuffer",
+                FunctionDescriptor.of(PTR, PTR, PTR, INT, LONG, LONG, LONG, INT, PTR, PTR, PTR));
+        unmap = fn("clEnqueueUnmapMemObject", FunctionDescriptor.of(INT, PTR, PTR, PTR, INT, PTR, PTR));
         createProgram = fn("clCreateProgramWithSource", FunctionDescriptor.of(PTR, PTR, INT, PTR, PTR, PTR));
         buildProgram = fn("clBuildProgram", FunctionDescriptor.of(INT, PTR, INT, PTR, PTR, PTR, PTR));
         createProgramWithBinary = fn("clCreateProgramWithBinary", FunctionDescriptor.of(PTR, PTR, INT, PTR, PTR, PTR, PTR, PTR));
@@ -266,12 +271,56 @@ public final class OpenClApi implements DeviceApi {
     }
 
     @Override
+    public void writeBufferAsync(long queue, long buffer, long offset, long size, MemorySegment src) {
+        try {
+            check((int) writeBuffer.invoke(handle(queue), handle(buffer), 0 /* CL_FALSE */, offset, size, src, 0,
+                    MemorySegment.NULL, MemorySegment.NULL), "clEnqueueWriteBuffer");
+        } catch (Throwable t) {
+            throw unexpected("clEnqueueWriteBuffer", t);
+        }
+    }
+
+    @Override
     public void readBuffer(long queue, long buffer, long offset, long size, MemorySegment dst) {
         try {
             check((int) readBuffer.invoke(handle(queue), handle(buffer), 1, offset, size, dst, 0, MemorySegment.NULL,
                     MemorySegment.NULL), "clEnqueueReadBuffer");
         } catch (Throwable t) {
             throw unexpected("clEnqueueReadBuffer", t);
+        }
+    }
+
+    @Override
+    public Pinned createPinned(long context, long queue, long size) {
+        long buffer = 0;
+        try (Arena a = Arena.ofConfined()) {
+            MemorySegment err = a.allocate(4);
+            MemorySegment b = (MemorySegment) createBuffer.invoke(handle(context),
+                    1L /* CL_MEM_READ_WRITE */ | 0x10L /* CL_MEM_ALLOC_HOST_PTR */, size, MemorySegment.NULL, err);
+            check(err.get(INT, 0), "clCreateBuffer");
+            buffer = b.address();
+            MemorySegment p = (MemorySegment) mapBuffer.invoke(handle(queue), b, 1 /* blocking */,
+                    3L /* CL_MAP_READ | CL_MAP_WRITE */, 0L, size, 0, MemorySegment.NULL, MemorySegment.NULL, err);
+            check(err.get(INT, 0), "clEnqueueMapBuffer");
+            return new Pinned(buffer, p.reinterpret(size));
+        } catch (Throwable t) {
+            if (buffer != 0) {
+                release(HandleKind.BUFFER, buffer);
+            }
+            throw unexpected("clEnqueueMapBuffer", t);
+        }
+    }
+
+    @Override
+    public void releasePinned(long queue, Pinned pinned) {
+        try {
+            check((int) unmap.invoke(handle(queue), handle(pinned.buffer()), pinned.memory(), 0, MemorySegment.NULL,
+                    MemorySegment.NULL), "clEnqueueUnmapMemObject");
+            check((int) finish.invoke(handle(queue)), "clFinish");
+        } catch (Throwable t) {
+            throw unexpected("clEnqueueUnmapMemObject", t);
+        } finally {
+            release(HandleKind.BUFFER, pinned.buffer());
         }
     }
 

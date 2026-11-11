@@ -56,9 +56,16 @@ public final class PreparedLauncher implements AutoCloseable {
         final long bytes;
         final long handle;
         final MemorySegment staging;
+        /** Закреплённый буфер, которому принадлежит {@link #staging}, либо {@code null} для обычной памяти. */
+        final DeviceApi.Pinned pinned;
         int access;
+        /** Параметры ядра, которым передан этот массив (первые {@link #paramCount}). */
+        int[] params = new int[4];
+        int paramCount;
 
-        Slot(Object array, int elemType, boolean objects, int length, long bytes, long handle, MemorySegment staging) {
+        Slot(Object array, int elemType, boolean objects, int length, long bytes, long handle, MemorySegment staging,
+             DeviceApi.Pinned pinned) {
+            this.pinned = pinned;
             this.array = array;
             this.elemType = elemType;
             this.objects = objects;
@@ -68,6 +75,12 @@ public final class PreparedLauncher implements AutoCloseable {
             this.staging = staging;
         }
     }
+
+    /**
+     * Начиная с этого размера массив хоста передаётся через закреплённую память ({@link DeviceApi#createPinned}). Закрепление
+     * само стоит времени, поэтому выгодно для крупных буферов, которые подготовленный запуск переиспользует многократно.
+     */
+    static final long PINNED_BYTES = 1L << 20;
 
     private final GpuContext ctx;
     private final CompiledKernel kernel;
@@ -147,12 +160,19 @@ public final class PreparedLauncher implements AutoCloseable {
                     boolean objects = HostObjects.isAggregate(m, elem);
                     long bytes = objects ? Marshal.byteSize(m, elem, (Object[]) args[i]) : Marshal.byteSize(args[i]);
                     long handle = ctx.api.createBuffer(ctx.contextHandle, Math.max(bytes, 4));
+                    // крупные массивы - через закреплённую память: DMA вдвое быстрее, чем из обычной
+                    DeviceApi.Pinned pin = bytes >= PINNED_BYTES ? ctx.api.createPinned(ctx.contextHandle, ctx.queue, bytes)
+                            : null;
                     slot = new Slot(args[i], elem, objects, Marshal.length(args[i]), bytes, handle,
-                            staging.allocate(Math.max(bytes, 8), 8));
+                            pin != null ? pin.memory() : staging.allocate(Math.max(bytes, 8), 8), pin);
                     byArray.put(args[i], slot);
                     slots.add(slot);
                 }
                 slot.access |= kernel.access(i);
+                if (slot.paramCount == slot.params.length) {
+                    slot.params = Arrays.copyOf(slot.params, slot.paramCount * 2);
+                }
+                slot.params[slot.paramCount++] = i;
                 slotOf[i] = slot;
                 handles[i] = slot.handle;
                 lengths[i] = slot.length;
@@ -160,6 +180,9 @@ public final class PreparedLauncher implements AutoCloseable {
         } catch (DeviceApiException e) {
             for (Slot s : slots) {
                 ctx.api.release(DeviceApi.HandleKind.BUFFER, s.handle);
+                if (s.pinned != null) {
+                    ctx.api.releasePinned(ctx.queue, s.pinned);
+                }
             }
             staging.close();
             return GpuContext.failure("RT-X01", "driver error while preparing the launch: " + e.getMessage());
@@ -170,6 +193,15 @@ public final class PreparedLauncher implements AutoCloseable {
                 lengths, staging);
         Arrays.fill(launcher.dirty, true);
         return Result.ok(launcher);
+    }
+
+    /** @return суммарный размер массивов хоста, для которых запуск держит буферы устройства и промежуточную память */
+    long hostBytes() {
+        long b = 0;
+        for (Slot s : slots) {
+            b += s.bytes;
+        }
+        return b;
     }
 
     /** @return ядро, к которому привязан запуск */
@@ -288,13 +320,14 @@ public final class PreparedLauncher implements AutoCloseable {
         long up = 0;
         long t0 = System.nanoTime();
         for (Slot s : slots) {
-            if (s.bytes > 0) {
+            if (s.bytes > 0 && !kernel.uploadSkippable(s.params, s.paramCount, s.length, config)) {
                 if (s.objects) {
                     Marshal.copyToNative(module, s.elemType, (Object[]) s.array, s.staging);
                 } else {
-                    Marshal.copyToNative(s.array, s.staging);
+                    Marshal.copyToNativeFast(s.array, s.staging);
                 }
-                api.writeBuffer(ctx.queue, s.handle, 0, s.bytes, s.staging);
+                // staging живёт дольше запуска, а dispatch ждёт очередь: блокировать запись незачем
+                api.writeBufferAsync(ctx.queue, s.handle, 0, s.bytes, s.staging);
                 up += s.bytes;
             }
         }
@@ -312,7 +345,7 @@ public final class PreparedLauncher implements AutoCloseable {
                 if (s.objects) {
                     Marshal.fromNative(s.staging, module, s.elemType, (Object[]) s.array);
                 } else {
-                    Marshal.fromNative(s.staging, s.array);
+                    Marshal.fromNativeFast(s.staging, s.array);
                 }
                 down += s.bytes;
             }
@@ -374,8 +407,17 @@ public final class PreparedLauncher implements AutoCloseable {
             kernel.boundTo = null;
         }
         if (!ctx.closed) {
+            // неблокирующая запись могла ещё читать staging: дождаться очереди, прежде чем освобождать память
+            try {
+                ctx.api.finish(ctx.queue);
+            } catch (DeviceApiException ignored) {
+                // очередь сломана - освобождаем как есть
+            }
             for (Slot s : slots) {
                 ctx.api.release(DeviceApi.HandleKind.BUFFER, s.handle);
+                if (s.pinned != null) {
+                    ctx.api.releasePinned(ctx.queue, s.pinned);
+                }
             }
         }
         staging.close();

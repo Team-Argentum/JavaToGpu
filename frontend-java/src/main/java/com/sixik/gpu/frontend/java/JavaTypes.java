@@ -65,9 +65,18 @@ final class JavaTypes {
             case FLOAT -> K_FLOAT;
             case DOUBLE -> K_DOUBLE;
             case ARRAY -> K_ARRAY;
-            case DECLARED -> Aggregates.isAggregate(t) ? K_AGG : Aggregates.pointer(t) != null ? K_PTR : K_OTHER;
+            case DECLARED -> Aggregates.isAggregate(t) ? K_AGG : Aggregates.residentArray(t) >= 0 ? K_ARRAY
+                    : Aggregates.pointer(t) != null ? K_PTR : K_OTHER;
             default -> K_OTHER;
         };
+    }
+
+    /**
+     * @param t тип вида {@link #K_ARRAY}
+     * @return {@code true}, если это массив Java ({@code float[]}), а не {@code GpuFloatArray} и др.
+     */
+    static boolean isJavaArray(TypeMirror t) {
+        return t.getKind() == javax.lang.model.type.TypeKind.ARRAY;
     }
 
     /**

@@ -40,7 +40,8 @@ class TimingsTest {
         }
         Timings.Snapshot s = timings.snapshot();
         assertEquals(3, s.of(GpuEvent.Kind.UPLOAD).count());
-        assertEquals(3 * 2 * 1024, s.of(GpuEvent.Kind.UPLOAD).bytes(), "both float[256] arrays are uploaded every time");
+        assertEquals(3 * 1024, s.of(GpuEvent.Kind.UPLOAD).bytes(),
+                "only the input is uploaded; out[gid] is overwritten entirely (WriteCoverage)");
         assertEquals(3, s.of(GpuEvent.Kind.KERNEL).count());
         assertTrue(s.of(GpuEvent.Kind.KERNEL).nanos() > 0);
         assertEquals(3, s.of(GpuEvent.Kind.READBACK).count());

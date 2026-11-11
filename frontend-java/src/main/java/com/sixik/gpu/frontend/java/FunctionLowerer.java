@@ -894,6 +894,10 @@ final class FunctionLowerer {
             V r = pointerCall(p, mit, callee, owner, asStatement);
             return asStatement ? null : r;
         }
+        if (callee.getEnclosingElement() instanceof TypeElement owner && Aggregates.residentArray(owner.asType()) >= 0) {
+            V r = residentCall(p, mit, callee, asStatement);
+            return asStatement ? null : r;
+        }
         FnSig csig = FnSig.of(callee);
         List<TreePath> ps = new ArrayList<>();
         for (ExpressionTree a : mit.getArguments()) {
@@ -1011,6 +1015,42 @@ final class FunctionLowerer {
             default -> {
                 // set
                 int addr = b.elemPtr(vs.get(0).node(), indexNode(vs.get(1)));
+                out.add(at(mit, storeElem(addr, coerce(vs.get(2), ek), ek)));
+                return null;
+            }
+        }
+    }
+
+    /**
+     * Методы {@code GpuFloatArray} и других массивов с резидентностью: {@code a.get(i)} - {@code load(elem_ptr(a, i))},
+     * {@code a.set(i, v)} - {@code store(elem_ptr(a, i), v)}, {@code a.length()} - {@code array_len(a)}: ровно то же, что
+     * {@code a[i]}, {@code a[i] = v} и {@code a.length} для обычного массива.
+     */
+    private V residentCall(TreePath p, MethodInvocationTree mit, ExecutableElement callee, boolean asStatement) {
+        String name = callee.getSimpleName().toString();
+        List<TreePath> ps = new ArrayList<>();
+        ps.add(child(p, ((MemberSelectTree) mit.getMethodSelect()).getExpression()));
+        for (ExpressionTree a : mit.getArguments()) {
+            ps.add(child(p, a));
+        }
+        List<V> vs = operands(ps);
+        V arr = vs.get(0);
+        int ek = arr.elemKind();
+        switch (name) {
+            case "length" -> {
+                return sv(b.arrayLen(arr.node()), JavaTypes.K_INT, false);
+            }
+            case "get" -> {
+                int addr = b.elemPtr(arr.node(), indexNode(vs.get(1)));
+                if (asStatement) {
+                    out.add(at(mit, b.exprStmt(b.load(addr))));
+                    return null;
+                }
+                return loadElem(addr, ek, -1);
+            }
+            default -> {
+                // set
+                int addr = b.elemPtr(arr.node(), indexNode(vs.get(1)));
                 out.add(at(mit, storeElem(addr, coerce(vs.get(2), ek), ek)));
                 return null;
             }

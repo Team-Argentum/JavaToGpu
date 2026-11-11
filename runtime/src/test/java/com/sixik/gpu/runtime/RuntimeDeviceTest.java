@@ -73,7 +73,7 @@ class RuntimeDeviceTest {
             float expected = (float) Math.sin(inBefore[i]) + 2f;
             assertTrue(ulps(expected, out[i]) <= 4, "i=" + i + ": expected " + expected + ", got " + out[i]);
         }
-        assertEquals(n * 4L * 2, stats.bytesUp());
+        assertEquals(n * 4L, stats.bytesUp(), "only the input: out[gid] is overwritten entirely and not uploaded");
         assertEquals(n * 4L, stats.bytesDown());
         assertTrue(stats.kernelNanos() > 0);
         org.junit.jupiter.api.Assertions.assertArrayEquals(inBefore, in, "the input array is untouched");

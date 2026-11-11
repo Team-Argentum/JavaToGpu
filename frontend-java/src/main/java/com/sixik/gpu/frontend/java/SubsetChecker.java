@@ -180,6 +180,9 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             }
             case JavaTypes.K_BOOLEAN -> rep.report(pp, "GPU0004", pname);
             case JavaTypes.K_ARRAY -> {
+                if (!JavaTypes.isJavaArray(t)) {
+                    return; // GpuFloatArray и др.: элемент - всегда допустимый скаляр
+                }
                 TypeMirror comp = ((ArrayType) t).getComponentType();
                 int ck = JavaTypes.kindOf(comp);
                 if (ck == JavaTypes.K_ARRAY) {
@@ -484,6 +487,9 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
                 if (isLocalAnnotated) {
                     rep.report(p, "GPU0120");
                 }
+            } else if (k == JavaTypes.K_ARRAY && !JavaTypes.isJavaArray(t)) {
+                rep.report(p, "GPU0116", "a " + ((DeclaredType) t).asElement().getSimpleName()
+                        + " local variable is not supported in GPU code: use the parameter directly");
             } else if (k == JavaTypes.K_ARRAY) {
                 checkLocalArray(p, vt, (ArrayType) t, isLocalAnnotated);
             } else if (k == JavaTypes.K_AGG) {
@@ -609,6 +615,8 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             case LOCAL_VARIABLE, PARAMETER -> {
                 if (el.asType().getKind() == TypeKind.ARRAY) {
                     checkArrayContext(p, id);
+                } else if (Aggregates.residentArray(el.asType()) >= 0) {
+                    checkResidentContext(p, id);
                 } else if (Aggregates.pointer(el.asType()) != null) {
                     checkPointerContext(p, id, Aggregates.pointer(el.asType()));
                 }
@@ -629,6 +637,19 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
                 || (parent instanceof MethodInvocationTree mi && mi.getArguments().contains(id));
         if (!ok) {
             rep.report(p, "GPU0116", "array " + id.getName() + " cannot be assigned, returned or used as a value");
+        }
+    }
+
+    /**
+     * Где может стоять имя {@code GpuFloatArray} и других массивов с резидентностью: квалификатор {@code get/set/length}
+     * либо аргумент вызова (device-функции).
+     */
+    private void checkResidentContext(TreePath p, IdentifierTree id) {
+        Tree parent = p.getParentPath().getLeaf();
+        boolean ok = (parent instanceof MemberSelectTree ms && ms.getExpression() == id)
+                || (parent instanceof MethodInvocationTree mi && mi.getArguments().contains(id));
+        if (!ok) {
+            rep.report(p, "GPU0116", "array " + id.getName() + " is used via get/set/length or passed to @DeviceFunction");
         }
     }
 
@@ -932,6 +953,15 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
 
     private void checkCallee(TreePath p, ExecutableElement callee) {
         Element owner = callee.getEnclosingElement();
+        if (owner instanceof TypeElement rte && Aggregates.residentArray(rte.asType()) >= 0) {
+            String name = callee.getSimpleName().toString();
+            boolean known = !callee.getModifiers().contains(Modifier.STATIC)
+                    && (name.equals("get") || name.equals("set") || name.equals("length"));
+            if (!known) {
+                rep.report(p, "GPU0112", rte.getSimpleName() + "." + name);
+            }
+            return;
+        }
         if (owner instanceof TypeElement pte && Aggregates.pointer(pte.asType()) != null) {
             checkPointerMethod(p, callee, pte);
             return;

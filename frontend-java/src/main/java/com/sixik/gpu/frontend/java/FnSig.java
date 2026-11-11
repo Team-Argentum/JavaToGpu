@@ -38,7 +38,11 @@ record FnSig(int retKind, int[] paramKinds, int[] elemKinds, int[] spaces, TypeM
             TypeMirror t = ps.get(i).asType();
             int k = JavaTypes.kindOf(t);
             kinds[i] = k;
-            if (k == JavaTypes.K_ARRAY) {
+            if (k == JavaTypes.K_ARRAY && !JavaTypes.isJavaArray(t)) {
+                // GpuFloatArray и др.: массив global с данными, живущими на устройстве между вызовами
+                elems[i] = Aggregates.residentArray(t);
+                spaces[i] = com.sixik.gpu.ir.AddressSpace.GLOBAL;
+            } else if (k == JavaTypes.K_ARRAY) {
                 TypeMirror comp = ((ArrayType) t).getComponentType();
                 elems[i] = JavaTypes.kindOf(comp);
                 spaces[i] = Ann.paramSpace(ps.get(i));

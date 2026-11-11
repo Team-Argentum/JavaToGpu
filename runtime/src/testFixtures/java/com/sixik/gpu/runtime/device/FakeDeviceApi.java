@@ -296,6 +296,11 @@ public final class FakeDeviceApi implements DeviceApi {
         return bufferData.size();
     }
 
+    /** @return закреплённых промежуточных буферов, которые ещё не освобождены */
+    public int livePinned() {
+        return livePinned.size();
+    }
+
     /** @return живых программ */
     public int livePrograms() {
         return livePrograms;
@@ -416,6 +421,28 @@ public final class FakeDeviceApi implements DeviceApi {
         call("createQueue");
         liveQueues++;
         return fresh();
+    }
+
+    private final Map<Long, java.lang.foreign.Arena> livePinned = new java.util.HashMap<>();
+
+    /** Закреплённая память фейка - обычная нативная память; отличается только учётом выделений. */
+    @Override
+    public Pinned createPinned(long context, long queue, long size) {
+        call("createPinned");
+        long h = fresh();
+        java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared();
+        livePinned.put(h, arena);
+        return new Pinned(h, arena.allocate(Math.max(size, 8), 8));
+    }
+
+    @Override
+    public void releasePinned(long queue, Pinned pinned) {
+        call("releasePinned");
+        java.lang.foreign.Arena arena = livePinned.remove(pinned.buffer());
+        if (arena == null) {
+            throw new IllegalStateException("pinned buffer released twice or never created");
+        }
+        arena.close();
     }
 
     @Override

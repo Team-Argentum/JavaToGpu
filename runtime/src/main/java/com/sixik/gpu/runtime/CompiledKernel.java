@@ -30,15 +30,18 @@ public final class CompiledKernel {
 
     private final DriverStats driverStats;
     private final int estimatedRegisters;
+    private final boolean[] fullyWritten;
 
     CompiledKernel(GpuContext owner, IrModule module, int function, Artifact artifact, String kernelId, int[] access,
                    long program, long kernel, long maxWorkGroupSize) {
         this(owner, module, function, artifact, kernelId, access, program, kernel, maxWorkGroupSize, DriverStats.UNKNOWN,
-                -1);
+                -1, new boolean[access.length]);
     }
 
     CompiledKernel(GpuContext owner, IrModule module, int function, Artifact artifact, String kernelId, int[] access,
-                   long program, long kernel, long maxWorkGroupSize, DriverStats driverStats, int estimatedRegisters) {
+                   long program, long kernel, long maxWorkGroupSize, DriverStats driverStats, int estimatedRegisters,
+                   boolean[] fullyWritten) {
+        this.fullyWritten = fullyWritten.clone();
         this.driverStats = driverStats;
         this.estimatedRegisters = estimatedRegisters;
         this.owner = owner;
@@ -111,5 +114,40 @@ public final class CompiledKernel {
      */
     public int estimatedRegisters() {
         return estimatedRegisters;
+    }
+
+    /**
+     * Перезаписывает ли ядро каждый элемент массива-параметра при {@code globalSize(0) == length}
+     * ({@code ir-optimizer}, {@code WriteCoverage}). Такой массив, если ядро его не читает, не нужно загружать на устройство.
+     *
+     * @param param индекс параметра
+     * @return {@code true}, если покрытие доказано
+     */
+    public boolean fullyWritten(int param) {
+        return param >= 0 && param < fullyWritten.length && fullyWritten[param];
+    }
+
+    /**
+     * Можно ли не загружать массив хоста перед запуском: все параметры, которым он передан, ядро не читает, хотя бы один
+     * перезаписывает целиком, и размер запуска по оси 0 равен длине массива.
+     *
+     * @param params параметры, которым передан один и тот же массив
+     * @param count  сколько первых элементов {@code params} значимо
+     * @param length длина массива в элементах
+     * @param config размеры запуска
+     * @return {@code true}, если загрузка не нужна
+     */
+    boolean uploadSkippable(int[] params, int count, long length, LaunchConfig config) {
+        if (config.global(0) != length) {
+            return false;
+        }
+        boolean covered = false;
+        for (int i = 0; i < count; i++) {
+            if ((access[params[i]] & com.sixik.gpu.ir.Validator.ACCESS_READ) != 0) {
+                return false;
+            }
+            covered |= fullyWritten(params[i]);
+        }
+        return covered;
     }
 }

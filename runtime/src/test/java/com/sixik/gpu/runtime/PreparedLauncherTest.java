@@ -179,9 +179,65 @@ class PreparedLauncherTest {
             float[] out = new float[4];
             try (PreparedLauncher p = prepare(ctx, k, in, out, 0, 1f)) {
                 LaunchStats s = p.run(LaunchConfig.of1D(4));
-                assertEquals(2 * 16, s.bytesUp(), "to the device - all host arrays");
+                assertEquals(16, s.bytesUp(), "to the device - in; out[gid] is overwritten entirely and not uploaded");
                 assertEquals(16, s.bytesDown(), "back - only the writable out");
                 assertEquals(1, fake.reads());
+                assertArrayEquals(new float[]{1, 2, 3, 4}, out);
+            }
+        }
+    }
+
+    @Test
+    void largeArraysGoThroughPinnedMemoryAndAreReleased() {
+        FakeDeviceApi fake = device();
+        int n = 512 * 1024; // 2 МиБ на массив - выше порога PINNED_BYTES
+        float[] in = new float[n];
+        for (int i = 0; i < n; i++) {
+            in[i] = i;
+        }
+        float[] out = new float[n];
+        try (GpuContext ctx = open(fake, EventListener.NONE)) {
+            CompiledKernel k = ctx.compile(scaled()).value();
+            try (PreparedLauncher p = prepare(ctx, k, in, out, 3, 2f)) {
+                assertEquals(2, fake.livePinned(), "both large arrays are staged in pinned memory");
+                for (int run = 0; run < 3; run++) {
+                    p.run(LaunchConfig.of1D(n));
+                    assertEquals(2, fake.livePinned(), "the pinned staging is reused between launches");
+                }
+                for (int i = 0; i < n; i += 4099) {
+                    assertEquals(in[i] * 2f + 3, out[i], "i=" + i);
+                }
+                assertEquals(in[n - 1] * 2f + 3, out[n - 1]);
+            }
+            assertEquals(0, fake.livePinned(), "closing the launch releases its pinned buffers");
+        }
+    }
+
+    @Test
+    void smallArraysDoNotPinMemory() {
+        FakeDeviceApi fake = device();
+        try (GpuContext ctx = open(fake, EventListener.NONE)) {
+            CompiledKernel k = ctx.compile(scaled()).value();
+            try (PreparedLauncher p = prepare(ctx, k, new float[16], new float[16], 0, 1f)) {
+                p.run(LaunchConfig.of1D(16));
+                assertEquals(0, fake.livePinned());
+            }
+        }
+    }
+
+    @Test
+    void partiallyWrittenArrayIsStillUploaded() {
+        // global(0) = 2 < out.length = 4: элементы 2 и 3 ядро не трогает, их значения хоста должны сохраниться
+        FakeDeviceApi fake = device();
+        try (GpuContext ctx = open(fake, EventListener.NONE)) {
+            CompiledKernel k = ctx.compile(scaled()).value();
+            assertTrue(k.fullyWritten(1));
+            assertFalse(k.fullyWritten(0));
+            float[] in = {1, 2, 3, 4};
+            float[] out = {9, 9, 9, 9};
+            try (PreparedLauncher p = prepare(ctx, k, in, out, 0, 1f)) {
+                LaunchStats s = p.run(LaunchConfig.of1D(2));
+                assertEquals(2 * 16, s.bytesUp(), "out is covered only for global == length");
             }
         }
     }

@@ -221,6 +221,55 @@ public interface DeviceApi extends AutoCloseable {
     long kernelMaxWorkGroupSize(long kernel, long device);
 
     /**
+     * Ставит запись в буфер в очередь и не ждёт её завершения. Источник обязан оставаться неизменным, пока очередь не
+     * выполнит запись (её дождётся любая следующая блокирующая операция in-order очереди, например {@code finish}).
+     * По умолчанию - обычная блокирующая запись.
+     *
+     * @param queue  очередь
+     * @param buffer буфер
+     * @param offset смещение в байтах
+     * @param size   байты
+     * @param src    источник
+     */
+    default void writeBufferAsync(long queue, long buffer, long offset, long size, MemorySegment src) {
+        writeBuffer(queue, buffer, offset, size, src);
+    }
+
+    /**
+     * Промежуточный буфер в закреплённой (pinned) памяти хоста, постоянно отображённый в адресное пространство процесса.
+     *
+     * <p>{@code clEnqueueReadBuffer/WriteBuffer} в обычную (pageable) память драйвер выполняет через собственный
+     * промежуточный буфер: две копии и половина пропускной способности шины. Если источник или приёмник - память,
+     * полученная отображением буфера {@code CL_MEM_ALLOC_HOST_PTR}, она уже закреплена, и передача идёт прямым DMA.</p>
+     *
+     * @param buffer дескриптор буфера драйвера (освобождается через {@link #releasePinned})
+     * @param memory отображённая память размера буфера
+     */
+    record Pinned(long buffer, MemorySegment memory) {
+    }
+
+    /**
+     * Создаёт закреплённый промежуточный буфер и отображает его.
+     *
+     * @param context контекст
+     * @param queue   очередь (для отображения)
+     * @param size    размер в байтах
+     * @return буфер либо {@code null}, если слой доступа этого не умеет (тогда используется обычная память)
+     */
+    default Pinned createPinned(long context, long queue, long size) {
+        return null;
+    }
+
+    /**
+     * Снимает отображение и освобождает закреплённый буфер.
+     *
+     * @param queue  очередь
+     * @param pinned буфер из {@link #createPinned}
+     */
+    default void releasePinned(long queue, Pinned pinned) {
+    }
+
+    /**
      * Объём private-памяти ядра на work-item ({@code CL_KERNEL_PRIVATE_MEM_SIZE}): стек и «пролитые» значения.
      *
      * @param kernel ядро

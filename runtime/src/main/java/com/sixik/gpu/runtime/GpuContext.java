@@ -95,6 +95,63 @@ public final class GpuContext implements AutoCloseable {
     private final Path sourceDump;
     private final String codegenVersion;
     private final OptimizeOptions optimizeOptions;
+    /**
+     * Кэш подготовленных запусков для вызовов через фасад ({@link #launchReusing}): ключ - ядро и идентичность массивов
+     * хоста; порядок доступа (LRU). Под {@link #lock}.
+     */
+    private final java.util.LinkedHashMap<ReuseKey, Reused> reuse = new java.util.LinkedHashMap<>(16, 0.75f, true);
+    /** Сколько байт массивов хоста держат запуски кэша. */
+    private long reuseBytes;
+    /** Больше стольких запусков кэш не держит. */
+    static final int REUSE_MAX_ENTRIES = 16;
+    /** Больше стольких байт массивов кэш не держит (кроме единственного запуска, который больше лимита сам по себе). */
+    static final long REUSE_MAX_BYTES = 512L << 20;
+
+    /** Ключ кэша: ядро и массивы хоста по позициям (сравнение по идентичности, {@code null} - не массив хоста). */
+    private record ReuseKey(CompiledKernel kernel, Object[] arrays) {
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof ReuseKey k) || k.kernel != kernel || k.arrays.length != arrays.length) {
+                return false;
+            }
+            for (int i = 0; i < arrays.length; i++) {
+                if (k.arrays[i] != arrays[i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public int hashCode() {
+            int h = System.identityHashCode(kernel);
+            for (Object a : arrays) {
+                h = 31 * h + System.identityHashCode(a);
+            }
+            return h;
+        }
+    }
+
+    /** Запись кэша: запуск и последние значения не-массивных аргументов. */
+    private static final class Reused {
+        final PreparedLauncher launcher;
+        final Object[] last;
+        final long bytes;
+
+        Reused(PreparedLauncher launcher, Object[] last, long bytes) {
+            this.launcher = launcher;
+            this.last = last;
+            this.bytes = bytes;
+        }
+    }
+
+    /** Массивы {@code GpuArray}, привязанные к контексту (слабые ссылки; под {@link #lock}). */
+    private final java.util.Map<com.sixik.gpu.api.types.GpuArray, Boolean> residents = new java.util.WeakHashMap<>();
+
+    /** Общий закреплённый промежуточный буфер передач (под {@link #lock}); растёт до самого крупного массива. */
+    private DeviceApi.Pinned transferPool;
+    /** Больше этого размера закреплённый буфер не держится: крупные одиночные передачи идут через обычную память. */
+    static final long TRANSFER_POOL_MAX_BYTES = 256L << 20;
     volatile boolean closed;
 
     private GpuContext(DeviceApi api, boolean ownsApi, DeviceInfo device, long contextHandle, long queue,
@@ -640,6 +697,52 @@ public final class GpuContext implements AutoCloseable {
         return bytes;
     }
 
+    /**
+     * Закреплённая промежуточная память для передачи {@code bytes} байт. Все передачи контекста идут под замком и
+     * блокирующие, поэтому одного буфера достаточно: следующая передача начинается, когда предыдущая уже закончила
+     * с ним работу. Закрепление дорого, поэтому буфер переиспользуется и только растёт.
+     *
+     * @param bytes размер передачи
+     * @return память не короче {@code bytes} либо {@code null} (мелкая или слишком крупная передача, драйвер не умеет)
+     */
+    private MemorySegment pinnedStaging(long bytes) {
+        if (bytes < PreparedLauncher.PINNED_BYTES || bytes > TRANSFER_POOL_MAX_BYTES) {
+            return null;
+        }
+        if (transferPool != null && transferPool.memory().byteSize() >= bytes) {
+            return transferPool.memory();
+        }
+        try {
+            if (transferPool != null) {
+                api.releasePinned(queue, transferPool);
+                transferPool = null;
+            }
+            transferPool = api.createPinned(contextHandle, queue, bytes);
+        } catch (DeviceApiException e) {
+            transferPool = null;
+        }
+        return transferPool == null ? null : transferPool.memory();
+    }
+
+    /** Блокирующая запись примитивного массива через закреплённую память, если она есть. */
+    private void upload(long handle, Object array, long bytes, Arena arena) {
+        MemorySegment pin = pinnedStaging(bytes);
+        if (pin != null) {
+            Marshal.copyToNativeFast(array, pin);
+            api.writeBuffer(queue, handle, 0, bytes, pin);
+        } else {
+            api.writeBuffer(queue, handle, 0, bytes, Marshal.toNative(arena, array));
+        }
+    }
+
+    /** Блокирующее чтение в примитивный массив через закреплённую память, если она есть. */
+    private void download(long handle, Object array, long bytes, Arena arena) {
+        MemorySegment pin = pinnedStaging(bytes);
+        MemorySegment dst = pin != null ? pin : arena.allocate(Math.max(bytes, 8), 8);
+        api.readBuffer(queue, handle, 0, bytes, dst);
+        Marshal.fromNativeFast(dst, array);
+    }
+
     /** @return {@code true}, если устройство NVIDIA: его драйвер умеет печатать ресурсы ядра в лог сборки */
     private boolean isNvidia() {
         return device.vendor() != null && device.vendor().toUpperCase(java.util.Locale.ROOT).contains("NVIDIA");
@@ -655,6 +758,15 @@ public final class GpuContext implements AutoCloseable {
             return o;
         }
         return o == null || o.isBlank() ? DriverStats.NVIDIA_VERBOSE : o + " " + DriverStats.NVIDIA_VERBOSE;
+    }
+
+    /** Параметры-массивы, которые ядро перезаписывает целиком; ошибка анализа означает «не доказано». */
+    private static boolean[] fullyWritten(IrModule m, int kernel) {
+        try {
+            return com.sixik.gpu.ir.optimizer.WriteCoverage.fullyWrittenParams(m, kernel);
+        } catch (RuntimeException e) {
+            return new boolean[m.fParamCount(kernel)];
+        }
     }
 
     /** Оценка регистров по IR; ошибка оценки не мешает компиляции. */
@@ -769,7 +881,7 @@ public final class GpuContext implements AutoCloseable {
             DriverStats stats = (isNvidia() ? DriverStats.parseNvidiaLog(driverLog[0], art.entry()) : DriverStats.UNKNOWN)
                     .withPrivateBytes(api.kernelPrivateMemSize(kernelHandle, device.handle()));
             CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(original), access, program, kernelHandle,
-                    maxWg, stats, estimateRegisters(m, kernel));
+                    maxWg, stats, estimateRegisters(m, kernel), fullyWritten(m, kernel));
             compiled.add(ck);
             for (Diagnostic d : log) {
                 emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, d.message());
@@ -925,11 +1037,11 @@ public final class GpuContext implements AutoCloseable {
         checkTransfer(b, array);
         long bytes = Marshal.byteSize(array);
         lock.lock();
-        try (Arena a = Arena.ofConfined()) {
+        try (Arena a = Arena.ofShared()) { // shared: большие массивы копируются несколькими потоками
             requireOpen();
             long t0 = System.nanoTime();
             if (bytes > 0) {
-                api.writeBuffer(queue, b.handle(), 0, bytes, Marshal.toNative(a, array));
+                upload(b.handle(), array, bytes, a);
             }
             emit(GpuEvent.Kind.UPLOAD, b.toString(), System.nanoTime() - t0, bytes, "");
         } catch (DeviceApiException e) {
@@ -943,13 +1055,11 @@ public final class GpuContext implements AutoCloseable {
         checkTransfer(b, array);
         long bytes = Marshal.byteSize(array);
         lock.lock();
-        try (Arena a = Arena.ofConfined()) {
+        try (Arena a = Arena.ofShared()) {
             requireOpen();
             long t0 = System.nanoTime();
             if (bytes > 0) {
-                MemorySegment dst = a.allocate(Math.max(bytes, 8), 8);
-                api.readBuffer(queue, b.handle(), 0, bytes, dst);
-                Marshal.fromNative(dst, array);
+                download(b.handle(), array, bytes, a);
             }
             emit(GpuEvent.Kind.READBACK, b.toString(), System.nanoTime() - t0, bytes, "");
         } catch (DeviceApiException e) {
@@ -977,6 +1087,168 @@ public final class GpuContext implements AutoCloseable {
         }
     }
 
+    /**
+     * Запуск с переиспользованием подготовленного запуска - путь обычного вызова {@code @Kernel}-метода через фасад
+     * {@link JavaToGpu}. Повторный вызов того же ядра с теми же массивами хоста (по идентичности) переиспользует буферы
+     * устройства и закреплённую промежуточную память: на мелких вызовах это в разы быстрее {@link #launch}.
+     *
+     * <p>Результат тот же, что у {@link #launch}: входы загружаются при каждом вызове (изменения массивов между вызовами
+     * видны), записанные массивы читаются обратно, скаляры и {@link GpuBuffer} подставляются заново. Кэш держит не более
+     * {@value #REUSE_MAX_ENTRIES} запусков и {@link #REUSE_MAX_BYTES} байт массивов (LRU); вытесненный запуск освобождает
+     * свою память. Пока запуск в кэше, он удерживает ссылки на свои массивы; {@link #trimLaunchCache()} освобождает всё.
+     * Если подготовить запуск нельзя, выполняется обычный {@link #launch} (с его диагностиками).</p>
+     *
+     * @param kernel ядро этого контекста
+     * @param config размеры запуска
+     * @param args   аргументы
+     * @return итог либо диагностики, как у {@link #launch}
+     */
+    Result<LaunchStats> launchReusing(CompiledKernel kernel, LaunchConfig config, Object[] args) {
+        return withResidentArrays(kernel, config, args, true);
+    }
+
+    /** {@link #launchReusing} без привязки {@code GpuArray} (аргументы уже привязаны). */
+    private Result<LaunchStats> launchReusingHost(CompiledKernel kernel, LaunchConfig config, Object[] args) {
+        lock.lock();
+        try {
+            if (closed || kernel.owner() != this) {
+                return launchHost(kernel, config, args);
+            }
+            IrModule m = kernel.module();
+            int f = kernel.function();
+            if (args.length != m.fParamCount(f)) {
+                return launchHost(kernel, config, args);
+            }
+            Object[] arrays = new Object[args.length];
+            boolean any = false;
+            for (int i = 0; i < args.length; i++) {
+                if (m.typeKind(m.fParamType(f, i)) == Types.KIND_ARRAY && args[i] != null && !(args[i] instanceof GpuBuffer)) {
+                    arrays[i] = args[i];
+                    any = true;
+                }
+            }
+            if (!any) {
+                return launchHost(kernel, config, args);
+            }
+            ReuseKey key = new ReuseKey(kernel, arrays);
+            Reused r = reuse.get(key);
+            if (r != null && r.launcher.isClosed()) {
+                forgetReused(key, r);
+                r = null;
+            }
+            if (r == null) {
+                Result<PreparedLauncher> p = prepare(kernel, args);
+                if (!p.isOk()) {
+                    return launchHost(kernel, config, args);
+                }
+                r = new Reused(p.value(), args.clone(), p.value().hostBytes());
+                reuse.put(key, r);
+                reuseBytes += r.bytes;
+                evictReused();
+            } else {
+                for (int i = 0; i < args.length; i++) {
+                    if (arrays[i] == null && !sameValue(r.last[i], args[i])) {
+                        try {
+                            r.launcher.set(i, args[i]);
+                        } catch (GpuException e) {
+                            return Result.failed(e.diagnostics());
+                        }
+                        r.last[i] = args[i];
+                    }
+                }
+            }
+            return r.launcher.launch(config);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Значение не-массивного аргумента не изменилось: тот же {@link GpuBuffer} либо равный упакованный примитив. Объекты
+     * векторов и struct изменяемы, поэтому всегда подставляются заново.
+     */
+    private static boolean sameValue(Object previous, Object current) {
+        if (previous == current) {
+            return previous == null || previous instanceof GpuBuffer || previous instanceof Number
+                    || previous instanceof Boolean || previous instanceof Character;
+        }
+        return (current instanceof Number || current instanceof Boolean || current instanceof Character)
+                && current.equals(previous);
+    }
+
+    private void evictReused() {
+        java.util.Iterator<java.util.Map.Entry<ReuseKey, Reused>> it = reuse.entrySet().iterator();
+        while (reuse.size() > 1 && (reuse.size() > REUSE_MAX_ENTRIES || reuseBytes > REUSE_MAX_BYTES) && it.hasNext()) {
+            java.util.Map.Entry<ReuseKey, Reused> eldest = it.next();
+            it.remove();
+            reuseBytes -= eldest.getValue().bytes;
+            eldest.getValue().launcher.close();
+        }
+    }
+
+    private void forgetReused(ReuseKey key, Reused r) {
+        reuse.remove(key);
+        reuseBytes -= r.bytes;
+    }
+
+    /**
+     * Освобождает все подготовленные запуски кэша обычных вызовов (буферы устройства, закреплённую память и ссылки на
+     * массивы хоста). Следующий вызов ядра подготовит запуск заново.
+     */
+    public void trimLaunchCache() {
+        lock.lock();
+        try {
+            for (Reused r : reuse.values()) {
+                r.launcher.close();
+            }
+            reuse.clear();
+            reuseBytes = 0;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** @return число подготовленных запусков в кэше обычных вызовов (для тестов и диагностики) */
+    int reusedLaunches() {
+        lock.lock();
+        try {
+            return reuse.size();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Чтение буфера в его закреплённую память без копирования в массив ({@link GpuBuffer#readView()}).
+     *
+     * @param b буфер
+     * @return вид только для чтения
+     */
+    MemorySegment readView(GpuBuffer b) {
+        if (b.owner() != this) {
+            throw new GpuException(List.of(error("RT-A02", "the buffer belongs to another context")));
+        }
+        lock.lock();
+        try {
+            requireOpen();
+            if (b.isClosed()) {
+                throw new GpuException(List.of(error("RT-A02", "the buffer is already closed")));
+            }
+            long bytes = b.byteSize();
+            MemorySegment mem = b.viewMemory(api, contextHandle, queue);
+            long t0 = System.nanoTime();
+            if (bytes > 0) {
+                api.readBuffer(queue, b.handle(), 0, bytes, mem);
+            }
+            emit(GpuEvent.Kind.READBACK, b.toString(), System.nanoTime() - t0, bytes, "view");
+            return mem.asSlice(0, bytes).asReadOnly();
+        } catch (DeviceApiException e) {
+            throw new GpuException(List.of(error("RT-X01", "driver error while reading a buffer: " + e.getMessage())));
+        } finally {
+            lock.unlock();
+        }
+    }
+
     void free(GpuBuffer b) {
         lock.lock();
         try {
@@ -985,6 +1257,7 @@ public final class GpuContext implements AutoCloseable {
             }
             b.markClosed();
             buffers.remove(b);
+            b.releaseView(api, queue, !closed);
             if (!closed) {
                 api.release(DeviceApi.HandleKind.BUFFER, b.handle());
             }
@@ -1038,6 +1311,12 @@ public final class GpuContext implements AutoCloseable {
         if (kernel.owner() != this) {
             return failure("RT-A02", "the kernel was compiled in another context");
         }
+        for (Object a : args == null ? new Object[0] : args) {
+            if (a instanceof com.sixik.gpu.api.types.GpuArray) {
+                return failure("RT-A02", "a prepared launch does not take " + a.getClass().getSimpleName()
+                        + ": call the kernel directly (its data stays on the device between calls) or pass a GpuBuffer");
+            }
+        }
         Result<PreparedLauncher> r = PreparedLauncher.create(this, kernel, args == null ? new Object[0] : args);
         if (r.isOk()) {
             launchers.add(r.value());
@@ -1064,6 +1343,45 @@ public final class GpuContext implements AutoCloseable {
             throw new IllegalArgumentException("kernel and config are required");
         }
         Object[] actual = args == null ? new Object[0] : args;
+        return withResidentArrays(kernel, config, actual, false);
+    }
+
+    /**
+     * Привязывает аргументы {@code GpuArray} к буферам устройства, запускает ядро обычным путём либо через кэш
+     * подготовленных запусков и отмечает записанные массивы свежими на устройстве.
+     */
+    private Result<LaunchStats> withResidentArrays(CompiledKernel kernel, LaunchConfig config, Object[] args,
+                                                   boolean reuse) {
+        lock.lock();
+        try {
+            ResidentArrays.Bound bound;
+            if (closed || kernel.owner() != this) {
+                bound = new ResidentArrays.Bound(args, List.of(), List.of(), new boolean[0]);
+            } else {
+                try {
+                    bound = ResidentArrays.bind(this, kernel, config, args);
+                } catch (GpuException e) {
+                    return Result.failed(e.diagnostics());
+                }
+            }
+            Result<LaunchStats> r = reuse ? launchReusingHost(kernel, config, bound.args())
+                    : launchHost(kernel, config, bound.args());
+            if (r.isOk() && !bound.none()) {
+                ResidentArrays.afterSuccess(kernel, bound);
+            }
+            return r;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Регистрирует массив, привязанный к контексту (под замком). */
+    void registerResident(com.sixik.gpu.api.types.GpuArray array) {
+        residents.put(array, Boolean.TRUE);
+    }
+
+    /** Обычный запуск без привязки {@code GpuArray}. */
+    private Result<LaunchStats> launchHost(CompiledKernel kernel, LaunchConfig config, Object[] actual) {
         if (closed) {
             return failure("RT-X02", "context is closed");
         }
@@ -1299,7 +1617,15 @@ public final class GpuContext implements AutoCloseable {
         long kernelNanos;
         long downNanos = 0;
         long down = 0;
-        try (Arena arena = Arena.ofConfined()) {
+        // массивы хоста, которые ядро только пишет и перезаписывает целиком: загружать не нужно
+        Map<Object, int[]> paramsOf = new IdentityHashMap<>();
+        for (int i = 0; i < n; i++) {
+            if (m.typeKind(m.fParamType(f, i)) == Types.KIND_ARRAY && !(args[i] instanceof GpuBuffer)) {
+                int[] ps = paramsOf.computeIfAbsent(args[i], x -> new int[n + 1]);
+                ps[1 + ps[0]++] = i;
+            }
+        }
+        try (Arena arena = Arena.ofShared()) { // shared: большие массивы копируются несколькими потоками
             long t0 = System.nanoTime();
             for (int i = 0; i < n; i++) {
                 if (m.typeKind(m.fParamType(f, i)) != Types.KIND_ARRAY) {
@@ -1318,11 +1644,17 @@ public final class GpuContext implements AutoCloseable {
                     long bytes = objects ? Marshal.byteSize(m, elemType, (Object[]) a) : Marshal.byteSize(a);
                     long h = api.createBuffer(contextHandle, Math.max(bytes, 4));
                     temps.add(h);
-                    if (bytes > 0) {
-                        api.writeBuffer(queue, h, 0, bytes, objects ? Marshal.toNative(arena, m, elemType, (Object[]) a)
-                                : Marshal.toNative(arena, a));
+                    int[] ps = paramsOf.get(a);
+                    boolean skip = k.uploadSkippable(java.util.Arrays.copyOfRange(ps, 1, 1 + ps[0]), ps[0],
+                            Marshal.length(a), cfg);
+                    if (bytes > 0 && !skip) {
+                        if (objects) {
+                            api.writeBuffer(queue, h, 0, bytes, Marshal.toNative(arena, m, elemType, (Object[]) a));
+                        } else {
+                            upload(h, a, bytes, arena);
+                        }
                     }
-                    up += bytes;
+                    up += skip ? 0 : bytes;
                     known = new long[]{h, 0, elemType};
                     hostBuffers.put(a, known);
                 }
@@ -1345,12 +1677,12 @@ public final class GpuContext implements AutoCloseable {
                 boolean objects = HostObjects.isAggregate(m, elemType);
                 long bytes = objects ? Marshal.byteSize(m, elemType, (Object[]) e.getKey()) : Marshal.byteSize(e.getKey());
                 if (bytes > 0) {
-                    MemorySegment dst = arena.allocate(Math.max(bytes, 8), 8);
-                    api.readBuffer(queue, e.getValue()[0], 0, bytes, dst);
                     if (objects) {
+                        MemorySegment dst = arena.allocate(Math.max(bytes, 8), 8);
+                        api.readBuffer(queue, e.getValue()[0], 0, bytes, dst);
                         Marshal.fromNative(dst, m, elemType, (Object[]) e.getKey());
                     } else {
-                        Marshal.fromNative(dst, e.getKey());
+                        download(e.getValue()[0], e.getKey(), bytes, arena);
                     }
                     down += bytes;
                 }
@@ -1380,10 +1712,15 @@ public final class GpuContext implements AutoCloseable {
             if (closed) {
                 return;
             }
+            // массивы GpuArray со свежими данными на устройстве - на хост, пока контекст открыт
+            ResidentArrays.syncAll(this, new ArrayList<>(residents.keySet()));
+            residents.clear();
             for (PreparedLauncher l : launchers) {
                 l.releaseLocked(); // до closed = true: освобождает свои буферы в драйвере
             }
             launchers.clear();
+            reuse.clear();
+            reuseBytes = 0;
             closed = true;
             for (CompiledKernel k : compiled) {
                 api.release(DeviceApi.HandleKind.KERNEL, k.kernel);
@@ -1392,9 +1729,22 @@ public final class GpuContext implements AutoCloseable {
             compiled.clear();
             for (GpuBuffer b : buffers) {
                 b.markClosed();
+                try {
+                    b.releaseView(api, queue, true);
+                } catch (DeviceApiException ignored) {
+                    // контекст всё равно освобождается целиком
+                }
                 api.release(DeviceApi.HandleKind.BUFFER, b.handle());
             }
             buffers.clear();
+            if (transferPool != null) {
+                try {
+                    api.releasePinned(queue, transferPool);
+                } catch (DeviceApiException ignored) {
+                    // контекст всё равно освобождается целиком
+                }
+                transferPool = null;
+            }
             api.release(DeviceApi.HandleKind.QUEUE, queue);
             api.release(DeviceApi.HandleKind.CONTEXT, contextHandle);
             if (ownsApi) {

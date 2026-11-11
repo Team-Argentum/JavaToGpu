@@ -147,9 +147,13 @@ final class Marshal {
      */
     static MemorySegment toNative(Arena arena, Object array) {
         MemorySegment seg = arena.allocate(Math.max(byteSize(array), 8), 8);
-        copyToNative(array, seg);
+        copyToNativeFast(array, seg);
         return seg;
     }
+
+    /** Поток-«зонд»: никогда не запускается, нужен лишь, чтобы узнать, доступна ли память чужим потокам. */
+    private static final Thread PROBE = new Thread(() -> {
+    });
 
     /**
      * Копирует массив в уже выделенную нативную память (для повторных запусков без новых аллокаций).
@@ -157,6 +161,122 @@ final class Marshal {
      * @param array источник
      * @param seg   приёмник не короче {@code byteSize(array)} байт
      */
+    /** Начиная с этого размера копирование массива делится между потоками (меньшие быстрее копировать в одном). */
+    static final long PARALLEL_COPY_BYTES = 4L << 20;
+
+    /** Сколько частей при параллельном копировании: копирование упирается в память, больше 8 потоков не помогают. */
+    private static final int COPY_PARTS = Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors()));
+
+    /**
+     * Копирует примитивный массив в нативную память; большие массивы - несколькими потоками.
+     *
+     * <p>Один поток копирует около 9-10 ГБ/с, этого не хватает, чтобы не отставать от DMA шины PCIe (~20 ГБ/с из
+     * закреплённой памяти): для 24 МБ копирование занимало бы больше времени, чем сама передача. Части не пересекаются,
+     * поэтому порядок их выполнения не важен. Память confined-арены другим потокам недоступна - для неё копирование
+     * идёт в одном потоке.</p>
+     *
+     * @param array примитивный массив
+     * @param seg   приёмник (не короче содержимого массива)
+     */
+    static void copyToNativeFast(Object array, MemorySegment seg) {
+        copyFast(array, seg, true);
+    }
+
+    /**
+     * Копирует нативную память в примитивный массив; большие массивы - несколькими потоками.
+     *
+     * @param seg   источник
+     * @param array примитивный массив
+     */
+    static void fromNativeFast(MemorySegment seg, Object array) {
+        copyFast(array, seg, false);
+    }
+
+    private static void copyFast(Object array, MemorySegment seg, boolean toNative) {
+        int n = length(array);
+        long bytes = byteSize(array);
+        // память confined-арены доступна только своему потоку: делить копирование нельзя
+        boolean shared = seg.isAccessibleBy(PROBE);
+        if (!shared || bytes < PARALLEL_COPY_BYTES || COPY_PARTS == 1 || array instanceof boolean[]) {
+            if (toNative) {
+                copyToNative(array, seg);
+            } else {
+                fromNative(seg, array);
+            }
+            return;
+        }
+        java.util.stream.IntStream.range(0, COPY_PARTS).parallel().forEach(p -> {
+            int from = (int) ((long) n * p / COPY_PARTS);
+            int to = (int) ((long) n * (p + 1) / COPY_PARTS);
+            copyRange(array, seg, from, to - from, toNative);
+        });
+    }
+
+    /**
+     * Копирует {@code count} элементов начиная с {@code from} в одну из сторон; элемент {@code i} массива соответствует
+     * смещению {@code i * размер элемента} в {@code seg}.
+     *
+     * @param array    примитивный массив (не {@code boolean[]})
+     * @param seg      нативная память
+     * @param from     первый элемент
+     * @param count    число элементов
+     * @param toNative направление: в нативную память либо из неё
+     */
+    private static void copyRange(Object array, MemorySegment seg, int from, int count, boolean toNative) {
+        switch (array) {
+            case byte[] x -> {
+                if (toNative) {
+                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_BYTE, from, count);
+                } else {
+                    MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, from, x, from, count);
+                }
+            }
+            case short[] x -> {
+                if (toNative) {
+                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_SHORT, 2L * from, count);
+                } else {
+                    MemorySegment.copy(seg, ValueLayout.JAVA_SHORT, 2L * from, x, from, count);
+                }
+            }
+            case char[] x -> {
+                if (toNative) {
+                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_CHAR, 2L * from, count);
+                } else {
+                    MemorySegment.copy(seg, ValueLayout.JAVA_CHAR, 2L * from, x, from, count);
+                }
+            }
+            case int[] x -> {
+                if (toNative) {
+                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_INT, 4L * from, count);
+                } else {
+                    MemorySegment.copy(seg, ValueLayout.JAVA_INT, 4L * from, x, from, count);
+                }
+            }
+            case long[] x -> {
+                if (toNative) {
+                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_LONG, 8L * from, count);
+                } else {
+                    MemorySegment.copy(seg, ValueLayout.JAVA_LONG, 8L * from, x, from, count);
+                }
+            }
+            case float[] x -> {
+                if (toNative) {
+                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_FLOAT, 4L * from, count);
+                } else {
+                    MemorySegment.copy(seg, ValueLayout.JAVA_FLOAT, 4L * from, x, from, count);
+                }
+            }
+            case double[] x -> {
+                if (toNative) {
+                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_DOUBLE, 8L * from, count);
+                } else {
+                    MemorySegment.copy(seg, ValueLayout.JAVA_DOUBLE, 8L * from, x, from, count);
+                }
+            }
+            default -> throw new IllegalArgumentException("unsupported array " + array.getClass());
+        }
+    }
+
     static void copyToNative(Object array, MemorySegment seg) {
         int n = length(array);
         switch (array) {

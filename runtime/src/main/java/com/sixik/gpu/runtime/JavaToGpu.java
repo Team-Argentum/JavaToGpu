@@ -244,7 +244,8 @@ public final class JavaToGpu {
             policy = c.fallback();
             Result<CompiledKernel> compiled = c.compile(module);
             if (compiled.isOk()) {
-                Result<LaunchStats> r = c.launch(compiled.value(), config, args);
+                // повторные вызовы с теми же массивами переиспользуют подготовленный запуск (буферы, pinned-память)
+                Result<LaunchStats> r = c.launchReusing(compiled.value(), config, args);
                 if (!r.isOk()) {
                     throw new GpuException(r.diagnostics());
                 }
@@ -376,6 +377,9 @@ public final class JavaToGpu {
 
     private static LaunchConfig primaryArrayConfig(Object[] args) {
         for (Object a : args) {
+            if (a instanceof com.sixik.gpu.api.types.GpuArray ga) {
+                return LaunchConfig.of1D(Math.max(1, ga.length()));
+            }
             if (a != null && a.getClass().isArray()) {
                 int n = Marshal.length(a);
                 if (n > 0) {

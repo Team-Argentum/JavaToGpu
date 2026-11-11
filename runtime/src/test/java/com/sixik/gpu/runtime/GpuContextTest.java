@@ -307,7 +307,8 @@ class GpuContextTest {
         float[] inCopy = in.clone();
         try (GpuContext ctx = open(fake, events::add)) {
             LaunchStats stats = ctx.run(Fixtures.computeSine(), LaunchConfig.of1D(256), in, out);
-            assertEquals(2 * 1024, stats.bytesUp(), "all arrays are passed: untouched elements must be preserved");
+            assertEquals(1024, stats.bytesUp(), "only in is uploaded: out[getGlobalId(0)] with global == length "
+                    + "overwrites every element, so its host content is not needed (WriteCoverage)");
             assertEquals(1024, stats.bytesDown(), "only the writable array is returned");
             assertTrue(stats.kernelNanos() >= 0);
         }
@@ -315,7 +316,7 @@ class GpuContextTest {
             assertEquals((float) Math.sin(inCopy[i]) + 2f, out[i], 0f, "i=" + i);
         }
         assertArrayEquals(inCopy, in, "the input array is untouched");
-        assertEquals(2, fake.writes());
+        assertEquals(1, fake.writes(), "out is overwritten entirely and not uploaded");
         assertEquals(1, fake.reads());
         assertEquals(1, fake.enqueues());
         assertEquals(0, fake.liveBuffers(), "temporary buffers were released");

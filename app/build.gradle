@@ -106,6 +106,8 @@ tasks.register('deviceTest', Test) {
     description = 'Checks the application kernels against a real OpenCL device; skipped without a device.'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
+    // кэш драйвера NVIDIA скрывает число регистров (OptimizerEffectDeviceTest); на других драйверах не влияет
+    environment 'CUDA_CACHE_DISABLE', '1'
     useJUnitPlatform {
         includeTags 'device'
     }
