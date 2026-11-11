@@ -2,6 +2,7 @@ package com.sixik.gpu.runtime;
 
 import com.sixik.gpu.codegen.opencl.Artifact;
 import com.sixik.gpu.ir.IrModule;
+import com.sixik.gpu.ir.optimizer.WriteCoverage;
 
 /**
  * Ядро, скомпилированное драйвером для устройства своего {@link GpuContext}. Хранится в кэше контекста и
@@ -58,18 +59,19 @@ public final class CompiledKernel {
 
     private final DriverStats driverStats;
     private final int estimatedRegisters;
-    private final boolean[] fullyWritten;
+    /** По параметру: форма индекса записи, покрывающей массив, либо {@code null}. */
+    private final WriteCoverage.Coverage[] coverage;
 
     CompiledKernel(GpuContext owner, IrModule module, int function, Artifact artifact, String kernelId, int[] access,
                    long program, long kernel, long maxWorkGroupSize) {
         this(owner, module, function, artifact, kernelId, access, program, kernel, maxWorkGroupSize, DriverStats.UNKNOWN,
-                -1, new boolean[access.length]);
+                -1, new WriteCoverage.Coverage[access.length]);
     }
 
     CompiledKernel(GpuContext owner, IrModule module, int function, Artifact artifact, String kernelId, int[] access,
                    long program, long kernel, long maxWorkGroupSize, DriverStats driverStats, int estimatedRegisters,
-                   boolean[] fullyWritten) {
-        this.fullyWritten = fullyWritten.clone();
+                   WriteCoverage.Coverage[] coverage) {
+        this.coverage = coverage.clone();
         this.driverStats = driverStats;
         this.estimatedRegisters = estimatedRegisters;
         this.owner = owner;
@@ -177,36 +179,44 @@ public final class CompiledKernel {
     }
 
     /**
-     * Перезаписывает ли ядро каждый элемент массива-параметра при {@code globalSize(0) == length}
-     * ({@code ir-optimizer}, {@code WriteCoverage}). Такой массив, если ядро его не читает, не нужно загружать на устройство.
+     * Перезаписывает ли ядро каждый элемент массива-параметра при подходящем запуске ({@code ir-optimizer},
+     * {@code WriteCoverage}): индекс записи - линейная форма {@code g0 + g1 * S1 + g2 * S2}. Такой массив, если ядро его
+     * не читает и запуск подходит, не нужно загружать на устройство.
      *
      * @param param индекс параметра
-     * @return {@code true}, если покрытие доказано
+     * @return {@code true}, если покрывающая запись найдена
      */
     public boolean fullyWritten(int param) {
-        return param >= 0 && param < fullyWritten.length && fullyWritten[param];
+        return param >= 0 && param < coverage.length && coverage[param] != null;
     }
 
     /**
-     * Можно ли не загружать массив хоста перед запуском: все параметры, которым он передан, ядро не читает, хотя бы один
-     * перезаписывает целиком, и размер запуска по оси 0 равен длине массива.
+     * Можно ли не загружать массив хоста перед запуском: все параметры, которым он передан, ядро не читает, а хотя бы
+     * один перезаписывает целиком при этом запуске (шаги индекса и длина массива согласованы с размерами запуска и
+     * значениями скалярных аргументов - {@code WriteCoverage.Coverage.covers}).
      *
      * @param params параметры, которым передан один и тот же массив
      * @param count  сколько первых элементов {@code params} значимо
      * @param length длина массива в элементах
      * @param config размеры запуска
+     * @param args   аргументы запуска (нужны значения скалярных {@code int}-параметров из шагов индекса)
      * @return {@code true}, если загрузка не нужна
      */
-    boolean uploadSkippable(int[] params, int count, long length, LaunchConfig config) {
-        if (config.global(0) != length) {
-            return false;
-        }
+    boolean uploadSkippable(int[] params, int count, long length, LaunchConfig config, Object[] args) {
         boolean covered = false;
+        long[] global = null;
         for (int i = 0; i < count; i++) {
-            if ((access[params[i]] & com.sixik.gpu.ir.Validator.ACCESS_READ) != 0) {
+            int p = params[i];
+            if ((access[p] & com.sixik.gpu.ir.Validator.ACCESS_READ) != 0) {
                 return false;
             }
-            covered |= fullyWritten(params[i]);
+            if (!covered && fullyWritten(p)) {
+                if (global == null) {
+                    global = new long[]{config.global(0), config.global(1), config.global(2)};
+                }
+                covered = coverage[p].covers(length, global, q -> q < args.length
+                        && args[(int) q] instanceof Integer v ? v : Long.MIN_VALUE);
+            }
         }
         return covered;
     }

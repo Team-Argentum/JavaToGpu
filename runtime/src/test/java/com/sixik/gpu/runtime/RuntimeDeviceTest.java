@@ -79,6 +79,69 @@ class RuntimeDeviceTest {
         org.junit.jupiter.api.Assertions.assertArrayEquals(inBefore, in, "the input array is untouched");
     }
 
+    /**
+     * 2D-индекс {@code out[y * w + x]} на устройстве: при согласованном запуске выход не загружается, и всё же каждый
+     * элемент получает своё значение (начальный мусор не просачивается); при узком запуске нетронутый столбец сохраняет
+     * значения хоста.
+     */
+    @Test
+    void gridOutputIsNotUploadedButFullyWritten() {
+        int w = 256;
+        int h = 96;
+        int[] out = new int[w * h];
+        java.util.Arrays.fill(out, 0x5A5A5A5A);
+        LaunchStats s = ctx.run(GridCoverageTest.grid(), LaunchConfig.of2D(w, h), out, w);
+        assertEquals(0, s.bytesUp(), "out[y * w + x] covers the array");
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                assertEquals(x + 100 * y, out[y * w + x], "x=" + x + " y=" + y);
+            }
+        }
+        java.util.Arrays.fill(out, 7);
+        s = ctx.run(GridCoverageTest.grid(), LaunchConfig.of2D(w - 1, h), out, w);
+        assertEquals(w * h * 4L, s.bytesUp(), "a narrower launch must upload the array");
+        for (int y = 0; y < h; y++) {
+            assertEquals(7, out[y * w + w - 1], "the last column keeps the host value, y=" + y);
+            assertEquals(100 * y, out[y * w], "y=" + y);
+        }
+    }
+
+    /**
+     * Замер выигрыша 2D-покрытия: то же ядро на массиве ровно {@code w * h} (выход не загружается) и на массиве на
+     * элемент длиннее (хвост не покрыт - массив загружается целиком). Работа ядра одинакова; печатаются медианы.
+     */
+    @Test
+    void gridCoverageSavesTheUpload() {
+        int w = 4096;
+        int h = 1536;
+        IrModule m = GridCoverageTest.grid();
+        CompiledKernel k = ctx.compile(m).value();
+        LaunchConfig cfg = LaunchConfig.of2D(w, h);
+        int[] exact = new int[w * h];
+        int[] longer = new int[w * h + 1];
+        int runs = 15;
+        long[] covered = new long[runs];
+        long[] uploaded = new long[runs];
+        for (int i = 0; i < runs + 3; i++) {
+            long t = System.nanoTime();
+            LaunchStats a = ctx.launch(k, cfg, exact, w).value();
+            long ta = System.nanoTime() - t;
+            t = System.nanoTime();
+            LaunchStats b = ctx.launch(k, cfg, longer, w).value();
+            long tb = System.nanoTime() - t;
+            assertEquals(0, a.bytesUp());
+            assertEquals(longer.length * 4L, b.bytesUp());
+            if (i >= 3) {
+                covered[i - 3] = ta;
+                uploaded[i - 3] = tb;
+            }
+        }
+        java.util.Arrays.sort(covered);
+        java.util.Arrays.sort(uploaded);
+        System.out.printf(java.util.Locale.ROOT, "grid %dx%d int (%.1f MB): covered %.2f ms, uploaded %.2f ms%n",
+                w, h, w * h * 4 / 1e6, covered[runs / 2] / 1e6, uploaded[runs / 2] / 1e6);
+    }
+
     @Test
     void secondRunComesFromTheCache() {
         IrModule m = Fixtures.computeSine();

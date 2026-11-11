@@ -96,7 +96,7 @@ final class ResidentArrays {
             params.add(ps);
             Resident r = residentIn(ctx, a);
             if (ACCESS.deviceStale(a)) {
-                if (kernel.uploadSkippable(ps, ps.length, a.length(), config)) {
+                if (kernel.uploadSkippable(ps, ps.length, a.length(), config, args)) {
                     skipped[j] = true;
                 } else {
                     // без ожидания: in-order очередь выполнит загрузку раньше ядра

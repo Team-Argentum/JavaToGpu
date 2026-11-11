@@ -860,12 +860,12 @@ public final class GpuContext implements AutoCloseable {
         return o == null || o.isBlank() ? DriverStats.NVIDIA_VERBOSE : o + " " + DriverStats.NVIDIA_VERBOSE;
     }
 
-    /** Параметры-массивы, которые ядро перезаписывает целиком; ошибка анализа означает «не доказано». */
-    private static boolean[] fullyWritten(IrModule m, int kernel) {
+    /** Формы индексов записей, перезаписывающих параметры-массивы целиком; ошибка анализа означает «не доказано». */
+    private static com.sixik.gpu.ir.optimizer.WriteCoverage.Coverage[] fullyWritten(IrModule m, int kernel) {
         try {
-            return com.sixik.gpu.ir.optimizer.WriteCoverage.fullyWrittenParams(m, kernel);
+            return com.sixik.gpu.ir.optimizer.WriteCoverage.coverage(m, kernel);
         } catch (RuntimeException e) {
-            return new boolean[m.fParamCount(kernel)];
+            return new com.sixik.gpu.ir.optimizer.WriteCoverage.Coverage[m.fParamCount(kernel)];
         }
     }
 
@@ -1129,7 +1129,7 @@ public final class GpuContext implements AutoCloseable {
                 .withPrivateBytes(api.kernelPrivateMemSize(handle, device.handle()));
         int[] access = Validator.validate(sm).functions()[fn].paramAccess();
         CompiledKernel stage = new CompiledKernel(this, sm, fn, art, id, access, program, handle, maxWg, stats, -1,
-                new boolean[access.length]);
+                new com.sixik.gpu.ir.optimizer.WriteCoverage.Coverage[access.length]);
         compiled.add(stage);
         return stage;
     }
@@ -2298,7 +2298,7 @@ public final class GpuContext implements AutoCloseable {
                     temps.add(h);
                     int[] ps = paramsOf.get(a);
                     boolean skip = k.uploadSkippable(java.util.Arrays.copyOfRange(ps, 1, 1 + ps[0]), ps[0],
-                            Marshal.length(a), cfg);
+                            Marshal.length(a), cfg, args);
                     if (bytes > 0 && !skip) {
                         if (objects) {
                             api.writeBuffer(queue, h, 0, bytes, Marshal.toNative(arena, m, elemType, (Object[]) a));

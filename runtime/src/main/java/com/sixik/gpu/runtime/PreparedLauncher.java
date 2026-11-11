@@ -410,7 +410,7 @@ public final class PreparedLauncher implements AutoCloseable {
         long up = 0;
         long t0 = System.nanoTime();
         for (Slot s : slots) {
-            if (s.bytes > 0 && !kernel.uploadSkippable(s.params, s.paramCount, s.length, config)) {
+            if (s.bytes > 0 && !kernel.uploadSkippable(s.params, s.paramCount, s.length, config, args)) {
                 if (s.objects) {
                     Marshal.copyToNative(module, s.elemType, (Object[]) s.array, s.staging);
                 } else {
