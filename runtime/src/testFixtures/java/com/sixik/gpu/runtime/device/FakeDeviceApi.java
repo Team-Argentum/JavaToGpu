@@ -569,6 +569,14 @@ public final class FakeDeviceApi implements DeviceApi {
     @Override
     public void finish(long queue) {
         call("finish");
+        finishes++;
+    }
+
+    private int finishes;
+
+    /** @return сколько раз ждали очередь ({@code clFinish}) */
+    public int finishes() {
+        return finishes;
     }
 
     @Override

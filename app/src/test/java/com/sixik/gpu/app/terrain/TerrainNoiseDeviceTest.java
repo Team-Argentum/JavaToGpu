@@ -25,7 +25,8 @@ class TerrainNoiseDeviceTest {
         Assumptions.assumeTrue((available.device().type() & DeviceApi.TYPE_GPU) != 0, "GPU required");
         for (TerrainBatch.Sampling sampling : TerrainBatch.Sampling.values()) {
             for (TerrainExecutor.Backend backend : new TerrainExecutor.Backend[]{
-                    TerrainExecutor.Backend.GPU_ARRAYS, TerrainExecutor.Backend.GPU_PREPARED}) {
+                    TerrainExecutor.Backend.GPU_ARRAYS, TerrainExecutor.Backend.GPU_PREPARED,
+                    TerrainExecutor.Backend.GPU_RESIDENT}) {
                 TerrainBatch batch = new TerrainBatch(1, sampling);
                 try (TerrainExecutor executor = new TerrainExecutor(backend, batch, 1)) {
                     for (int pass = 0; pass < 3; pass++) {
@@ -68,16 +69,20 @@ class TerrainNoiseDeviceTest {
     @GPUTest(requireDevice = true)
     void tick_gpuConditionalPasses_matchesCpu(GpuContext context) {
         Assumptions.assumeTrue((context.device().type() & DeviceApi.TYPE_GPU) != 0, "GPU required");
-        TerrainBatch cpuBatch = new TerrainBatch(8, TerrainBatch.Sampling.COARSE);
-        TerrainBatch gpuBatch = new TerrainBatch(8, TerrainBatch.Sampling.COARSE);
-        TerrainGameLoop cpuGame = new TerrainGameLoop(cpuBatch);
-        TerrainGameLoop gpuGame = new TerrainGameLoop(gpuBatch);
-        try (TerrainExecutor cpu = new TerrainExecutor(TerrainExecutor.Backend.CPU, cpuBatch, 1);
-             TerrainExecutor gpu = new TerrainExecutor(TerrainExecutor.Backend.GPU_PREPARED, gpuBatch, 1)) {
-            for (int tick = 0; tick < 6; tick++) {
-                int calls = tick % 2 == 0 ? 1 : 3;
-                assertEquals(cpuGame.tick(cpu, calls), gpuGame.tick(gpu, calls), "tick=" + tick);
-                assertEquals(calls, gpuGame.lastCalls());
+        // GPU_RESIDENT классифицирует на устройстве и читает только частичные суммы: результат тика обязан совпасть
+        for (TerrainExecutor.Backend backend : new TerrainExecutor.Backend[]{
+                TerrainExecutor.Backend.GPU_PREPARED, TerrainExecutor.Backend.GPU_RESIDENT}) {
+            TerrainBatch cpuBatch = new TerrainBatch(8, TerrainBatch.Sampling.COARSE);
+            TerrainBatch gpuBatch = new TerrainBatch(8, TerrainBatch.Sampling.COARSE);
+            TerrainGameLoop cpuGame = new TerrainGameLoop(cpuBatch);
+            TerrainGameLoop gpuGame = new TerrainGameLoop(gpuBatch);
+            try (TerrainExecutor cpu = new TerrainExecutor(TerrainExecutor.Backend.CPU, cpuBatch, 1);
+                 TerrainExecutor gpu = new TerrainExecutor(backend, gpuBatch, 1)) {
+                for (int tick = 0; tick < 6; tick++) {
+                    int calls = tick % 2 == 0 ? 1 : 3;
+                    assertEquals(cpuGame.tick(cpu, calls), gpuGame.tick(gpu, calls), backend + " tick=" + tick);
+                    assertEquals(calls, gpuGame.lastCalls());
+                }
             }
         }
     }

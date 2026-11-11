@@ -4,6 +4,8 @@ import com.sixik.gpu.api.Gpu;
 import com.sixik.gpu.api.annotations.DeviceFunction;
 import com.sixik.gpu.api.annotations.Global;
 import com.sixik.gpu.api.annotations.Kernel;
+import com.sixik.gpu.api.types.GpuFloatArray;
+import com.sixik.gpu.api.types.GpuIntArray;
 
 /** Общая для CPU и GPU математика: 3D value noise, domain warp и многослойная плотность мира. */
 public final class TerrainNoise {
@@ -139,10 +141,30 @@ public final class TerrainNoise {
                                int horizontal, int vertical, int stepXZ, int stepY, int seed, int octaves) {
         int perChunk = horizontal * horizontal * vertical;
         int chunk = index / perChunk;
-        int local = index % perChunk;
-        int x = chunkX[chunk] * 16 + (local % horizontal) * stepXZ;
+        return sampleIn(index % perChunk, chunkX[chunk], chunkZ[chunk], horizontal, vertical, stepXZ, stepY, seed,
+                octaves);
+    }
+
+    /**
+     * Плотность образца {@code local} внутри чанка с координатами {@code (chunkX, chunkZ)}.
+     *
+     * @param local индекс образца внутри чанка (X меняется быстрее, затем Y, затем Z)
+     * @param chunkX X чанка, в чанках
+     * @param chunkZ Z чанка, в чанках
+     * @param horizontal число образцов по X и Z на чанк
+     * @param vertical число образцов по Y на чанк
+     * @param stepXZ шаг по горизонтали в блоках
+     * @param stepY шаг по вертикали в блоках
+     * @param seed seed прохода
+     * @param octaves число октав, [1, 12]
+     * @return плотность одного образца
+     */
+    @DeviceFunction
+    public static float sampleIn(int local, int chunkX, int chunkZ,
+                                 int horizontal, int vertical, int stepXZ, int stepY, int seed, int octaves) {
+        int x = chunkX * 16 + (local % horizontal) * stepXZ;
         int y = ((local / horizontal) % vertical) * stepY;
-        int z = chunkZ[chunk] * 16 + (local / (horizontal * vertical)) * stepXZ;
+        int z = chunkZ * 16 + (local / (horizontal * vertical)) * stepXZ;
         return density(x, y, z, seed, octaves);
     }
 
@@ -164,5 +186,54 @@ public final class TerrainNoise {
                                 int horizontal, int vertical, int stepXZ, int stepY, int seed, int octaves) {
         int index = Gpu.getGlobalId(0);
         output[index] = sample(index, chunkX, chunkZ, horizontal, vertical, stepXZ, stepY, seed, octaves);
+    }
+
+    /**
+     * То же, что {@link #generate}, но на массивах, данные которых живут на устройстве между вызовами: плотности
+     * остаются там для следующих ядер ({@link #countSolid}) и читаются на хост только по требованию.
+     *
+     * @param output выходные плотности, длина равна числу work-item
+     * @param chunkX X чанков
+     * @param chunkZ Z чанков
+     * @param horizontal число горизонтальных образцов
+     * @param vertical число вертикальных образцов
+     * @param stepXZ горизонтальный шаг в блоках
+     * @param stepY вертикальный шаг в блоках
+     * @param seed seed прохода
+     * @param octaves число октав, [1, 12]
+     */
+    @Kernel
+    public static void generateResident(GpuFloatArray output, GpuIntArray chunkX, GpuIntArray chunkZ,
+                                        int horizontal, int vertical, int stepXZ, int stepY, int seed, int octaves) {
+        int index = Gpu.getGlobalId(0);
+        int perChunk = horizontal * horizontal * vertical;
+        int chunk = index / perChunk;
+        output.set(index, sampleIn(index % perChunk, chunkX.get(chunk), chunkZ.get(chunk), horizontal, vertical,
+                stepXZ, stepY, seed, octaves));
+    }
+
+    /**
+     * Классификация на устройстве: сколько образцов «порода» ({@code density > 0}). Каждый work-item считает свою
+     * частичную сумму, хосту остаётся сложить их - маленький массив вместо всех плотностей.
+     *
+     * <p>Work-item {@code g} обходит образцы {@code g, g + P, g + 2P, ...} ({@code P} - число work-item'ов): соседние
+     * work-item'ы читают соседние элементы, и доступ к памяти объединяется (coalescing). Сплошной блок на work-item
+     * был бы втрое медленнее: соседи читали бы адреса на расстоянии блока.</p>
+     *
+     * @param partial частичные суммы, по одной на work-item (длина задаёт размер запуска)
+     * @param density плотности
+     */
+    @Kernel
+    public static void countSolid(GpuIntArray partial, GpuFloatArray density) {
+        int g = Gpu.getGlobalId(0);
+        int stride = partial.length();
+        int n = density.length();
+        int count = 0;
+        for (int i = g; i < n; i += stride) {
+            if (density.get(i) > 0f) {
+                count++;
+            }
+        }
+        partial.set(g, count);
     }
 }

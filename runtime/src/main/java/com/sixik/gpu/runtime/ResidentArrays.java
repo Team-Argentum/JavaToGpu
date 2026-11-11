@@ -96,7 +96,8 @@ final class ResidentArrays {
                 if (kernel.uploadSkippable(ps, ps.length, a.length(), config)) {
                     skipped[j] = true;
                 } else {
-                    r.buffer.write(a.hostArray());
+                    // без ожидания: in-order очередь выполнит загрузку раньше ядра
+                    ctx.uploadAsync(r.buffer, a.hostArray());
                     a.markInSync();
                 }
             }

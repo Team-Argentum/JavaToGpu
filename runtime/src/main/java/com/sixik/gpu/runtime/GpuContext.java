@@ -82,6 +82,15 @@ public final class GpuContext implements AutoCloseable {
 
     final ReentrantLock lock = new ReentrantLock();
     private final ConcurrentHashMap<String, Entry> cache = new ConcurrentHashMap<>();
+    /**
+     * Быстрый путь {@link #compile} для повторного запроса того же модуля (по идентичности объекта) с теми же ядром и
+     * опциями: без построения строкового ключа кэша - это заметная доля стоимости обычного вызова ядра через фасад.
+     */
+    private final Map<IrModule, FastEntry> fastCompile = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /** Запись быстрого пути: ядро и опции запроса, запись кэша и данные события {@code COMPILE}. */
+    private record FastEntry(int kernel, EmitOptions options, Entry entry, String shortKey, String variant) {
+    }
     private final List<CompiledKernel> compiled = new ArrayList<>();
     private final Set<GpuBuffer> buffers = ConcurrentHashMap.newKeySet();
     private final Set<PreparedLauncher> launchers = ConcurrentHashMap.newKeySet();
@@ -144,6 +153,24 @@ public final class GpuContext implements AutoCloseable {
             this.bytes = bytes;
         }
     }
+
+    /**
+     * Отложенная синхронизация (асинхронная цепочка {@code GpuArray}). Очередь драйвера in-order, поэтому любая
+     * блокирующая операция ({@code finish}, чтение, запись) дожидается всех команд до неё. Запуск ядра, после которого хосту
+     * ничего не нужно читать, не ждёт своего завершения; загрузка устаревшей копии {@code GpuArray} ставится в очередь
+     * без ожидания, а её промежуточная память держится здесь до ближайшей точки синхронизации. Всё - под {@link #lock}.
+     */
+    private final List<MemorySegment> pendingStaging = new ArrayList<>();
+    /** Байт промежуточной памяти, ожидающей синхронизации. */
+    private long pendingBytes;
+    /** Запусков, поставленных без ожидания с последней синхронизации. */
+    private int pendingLaunches;
+    /** Текущему запуску разрешено не ждать завершения ядра (выставляется на время запуска с {@code GpuArray}). */
+    private boolean deferAllowed;
+    /** Больше стольких отложенных запусков подряд не накапливается: следующий ждёт завершения. */
+    static final int MAX_DEFERRED_LAUNCHES = 64;
+    /** Больше стольких байт отложенной промежуточной памяти не держится: дальше - синхронизация. */
+    static final long MAX_PENDING_BYTES = 64L << 20;
 
     /** Массивы {@code GpuArray}, привязанные к контексту (слабые ссылки; под {@link #lock}). */
     private final java.util.Map<com.sixik.gpu.api.types.GpuArray, Boolean> residents = new java.util.WeakHashMap<>();
@@ -588,10 +615,22 @@ public final class GpuContext implements AutoCloseable {
         if (closed) {
             return failure("RT-X02", "context is closed");
         }
+        FastEntry fast = fastCompile.get(module);
+        if (fast != null && fast.kernel() == kernel && fast.options() == options) {
+            synchronized (fast.entry()) {
+                if (fast.entry().result != null) {
+                    hits.incrementAndGet();
+                    emit(GpuEvent.Kind.COMPILE, fast.shortKey(), 0, 0, "cache-hit" + fast.variant());
+                    return fast.entry().result;
+                }
+            }
+        }
         StringBuilder variant = new StringBuilder();
         int actual = variantFor(module, kernel, variant);
         String key = cacheKey(module, actual, options);
         Entry entry = cache.computeIfAbsent(key, k -> new Entry());
+        fastCompile.put(module, new FastEntry(kernel, options, entry, key.substring(0, Math.min(16, key.length())),
+                variant.toString()));
         synchronized (entry) {
             if (entry.result != null) {
                 hits.incrementAndGet();
@@ -733,6 +772,7 @@ public final class GpuContext implements AutoCloseable {
         } else {
             api.writeBuffer(queue, handle, 0, bytes, Marshal.toNative(arena, array));
         }
+        afterSync(); // блокирующая запись in-order очереди: всё до неё выполнено
     }
 
     /** Блокирующее чтение в примитивный массив через закреплённую память, если она есть. */
@@ -740,6 +780,7 @@ public final class GpuContext implements AutoCloseable {
         MemorySegment pin = pinnedStaging(bytes);
         MemorySegment dst = pin != null ? pin : arena.allocate(Math.max(bytes, 8), 8);
         api.readBuffer(queue, handle, 0, bytes, dst);
+        afterSync(); // блокирующее чтение in-order очереди: всё до него выполнено
         Marshal.fromNativeFast(dst, array);
     }
 
@@ -1037,7 +1078,7 @@ public final class GpuContext implements AutoCloseable {
         checkTransfer(b, array);
         long bytes = Marshal.byteSize(array);
         lock.lock();
-        try (Arena a = Arena.ofShared()) { // shared: большие массивы копируются несколькими потоками
+        try (Arena a = Arena.ofConfined()) { // крупные массивы - через общий закреплённый буфер
             requireOpen();
             long t0 = System.nanoTime();
             if (bytes > 0) {
@@ -1055,7 +1096,7 @@ public final class GpuContext implements AutoCloseable {
         checkTransfer(b, array);
         long bytes = Marshal.byteSize(array);
         lock.lock();
-        try (Arena a = Arena.ofShared()) {
+        try (Arena a = Arena.ofConfined()) { // крупные массивы - через общий закреплённый буфер
             requireOpen();
             long t0 = System.nanoTime();
             if (bytes > 0) {
@@ -1120,16 +1161,13 @@ public final class GpuContext implements AutoCloseable {
                 return launchHost(kernel, config, args);
             }
             Object[] arrays = new Object[args.length];
-            boolean any = false;
             for (int i = 0; i < args.length; i++) {
                 if (m.typeKind(m.fParamType(f, i)) == Types.KIND_ARRAY && args[i] != null && !(args[i] instanceof GpuBuffer)) {
                     arrays[i] = args[i];
-                    any = true;
                 }
             }
-            if (!any) {
-                return launchHost(kernel, config, args);
-            }
+            // и без массивов хоста (только GpuArray/GpuBuffer и скаляры) подготовленный запуск выгоден: драйверу
+            // передаются заново только изменившиеся аргументы
             ReuseKey key = new ReuseKey(kernel, arrays);
             Reused r = reuse.get(key);
             if (r != null && r.launcher.isClosed()) {
@@ -1239,6 +1277,7 @@ public final class GpuContext implements AutoCloseable {
             long t0 = System.nanoTime();
             if (bytes > 0) {
                 api.readBuffer(queue, b.handle(), 0, bytes, mem);
+                afterSync();
             }
             emit(GpuEvent.Kind.READBACK, b.toString(), System.nanoTime() - t0, bytes, "view");
             return mem.asSlice(0, bytes).asReadOnly();
@@ -1364,8 +1403,14 @@ public final class GpuContext implements AutoCloseable {
                     return Result.failed(e.diagnostics());
                 }
             }
-            Result<LaunchStats> r = reuse ? launchReusingHost(kernel, config, bound.args())
-                    : launchHost(kernel, config, bound.args());
+            Result<LaunchStats> r;
+            boolean previous = deferAllowed;
+            deferAllowed = !bound.none();
+            try {
+                r = reuse ? launchReusingHost(kernel, config, bound.args()) : launchHost(kernel, config, bound.args());
+            } finally {
+                deferAllowed = previous;
+            }
             if (r.isOk() && !bound.none()) {
                 ResidentArrays.afterSuccess(kernel, bound);
             }
@@ -1373,6 +1418,50 @@ public final class GpuContext implements AutoCloseable {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * Неблокирующая загрузка массива хоста в буфер (асинхронная цепочка {@code GpuArray}). Под замком.
+     *
+     * @param b     буфер
+     * @param array примитивный массив хоста
+     */
+    void uploadAsync(GpuBuffer b, Object array) {
+        requireOpen();
+        long bytes = Marshal.byteSize(array);
+        if (bytes == 0) {
+            return;
+        }
+        long t0 = System.nanoTime();
+        // auto-арена: закрывать не нужно (это дорого для shared), память освободит GC, когда ссылка уйдёт после
+        // ближайшей синхронизации
+        MemorySegment seg = Arena.ofAuto().allocate(Math.max(bytes, 8), 8);
+        Marshal.copyToNativeFast(array, seg);
+        api.writeBufferAsync(queue, b.handle(), 0, bytes, seg);
+        pendingStaging.add(seg);
+        pendingBytes += bytes;
+        emit(GpuEvent.Kind.UPLOAD, b.toString(), System.nanoTime() - t0, bytes, "async");
+        if (pendingBytes > MAX_PENDING_BYTES) {
+            synchronizeQueue();
+        }
+    }
+
+    /** Ждёт все команды очереди и освобождает отложенную промежуточную память (под замком). */
+    void synchronizeQueue() {
+        api.finish(queue);
+        afterSync();
+    }
+
+    /** Очередь только что дошла до точки синхронизации: отложенное можно освободить (под замком). */
+    void afterSync() {
+        pendingStaging.clear(); // память auto-арен освободит GC
+        pendingBytes = 0;
+        pendingLaunches = 0;
+    }
+
+    /** @return разрешено ли текущему запуску не ждать завершения ядра (под замком) */
+    boolean deferAllowedNow() {
+        return deferAllowed;
     }
 
     /** Регистрирует массив, привязанный к контексту (под замком). */
@@ -1591,13 +1680,27 @@ public final class GpuContext implements AutoCloseable {
      * @return время работы ядра, нс
      */
     long dispatch(CompiledKernel k, LaunchConfig cfg, long[] local) {
+        return dispatch(k, cfg, local, false);
+    }
+
+    /**
+     * Ставит ядро в очередь; при {@code defer} не ждёт завершения (если отложенных запусков не слишком много). Тогда
+     * возвращаемое время - время постановки в очередь, а ошибка исполнения проявится в ближайшей точке синхронизации.
+     *
+     * @return время работы ядра (либо постановки в очередь), нс
+     */
+    long dispatch(CompiledKernel k, LaunchConfig cfg, long[] local, boolean defer) {
         long[] global = new long[cfg.dim()];
         for (int d = 0; d < global.length; d++) {
             global[d] = cfg.global(d);
         }
         long t1 = System.nanoTime();
         api.enqueue(queue, k.kernel, cfg.dim(), global, local);
-        api.finish(queue);
+        if (defer && pendingLaunches < MAX_DEFERRED_LAUNCHES) {
+            pendingLaunches++;
+        } else {
+            synchronizeQueue();
+        }
         long nanos = System.nanoTime() - t1;
         emit(GpuEvent.Kind.KERNEL, k.artifact().entry(), nanos, 0, cfg.toString());
         return nanos;
@@ -1625,7 +1728,9 @@ public final class GpuContext implements AutoCloseable {
                 ps[1 + ps[0]++] = i;
             }
         }
-        try (Arena arena = Arena.ofShared()) { // shared: большие массивы копируются несколькими потоками
+        // confined: закрытие shared-арены дорого (рукопожатие со всеми потоками) и стоило бы на каждом запуске;
+        // крупные массивы и так идут через общий закреплённый буфер контекста, доступный потокам копирования
+        try (Arena arena = Arena.ofConfined()) {
             long t0 = System.nanoTime();
             for (int i = 0; i < n; i++) {
                 if (m.typeKind(m.fParamType(f, i)) != Types.KIND_ARRAY) {
@@ -1666,7 +1771,12 @@ public final class GpuContext implements AutoCloseable {
             emit(GpuEvent.Kind.UPLOAD, k.artifact().entry(), upNanos, up, "");
 
             setKernelArgs(k, args, handles, lengths, arena);
-            kernelNanos = dispatch(k, cfg, local);
+            boolean readsBack = false;
+            for (long[] v : hostBuffers.values()) {
+                readsBack |= (v[1] & Validator.ACCESS_WRITE) != 0;
+            }
+            // читать на хост нечего - ждать завершения ядра не нужно: дождётся первая блокирующая операция очереди
+            kernelNanos = dispatch(k, cfg, local, deferAllowed && !readsBack);
 
             long t2 = System.nanoTime();
             for (Map.Entry<Object, long[]> e : hostBuffers.entrySet()) {
@@ -1714,6 +1824,11 @@ public final class GpuContext implements AutoCloseable {
             }
             // массивы GpuArray со свежими данными на устройстве - на хост, пока контекст открыт
             ResidentArrays.syncAll(this, new ArrayList<>(residents.keySet()));
+            try {
+                synchronizeQueue();
+            } catch (DeviceApiException ignored) {
+                afterSync(); // очередь сломана: освободить хотя бы память хоста
+            }
             residents.clear();
             for (PreparedLauncher l : launchers) {
                 l.releaseLocked(); // до closed = true: освобождает свои буферы в драйвере

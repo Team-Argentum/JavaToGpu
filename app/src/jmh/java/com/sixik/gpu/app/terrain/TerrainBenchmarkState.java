@@ -12,7 +12,7 @@ import org.openjdk.jmh.annotations.TearDown;
 public class TerrainBenchmarkState {
 
     /** Измеряемый backend; GPU не имеет fallback и обязан быть видеокартой. */
-    @Param({"CPU", "CPU_POOL", "GPU_ARRAYS", "GPU_PREPARED"})
+    @Param({"CPU", "CPU_POOL", "GPU_ARRAYS", "GPU_PREPARED", "GPU_RESIDENT"})
     public TerrainExecutor.Backend backend;
     /** Число чанков в одном синхронном вызове. */
     @Param({"1", "8", "64"})

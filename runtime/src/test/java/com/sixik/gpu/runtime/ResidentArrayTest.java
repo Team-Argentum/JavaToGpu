@@ -83,6 +83,70 @@ class ResidentArrayTest {
     }
 
     @Test
+    void chainDoesNotWaitBetweenKernelsUntilTheHostReads() {
+        FakeDeviceApi fake = device();
+        try (GpuContext ctx = open(fake)) {
+            CompiledKernel k = ctx.compile(scaled()).value();
+            GpuFloatArray a = GpuFloatArray.of(1, 2, 3, 4);
+            GpuFloatArray b = new GpuFloatArray(4);
+            int finishes = fake.finishes();
+            for (int s = 0; s < 10; s++) {
+                run(ctx, k, s % 2 == 0 ? a : b, s % 2 == 0 ? b : a, 1, 1f);
+            }
+            assertEquals(finishes, fake.finishes(), "no kernel in the chain waits for completion");
+            int reads = fake.reads();
+            assertArrayEquals(new float[]{11, 12, 13, 14}, a.toArray(), "the first host read waits for everything");
+            assertEquals(reads + 1, fake.reads());
+        }
+    }
+
+    @Test
+    void residentOnlyCallsReuseOnePreparedLaunch() {
+        FakeDeviceApi fake = device();
+        try (GpuContext ctx = open(fake)) {
+            CompiledKernel k = ctx.compile(scaled()).value();
+            GpuFloatArray a = GpuFloatArray.of(1, 2, 3, 4);
+            GpuFloatArray b = new GpuFloatArray(4);
+            for (int s = 0; s < 5; s++) {
+                run(ctx, k, a, b, s, 1f); // меняется только скаляр
+            }
+            assertEquals(1, ctx.reusedLaunches(), "one prepared launch serves all calls with the same arrays");
+            assertArrayEquals(new float[]{5, 6, 7, 8}, b.toArray());
+            run(ctx, k, b, a, 0, 2f); // другие массивы - переподстановка буферов в том же запуске
+            assertArrayEquals(new float[]{10, 12, 14, 16}, a.toArray());
+            assertEquals(1, ctx.reusedLaunches());
+        }
+    }
+
+    @Test
+    void deferredLaunchesAreBounded() {
+        FakeDeviceApi fake = device();
+        try (GpuContext ctx = open(fake)) {
+            CompiledKernel k = ctx.compile(scaled()).value();
+            GpuFloatArray a = GpuFloatArray.of(0, 0, 0, 0);
+            GpuFloatArray b = new GpuFloatArray(4);
+            int finishes = fake.finishes();
+            for (int s = 0; s < GpuContext.MAX_DEFERRED_LAUNCHES + 1; s++) {
+                run(ctx, k, s % 2 == 0 ? a : b, s % 2 == 0 ? b : a, 1, 1f);
+            }
+            assertEquals(finishes + 1, fake.finishes(), "after the limit one launch waits for the queue");
+        }
+    }
+
+    @Test
+    void plainArrayLaunchesStillWait() {
+        FakeDeviceApi fake = device();
+        try (GpuContext ctx = open(fake)) {
+            CompiledKernel k = ctx.compile(scaled()).value();
+            int finishes = fake.finishes();
+            float[] out = new float[4];
+            assertTrue(ctx.launch(k, LaunchConfig.of1D(4), new float[]{1, 2, 3, 4}, out, 0, 1f).isOk());
+            assertEquals(finishes + 1, fake.finishes(), "a launch that reads back into float[] waits for the kernel");
+            assertArrayEquals(new float[]{1, 2, 3, 4}, out);
+        }
+    }
+
+    @Test
     void hostChangesAreUploadedBeforeTheNextLaunch() {
         FakeDeviceApi fake = device();
         try (GpuContext ctx = open(fake)) {

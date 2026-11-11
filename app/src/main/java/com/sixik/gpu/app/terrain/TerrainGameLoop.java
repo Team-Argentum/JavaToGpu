@@ -64,15 +64,12 @@ public final class TerrainGameLoop {
         lastCalls = 0;
         for (int pass = 0; pass < maxCalls; pass++) {
             batch.seed = TerrainBatch.WORLD_SEED + pass * 0x632be5ab;
-            float[] density = executor.compute();
+            // Полная классификация результата нужна хостовой логике и входит в стоимость тика; где её считать
+            // (на хосте по всем плотностям или на устройстве), решает исполнитель.
+            int solid = executor.solidCount();
             lastCalls++;
-            int solid = 0;
-            // Полная классификация результата нужна хостовой логике и входит в стоимость тика.
-            for (int i = 0; i < density.length; i++) {
-                solid += density[i] > 0f ? 1 : 0;
-            }
             check = check * 31 + solid;
-            if (solid == 0 || solid == density.length) {
+            if (solid == 0 || solid == batch.output.length) {
                 break;
             }
         }

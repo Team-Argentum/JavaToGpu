@@ -197,6 +197,94 @@ class OptimizerEffectDeviceTest {
         }
     }
 
+    /** Разбивка одного прохода GPU_RESIDENT по шагам (медианы), чтобы видеть, где тратится время. */
+    @Test
+    void residentPassBreakdown() {
+        Result<GpuContext> rc = GpuContext.builder().ignoreEnvironment().noDiskCache()
+                .fallback(GpuContext.Fallback.NEVER).tryBuild();
+        Assumptions.assumeTrue(rc.isOk(), "no OpenCL device");
+        try (GpuContext ctx = rc.value(); JavaToGpu.Scope s = JavaToGpu.use(ctx)) {
+            for (TerrainBatch.Sampling sampling : TerrainBatch.Sampling.values()) {
+                TerrainBatch batch = new TerrainBatch(64, sampling);
+                TerrainBatch.Sampling g = batch.sampling;
+                int n = batch.output.length;
+                com.sixik.gpu.api.types.GpuFloatArray density = new com.sixik.gpu.api.types.GpuFloatArray(n);
+                com.sixik.gpu.api.types.GpuIntArray cx = new com.sixik.gpu.api.types.GpuIntArray(batch.chunkX.length);
+                com.sixik.gpu.api.types.GpuIntArray cz = new com.sixik.gpu.api.types.GpuIntArray(batch.chunkZ.length);
+                com.sixik.gpu.api.types.GpuIntArray partial = new com.sixik.gpu.api.types.GpuIntArray(
+                        TerrainExecutor.partials(n));
+                long[][] t = new long[5][RUNS];
+                for (int i = 0; i < RUNS + 3; i++) {
+                    long t0 = System.nanoTime();
+                    cx.copyFrom(batch.chunkX);
+                    cz.copyFrom(batch.chunkZ);
+                    long t1 = System.nanoTime();
+                    TerrainNoise.generateResident(density, cx, cz, g.horizontal, g.vertical, g.stepXZ, g.stepY,
+                            batch.seed, batch.octaves);
+                    long t2 = System.nanoTime();
+                    TerrainNoise.countSolid(partial, density);
+                    long t3 = System.nanoTime();
+                    int solid = 0;
+                    for (int k = 0; k < partial.length(); k++) {
+                        solid += partial.get(k);
+                    }
+                    long t4 = System.nanoTime();
+                    assertTrue(solid >= 0);
+                    if (i >= 3) {
+                        t[0][i - 3] = t1 - t0;
+                        t[1][i - 3] = t2 - t1;
+                        t[2][i - 3] = t3 - t2;
+                        t[3][i - 3] = t4 - t3;
+                        t[4][i - 3] = t4 - t0;
+                    }
+                }
+                String[] names = {"copyFrom", "generate call", "countSolid call", "read sums", "total"};
+                StringBuilder sb = new StringBuilder();
+                for (int p = 0; p < names.length; p++) {
+                    Arrays.sort(t[p]);
+                    sb.append(String.format(Locale.ROOT, "  %s %.3f", names[p], t[p][RUNS / 2] / 1e6));
+                }
+                System.out.println("resident " + sampling + ":" + sb);
+                // время самих ядер (с ожиданием): запуск через GpuBuffer не откладывается
+                CompiledKernel gen = ctx.compile(JavaToGpu.loadModule(TerrainNoise.class, "generateResident")).value();
+                CompiledKernel cnt = ctx.compile(JavaToGpu.loadModule(TerrainNoise.class, "countSolid")).value();
+                try (com.sixik.gpu.runtime.GpuBuffer bd = ctx.allocate(com.sixik.gpu.ir.Types.F32, n);
+                     com.sixik.gpu.runtime.GpuBuffer bx = ctx.upload(batch.chunkX);
+                     com.sixik.gpu.runtime.GpuBuffer bz = ctx.upload(batch.chunkZ);
+                     com.sixik.gpu.runtime.GpuBuffer bp = ctx.allocate(com.sixik.gpu.ir.Types.I32, partial.length())) {
+                    long[] kg = new long[RUNS];
+                    long[] kc = new long[RUNS];
+                    for (int i = 0; i < RUNS + 3; i++) {
+                        LaunchStats a1 = ctx.launch(gen, LaunchConfig.of1D(n), bd, bx, bz, g.horizontal, g.vertical,
+                                g.stepXZ, g.stepY, batch.seed, batch.octaves).value();
+                        LaunchStats a2 = ctx.launch(cnt, LaunchConfig.of1D(partial.length()), bp, bd).value();
+                        if (i >= 3) {
+                            kg[i - 3] = a1.kernelNanos();
+                            kc[i - 3] = a2.kernelNanos();
+                        }
+                    }
+                    CompiledKernel old = ctx.compile(JavaToGpu.loadModule(TerrainNoise.class, "generate")).value();
+                    long[] ko = new long[RUNS];
+                    float[] host = new float[n];
+                    for (int i = 0; i < RUNS + 3; i++) {
+                        LaunchStats a0 = ctx.launch(old, LaunchConfig.of1D(n), bd, batch.chunkX, batch.chunkZ,
+                                g.horizontal, g.vertical, g.stepXZ, g.stepY, batch.seed, batch.octaves).value();
+                        if (i >= 3) {
+                            ko[i - 3] = a0.kernelNanos();
+                        }
+                    }
+                    Arrays.sort(ko);
+                    System.out.printf(Locale.ROOT, "  generate (float[]) %.3f ms, regs %d / generateResident regs %d%n",
+                            ko[RUNS / 2] / 1e6, old.driverStats().registers(), gen.driverStats().registers());
+                    Arrays.sort(kg);
+                    Arrays.sort(kc);
+                    System.out.printf(Locale.ROOT, "  kernels %s: generateResident %.3f ms, countSolid %.3f ms%n",
+                            sampling, kg[RUNS / 2] / 1e6, kc[RUNS / 2] / 1e6);
+                }
+            }
+        }
+    }
+
     @Test
     void terrainKernelWithAndWithoutOptimizer() throws IOException {
         for (TerrainBatch.Sampling sampling : TerrainBatch.Sampling.values()) {
