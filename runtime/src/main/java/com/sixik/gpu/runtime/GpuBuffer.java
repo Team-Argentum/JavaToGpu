@@ -111,6 +111,47 @@ public final class GpuBuffer implements AutoCloseable {
         return owner.readView(this);
     }
 
+    /**
+     * Возвращает вид для записи на закреплённую память хоста этого буфера - вход заполняется <b>без Java-массива</b>, а
+     * {@link #commitView()} передаёт его на устройство прямым DMA.
+     *
+     * <p>Для крупных входов это вдвое быстрее {@link #write}: копирование из массива в закреплённую память, которое стоит
+     * столько же, сколько сама передача, исчезает. Значения пишутся в вид напрямую, например
+     * {@code view.setAtIndex(ValueLayout.JAVA_FLOAT, i, x)}.</p>
+     *
+     * <p>Это та же память, что у {@link #readView()} (выделяется при первом обращении к любому из видов). Поэтому:</p>
+     * <ul>
+     *   <li>сам вызов ничего не передаёт; содержимое вида - то, что в нём осталось (после {@link #readView()} - прочитанное
+     *       содержимое буфера, у только что выделенной памяти - не определено);</li>
+     *   <li>{@link #readView()} до {@link #commitView()} перезаписывает незафиксированные изменения;</li>
+     *   <li>вид действителен до {@link #close()} буфера или контекста, обращение после закрытия бросает
+     *       {@link IllegalStateException}.</li>
+     * </ul>
+     *
+     * @return изменяемый вид длиной {@link #byteSize()} байт
+     * @throws GpuException если буфер или контекст закрыт
+     */
+    public MemorySegment writeView() {
+        return owner.writeView(this);
+    }
+
+    /**
+     * Передаёт содержимое вида ({@link #writeView()}) в буфер устройства. Вызов блокирующий: после возврата вид можно
+     * снова изменять, на переданные данные это не влияет.
+     *
+     * @return этот буфер
+     * @throws GpuException если буфер или контекст закрыт, вид ещё не создан либо драйвер вернул ошибку
+     */
+    public GpuBuffer commitView() {
+        owner.commitView(this);
+        return this;
+    }
+
+    /** @return память вида либо {@code null}, если вид ещё не создан (вызывается под замком контекста) */
+    MemorySegment existingView() {
+        return view;
+    }
+
     /** @return память вида, выделяя её при первом обращении (вызывается под замком контекста) */
     MemorySegment viewMemory(DeviceApi api, long context, long queue) {
         if (view == null) {

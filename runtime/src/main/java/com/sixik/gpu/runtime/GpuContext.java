@@ -1547,15 +1547,9 @@ public final class GpuContext implements AutoCloseable {
      * @return вид только для чтения
      */
     MemorySegment readView(GpuBuffer b) {
-        if (b.owner() != this) {
-            throw new GpuException(List.of(error("RT-A02", "the buffer belongs to another context")));
-        }
         lock.lock();
         try {
-            requireOpen();
-            if (b.isClosed()) {
-                throw new GpuException(List.of(error("RT-A02", "the buffer is already closed")));
-            }
+            requireViewable(b);
             long bytes = b.byteSize();
             MemorySegment mem = b.viewMemory(api, contextHandle, queue);
             long t0 = System.nanoTime();
@@ -1569,6 +1563,61 @@ public final class GpuContext implements AutoCloseable {
             throw new GpuException(List.of(error("RT-X01", driverError("reading a buffer", e))));
         } finally {
             lock.unlock();
+        }
+    }
+
+    /**
+     * Вид для записи на закреплённую память буфера ({@link GpuBuffer#writeView()}); ничего не передаёт.
+     *
+     * @param b буфер
+     * @return изменяемый вид
+     */
+    MemorySegment writeView(GpuBuffer b) {
+        lock.lock();
+        try {
+            requireViewable(b);
+            return b.viewMemory(api, contextHandle, queue).asSlice(0, b.byteSize());
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Передаёт вид буфера на устройство ({@link GpuBuffer#commitView()}): блокирующая запись прямо из закреплённой памяти.
+     *
+     * @param b буфер
+     */
+    void commitView(GpuBuffer b) {
+        lock.lock();
+        try {
+            requireViewable(b);
+            MemorySegment mem = b.existingView();
+            if (mem == null) {
+                throw new GpuException(List.of(error("RT-A02",
+                        "the buffer has no view to commit; call writeView() and fill it first")));
+            }
+            long bytes = b.byteSize();
+            long t0 = System.nanoTime();
+            if (bytes > 0) {
+                api.writeBuffer(queue, b.handle(), 0, bytes, mem);
+                afterSync(); // блокирующая запись in-order очереди: всё до неё выполнено
+            }
+            emit(GpuEvent.Kind.UPLOAD, b.toString(), System.nanoTime() - t0, bytes, "view");
+        } catch (DeviceApiException e) {
+            throw new GpuException(List.of(error("RT-X01", driverError("writing a buffer", e))));
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Проверки видов буфера: свой контекст, контекст и буфер открыты (под замком). */
+    private void requireViewable(GpuBuffer b) {
+        if (b.owner() != this) {
+            throw new GpuException(List.of(error("RT-A02", "the buffer belongs to another context")));
+        }
+        requireOpen();
+        if (b.isClosed()) {
+            throw new GpuException(List.of(error("RT-A02", "the buffer is already closed")));
         }
     }
 

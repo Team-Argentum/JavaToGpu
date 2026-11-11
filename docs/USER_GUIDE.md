@@ -180,6 +180,25 @@ try (GpuBuffer out = ctx.allocate(Types.F32, n)) {
 Вид действует до закрытия буфера или контекста (после закрытия обращение бросает `IllegalStateException`). Следующий
 `readView()` перезаписывает ту же память.
 
+Вход можно так же заполнять без Java-массива: `GpuBuffer.writeView()` возвращает изменяемый `MemorySegment` на ту же
+закреплённую память, `commitView()` передаёт его на устройство. Передача 23.6 МБ — 1.3 мс против 2.9 мс у
+`write(float[])`; вместе с заполнением (значения пишутся в вид вместо массива) — 3.7 мс против 4.4 мс.
+
+```java
+try (GpuBuffer in = ctx.allocate(Types.F32, n)) {
+    MemorySegment w = in.writeView();
+    for (int i = 0; i < n; i++) {
+        w.setAtIndex(ValueLayout.JAVA_FLOAT, i, source(i));
+    }
+    in.commitView();                 // блокирующая передача; после неё вид можно снова менять
+    ctx.launch(kernel, LaunchConfig.of1D(n), out, in);
+}
+```
+
+`writeView()` сам ничего не передаёт: содержимое вида — то, что в нём осталось (после `readView()` — прочитанное, у новой
+памяти — не определено). Пара `readView()` → правка в `writeView()` → `commitView()` меняет буфер на месте; `readView()`
+до `commitView()` перезаписывает незафиксированные изменения.
+
 ## Массивы, данные которых живут на устройстве
 
 `GpuFloatArray`, `GpuIntArray`, `GpuLongArray` и `GpuDoubleArray` (пакет `com.sixik.gpu.api.types`) пишутся в сигнатуре

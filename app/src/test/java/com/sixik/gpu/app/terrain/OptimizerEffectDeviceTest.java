@@ -156,6 +156,69 @@ class OptimizerEffectDeviceTest {
     }
 
     /**
+     * Вход в {@code GpuBuffer} того же размера (23.6 МБ): запись из {@code float[]} против заполнения вида и
+     * {@code commitView()}: сама передача и передача вместе с заполнением (пользователь пишет значения в вид вместо
+     * массива - честное сравнение включает заполнение у обоих путей). Содержимое буфера обязано совпадать; печатаются
+     * медианы.
+     */
+    @Test
+    void inputViewAvoidsTheArrayCopy() {
+        Result<GpuContext> rc = GpuContext.builder().ignoreEnvironment().noDiskCache()
+                .fallback(GpuContext.Fallback.NEVER).tryBuild();
+        Assumptions.assumeTrue(rc.isOk(), "no OpenCL device");
+        int n = new TerrainBatch(64, TerrainBatch.Sampling.DENSE).output.length;
+        float[] host = new float[n];
+        for (int i = 0; i < n; i++) {
+            host[i] = i * 0.5f;
+        }
+        try (GpuContext ctx = rc.value();
+             com.sixik.gpu.runtime.GpuBuffer in = ctx.allocate(com.sixik.gpu.ir.Types.F32, n)) {
+            long[] copy = new long[RUNS];
+            long[] commit = new long[RUNS];
+            long[] fillWrite = new long[RUNS];
+            long[] fillCommit = new long[RUNS];
+            java.lang.foreign.MemorySegment w = in.writeView();
+            for (int i = 0; i < RUNS + 3; i++) {
+                long t = System.nanoTime();
+                in.write(host);
+                long tc = System.nanoTime() - t;
+                t = System.nanoTime();
+                in.commitView();
+                long tv = System.nanoTime() - t;
+                t = System.nanoTime();
+                for (int j = 0; j < n; j++) {
+                    host[j] = j * 0.5f;
+                }
+                in.write(host);
+                long tfw = System.nanoTime() - t;
+                t = System.nanoTime();
+                for (int j = 0; j < n; j++) {
+                    w.setAtIndex(java.lang.foreign.ValueLayout.JAVA_FLOAT, j, j * 0.5f);
+                }
+                in.commitView();
+                long tf = System.nanoTime() - t;
+                if (i >= 3) {
+                    copy[i - 3] = tc;
+                    commit[i - 3] = tv;
+                    fillWrite[i - 3] = tfw;
+                    fillCommit[i - 3] = tf;
+                }
+            }
+            float[] back = new float[n];
+            in.read(back);
+            assertTrue(Arrays.equals(host, back), "the committed view must equal the array");
+            Arrays.sort(copy);
+            Arrays.sort(commit);
+            Arrays.sort(fillWrite);
+            Arrays.sort(fillCommit);
+            System.out.printf(Locale.ROOT, "input %.1f MB: write(float[]) %.2f ms, commitView() %.2f ms;"
+                            + " fill array + write %.2f ms, fill view + commitView() %.2f ms%n",
+                    n * 4 / 1e6, copy[RUNS / 2] / 1e6, commit[RUNS / 2] / 1e6, fillWrite[RUNS / 2] / 1e6,
+                    fillCommit[RUNS / 2] / 1e6);
+        }
+    }
+
+    /**
      * Обычный вызов {@code TerrainNoise.generate(...)} через фасад (как пишет пользователь) против явного {@code ctx.launch}:
      * фасад переиспользует подготовленный запуск для тех же массивов. Печатает медианы.
      */
