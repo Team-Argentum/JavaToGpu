@@ -18,7 +18,7 @@ public final class TerrainExecutor implements AutoCloseable {
 
     /**
      * Измеряемые способы исполнения. {@link #compute()} у всех возвращает весь результат в Java; {@link #solidCount()}
-     * у {@link Backend#GPU_RESIDENT} классифицирует на устройстве и читает только частичные суммы.
+     * у {@link Backend#GPU_RESIDENT} считает породу свёрткой на устройстве и читает только суммы групп.
      */
     public enum Backend {
         /** Прямой цикл Java в одном потоке. */
@@ -31,7 +31,8 @@ public final class TerrainExecutor implements AutoCloseable {
         GPU_PREPARED,
         /**
          * Обычный вызов ядер ({@code TerrainNoise.generateResident(...)}) на {@link GpuFloatArray}: плотности остаются
-         * на устройстве, классификация ({@code countSolid}) идёт там же, на хост читаются только частичные суммы.
+         * на устройстве; подсчёт породы - свёртка {@code TerrainNoise.solidCount} (шум и классификация в одном ядре,
+         * плотности не пишутся), на хост читаются только суммы групп.
          */
         GPU_RESIDENT
     }
@@ -78,8 +79,6 @@ public final class TerrainExecutor implements AutoCloseable {
     private GpuIntArray residentX;
     /** Координаты чанков порции на устройстве. */
     private GpuIntArray residentZ;
-    /** Частичные суммы классификации ({@link #partials(int)} штук). */
-    private GpuIntArray residentPartial;
 
     /**
      * Создаёт исполнителя, прогревая только инфраструктуру, но не вычисления.
@@ -113,7 +112,6 @@ public final class TerrainExecutor implements AutoCloseable {
             residentDensity = new GpuFloatArray(n);
             residentX = new GpuIntArray(batch.chunkX.length);
             residentZ = new GpuIntArray(batch.chunkZ.length);
-            residentPartial = new GpuIntArray(partials(n));
         }
         if (backend == Backend.GPU_ARRAYS || backend == Backend.GPU_PREPARED || backend == Backend.GPU_RESIDENT) {
             try {
@@ -203,15 +201,14 @@ public final class TerrainExecutor implements AutoCloseable {
      */
     public int solidCount() {
         if (backend == Backend.GPU_RESIDENT) {
-            generateResident();
+            // свёртка: шум и классификация в одном ядре, плотности не пишутся в память, хост читает суммы групп
+            residentX.copyFrom(batch.chunkX);
+            residentZ.copyFrom(batch.chunkZ);
+            TerrainBatch.Sampling g = batch.sampling;
             try (JavaToGpu.Scope s = JavaToGpu.use(context)) {
-                TerrainNoise.countSolid(residentPartial, residentDensity);
+                return TerrainNoise.solidCount(residentX, residentZ, batch.output.length, g.horizontal, g.vertical,
+                        g.stepXZ, g.stepY, batch.seed, batch.octaves);
             }
-            int solid = 0;
-            for (int i = 0; i < residentPartial.length(); i++) {
-                solid += residentPartial.get(i); // первое обращение - одно чтение маленького массива
-            }
-            return solid;
         }
         float[] density = compute();
         int solid = 0;
