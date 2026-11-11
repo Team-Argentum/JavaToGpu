@@ -54,6 +54,7 @@ final class HandModules {
         m.put("vectors_f64", vectorsF64());
         m.put("structs", structs());
         m.put("pointers", pointers());
+        m.put("deep_expressions", deep(80));
         return m;
     }
 
@@ -983,6 +984,98 @@ final class HandModules {
         k.b.nameParams("data");
         int g = k.local(Types.I32, "g", k.b.intrinsic(Builtins.idOf("getGlobalId"), k.b.constI32(0)));
         k.st.add(k.b.store(k.b.elemPtr(k.b.param(0), k.b.localGet(g)), k.b.constF32(1.5f)));
+        return k.finish();
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // глубокие выражения
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Выражения высотой в сотни узлов: кодген выносит подвыражения во временные переменные, иначе clang отвергает текст
+     * (не больше 256 вложенных скобок). Параметры: {@code a} (float, длина 6), {@code out} (float, 8), {@code iout}
+     * (int, 16); запуск - 4 work-item'а.
+     * <ol>
+     *   <li>{@code out[g]} - цепочка {@code v = v * 1.0001 + 0.25} над {@code a[g]};</li>
+     *   <li>{@code iout[g]} - знаковая целая цепочка {@code ((x + 7) * 3) ^ 0x55} (оборот через беззнаковый тип);</li>
+     *   <li>{@code out[4 + g]} - {@code g + 4 < len(a) ? цепочка(a[g + 4]) : -1}: ветка ленивая, при {@code g >= 2}
+     *       индекс за границей - вынести её из {@code select} нельзя;</li>
+     *   <li>{@code iout[4 + g]} - цикл с глубоким условием и {@code continue};</li>
+     *   <li>{@code iout[8 + g]} - do-while с глубоким условием и {@code continue};</li>
+     *   <li>{@code iout[12 + g]} - {@code if / else if} с глубоким вторым условием.</li>
+     * </ol>
+     *
+     * @param depth число звеньев каждой цепочки
+     * @return модуль
+     */
+    static IrModule deep(int depth) {
+        K k = new K();
+        IrBuilder b = k.b;
+        int af = b.array(AddressSpace.GLOBAL, Types.F32);
+        int ai = b.array(AddressSpace.GLOBAL, Types.I32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, af, af, ai);
+        b.nameFunction("deep");
+        b.nameParams("a", "out", "iout");
+        int g = k.local(Types.I32, "g", b.intrinsic(Builtins.idOf("getGlobalId"), b.constI32(0)));
+        java.util.function.IntUnaryOperator floatChain = x -> {
+            int v = x;
+            for (int i = 0; i < depth; i++) {
+                v = b.binary(Op.ADD, b.binary(Op.MUL, v, b.constF32(1.0001f)), b.constF32(0.25f));
+            }
+            return v;
+        };
+        // x - 5 + 5 по модулю 2^32 равно x: значение известно, а высота растёт
+        java.util.function.IntUnaryOperator sameInt = x -> {
+            int v = x;
+            for (int i = 0; i < depth; i++) {
+                v = b.binary(Op.ADD, b.binary(Op.SUB, v, b.constI32(5)), b.constI32(5));
+            }
+            return v;
+        };
+
+        // 1) вещественная цепочка
+        k.st.add(b.store(b.elemPtr(b.param(1), b.localGet(g)), floatChain.applyAsInt(b.load(b.elemPtr(b.param(0),
+                b.localGet(g))))));
+        // 2) целая цепочка
+        int iv = b.localGet(g);
+        for (int i = 0; i < depth; i++) {
+            iv = b.binary(Op.XOR, b.binary(Op.MUL, b.binary(Op.ADD, iv, b.constI32(7)), b.constI32(3)), b.constI32(0x55));
+        }
+        k.st.add(b.store(b.elemPtr(b.param(2), b.localGet(g)), iv));
+        // 3) ленивая глубокая ветка с охраной индекса
+        java.util.function.IntSupplier idx = () -> b.binary(Op.ADD, b.localGet(g), b.constI32(4));
+        int guarded = b.select(b.binary(Op.LT, idx.getAsInt(), b.arrayLen(b.param(0))),
+                floatChain.applyAsInt(b.load(b.elemPtr(b.param(0), idx.getAsInt()))), b.constF32(-1f));
+        k.st.add(b.store(b.elemPtr(b.param(1), b.binary(Op.ADD, b.localGet(g), b.constI32(4))), guarded));
+        // 4) цикл: while (same(i) < 3 + g) { if (i == 1) continue; count++; } с шагом i++
+        int i = k.local(Types.I32, "i", b.constI32(0));
+        int count = k.local(Types.I32, "count", b.constI32(0));
+        int body = b.block(
+                b.ifStmt(b.binary(Op.EQ, b.localGet(i), b.constI32(1)), b.block(b.continueStmt()), -1),
+                b.localSet(count, b.binary(Op.ADD, b.localGet(count), b.constI32(1))));
+        k.st.add(b.loop(b.binary(Op.LT, sameInt.applyAsInt(b.localGet(i)), b.binary(Op.ADD, b.localGet(g),
+                b.constI32(3))), body, b.localSet(i, b.binary(Op.ADD, b.localGet(i), b.constI32(1)))));
+        k.st.add(b.store(b.elemPtr(b.param(2), b.binary(Op.ADD, b.localGet(g), b.constI32(4))),
+                b.binary(Op.ADD, b.localGet(count), b.binary(Op.MUL, b.localGet(i), b.constI32(10)))));
+        // 5) do { d++; if (d == 2) continue; e += d; } while (same(d) < 5 + g)
+        int d = k.local(Types.I32, "d", b.constI32(0));
+        int e = k.local(Types.I32, "e", b.constI32(0));
+        int dbody = b.block(
+                b.localSet(d, b.binary(Op.ADD, b.localGet(d), b.constI32(1))),
+                b.ifStmt(b.binary(Op.EQ, b.localGet(d), b.constI32(2)), b.block(b.continueStmt()), -1),
+                b.localSet(e, b.binary(Op.ADD, b.localGet(e), b.localGet(d))));
+        k.st.add(b.doWhile(dbody, b.binary(Op.LT, sameInt.applyAsInt(b.localGet(d)), b.binary(Op.ADD, b.localGet(g),
+                b.constI32(5)))));
+        k.st.add(b.store(b.elemPtr(b.param(2), b.binary(Op.ADD, b.localGet(g), b.constI32(8))),
+                b.binary(Op.ADD, b.localGet(e), b.binary(Op.MUL, b.localGet(d), b.constI32(100)))));
+        // 6) if (g == 0) 1 else if (same(g) == 1) 2 else 3
+        java.util.function.IntSupplier slot = () -> b.elemPtr(b.param(2), b.binary(Op.ADD, b.localGet(g),
+                b.constI32(12)));
+        k.st.add(b.ifStmt(b.binary(Op.EQ, b.localGet(g), b.constI32(0)),
+                b.block(b.store(slot.getAsInt(), b.constI32(1))),
+                b.block(b.ifStmt(b.binary(Op.EQ, sameInt.applyAsInt(b.localGet(g)), b.constI32(1)),
+                        b.block(b.store(slot.getAsInt(), b.constI32(2))),
+                        b.block(b.store(slot.getAsInt(), b.constI32(3)))))));
         return k.finish();
     }
 }

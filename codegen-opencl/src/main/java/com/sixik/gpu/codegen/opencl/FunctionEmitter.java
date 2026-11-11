@@ -7,7 +7,9 @@ import com.sixik.gpu.ir.Operands;
 import com.sixik.gpu.ir.Types;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Печать одной функции IR как функции OpenCL C (REWORK_ARCHITECTURE.md, 8.A).
@@ -16,7 +18,9 @@ import java.util.List;
  * <p>IR - дерево стейтментов с выражениями-деревьями (операнды имеют меньший id, эффекты подняты на уровень
  * стейтментов, IR-E01/E02), поэтому выражение печатается рекурсивно «как есть», а общий закрытый подузел
  * просто печатается в каждом месте использования: он чистый, значит повтор не меняет результата.
- * Порядок вычисления операндов в C не определён, но здесь это безразлично: эффектов внутри выражений нет.</p>
+ * Порядок вычисления операндов в C не определён, но здесь это безразлично: эффектов внутри выражений нет.
+ * Слишком высокие подвыражения выносятся во временные переменные перед стейтментом ({@link #MAX_EXPR_HEIGHT}):
+ * clang не принимает больше 256 вложенных скобок.</p>
  *
  * <h2>Java-семантика поверх C</h2>
  * <ul>
@@ -72,6 +76,11 @@ final class FunctionEmitter {
     private final List<String> loops = new ArrayList<>();
     private int indent;
     private int labelCounter;
+    /** Имена функции (параметры, локали, временные значения). */
+    private final Names names;
+    /** Вынесенные подвыражения текущего стейтмента: узел -> имя временной переменной. */
+    private final Map<Integer, String> temps = new HashMap<>();
+    private int tempCounter;
     private final java.util.Set<String> usedLabels = new java.util.HashSet<>();
 
     /**
@@ -91,7 +100,7 @@ final class FunctionEmitter {
         this.helpers = helpers;
         this.lay = layouts;
         this.funcNames = funcNames;
-        Names names = global.copy();
+        names = global.copy();
         int pc = m.fParamCount(f);
         paramNames = new String[pc];
         lenNames = new String[pc];
@@ -207,11 +216,188 @@ final class FunctionEmitter {
         }
     }
 
+    // ---- глубокие выражения ------------------------------------------------------------------
+
+    /**
+     * Наибольшая высота выражения в узлах IR, после которой подвыражение выносится во временную переменную. Компилятор
+     * OpenCL C (clang) ограничивает вложенность скобок 256, а на один уровень IR приходится до трёх скобок.
+     */
+    static final int MAX_EXPR_HEIGHT = 32;
+
+    /**
+     * Вынос подвыражения перед стейтментом.
+     *
+     * @param node    узел
+     * @param branchy {@code select}, ветки которого слишком глубоки: печатается как {@code if/else}, чтобы
+     *                невыбранная ветка по-прежнему не вычислялась
+     */
+    private record Cut(int node, boolean branchy) {
+    }
+
+    /**
+     * Какие подвыражения корней стейтмента вынести, чтобы высота каждого печатаемого выражения не превышала
+     * {@link #MAX_EXPR_HEIGHT}. Выносится только то, что стейтмент вычисляет безусловно: в ветках {@code select}
+     * (ленивых) выноса нет - глубокий {@code select} целиком становится {@code if/else}.
+     *
+     * @param roots корни выражений стейтмента ({@code -1} пропускается)
+     * @return выносы в порядке объявления (операнды раньше узлов, которые их используют)
+     */
+    private List<Cut> plan(int... roots) {
+        Map<Integer, Integer> memo = new HashMap<>();
+        List<Cut> cuts = new ArrayList<>();
+        for (int r : roots) {
+            if (r >= 0) {
+                height(r, true, memo, cuts);
+            }
+        }
+        return cuts;
+    }
+
+    private int height(int n, boolean root, Map<Integer, Integer> memo, List<Cut> cuts) {
+        if (temps.containsKey(n)) {
+            return 1;
+        }
+        Integer known = memo.get(n);
+        if (known != null) {
+            return known;
+        }
+        int h;
+        if (m.op(n) == Op.SELECT) {
+            int cond = height(m.a(n), false, memo, cuts);
+            int branches = Math.max(rawHeight(m.b(n), new HashMap<>()), rawHeight(m.c(n), new HashMap<>()));
+            if (branches >= MAX_EXPR_HEIGHT && cuttable(n)) {
+                cuts.add(new Cut(n, true));
+                memo.put(n, 1);
+                return 1;
+            }
+            h = 1 + Math.max(cond, branches);
+        } else {
+            int max = 0;
+            int cnt = Operands.count(m, n);
+            for (int k = 0; k < cnt; k++) {
+                max = Math.max(max, height(Operands.get(m, n, k), false, memo, cuts));
+            }
+            h = 1 + max;
+        }
+        if (!root && h >= MAX_EXPR_HEIGHT && cuttable(n)) {
+            cuts.add(new Cut(n, false));
+            h = 1;
+        }
+        memo.put(n, h);
+        return h;
+    }
+
+    /** Высота без выносов (ветки {@code select}: что напечаталось бы без изменений). */
+    private int rawHeight(int n, Map<Integer, Integer> memo) {
+        if (temps.containsKey(n)) {
+            return 1;
+        }
+        Integer known = memo.get(n);
+        if (known != null) {
+            return known;
+        }
+        int max = 0;
+        int cnt = Operands.count(m, n);
+        for (int k = 0; k < cnt; k++) {
+            max = Math.max(max, rawHeight(Operands.get(m, n, k), memo));
+        }
+        memo.put(n, max + 1);
+        return max + 1;
+    }
+
+    /**
+     * Узел можно вычислить заранее во временную переменную: значение (скаляр, вектор, struct), не указатель, не лист и
+     * без эффектов (вызовы не выносятся - их место в тексте сохраняется).
+     */
+    private boolean cuttable(int n) {
+        switch (m.op(n)) {
+            case Op.CONST_INT, Op.CONST_FLOAT, Op.CONST_BOOL, Op.PARAM, Op.LOCAL_GET, Op.ELEM_PTR, Op.FIELD_PTR,
+                 Op.LOCAL_ADDR, Op.ARRAY_LEN, Op.CALL -> {
+                return false;
+            }
+            case Op.INTRINSIC -> {
+                if (Builtins.has(m.a(n), Builtins.EFFECT)) {
+                    return false;
+                }
+            }
+            default -> {
+            }
+        }
+        int t = m.type(n);
+        if (t == Types.VOID) {
+            return false;
+        }
+        int k = m.typeKind(t);
+        return k == Types.KIND_SCALAR || k == Types.KIND_VEC || k == Types.KIND_STRUCT;
+    }
+
+    /** Объявляет вынесенные подвыражения перед стейтментом. */
+    private void declare(List<Cut> cuts) {
+        for (Cut c : cuts) {
+            int n = c.node();
+            String name = names.unique(null, "e" + (++tempCounter));
+            String type = lay.type(m.type(n));
+            if (!c.branchy()) {
+                line(type + " " + name + " = " + expr(n).s() + ";");
+            } else {
+                line(type + " " + name + ";");
+                line("if (" + expr(m.a(n)).s() + ") {");
+                indent++;
+                assign(name, m.b(n));
+                indent--;
+                line("} else {");
+                indent++;
+                assign(name, m.c(n));
+                indent--;
+                line("}");
+            }
+            temps.put(n, name);
+        }
+    }
+
+    /** {@code name = node;} внутри ветки: выносы ветки видны только в ней. */
+    private void assign(String name, int node) {
+        Map<Integer, String> outer = new HashMap<>(temps);
+        declare(plan(node));
+        line(name + " = " + expr(node).s() + ";");
+        temps.clear();
+        temps.putAll(outer);
+    }
+
+    /**
+     * Готовит выражения стейтмента: сбрасывает выносы прошлого стейтмента (значения локалей могли измениться) и объявляет
+     * новые.
+     */
+    private void prepare(int... roots) {
+        temps.clear();
+        declare(plan(roots));
+    }
+
+    /** @return нужны ли выражению выносы (с чистого листа) */
+    private boolean needsTemps(int... roots) {
+        temps.clear();
+        return !plan(roots).isEmpty();
+    }
+
     private void statement(int n) {
         int op = m.op(n);
         if (op != Op.BLOCK) {
             directive(n);
         }
+        switch (op) {
+            case Op.LOCAL_DECL, Op.LOCAL_SET, Op.RETURN -> prepare(op == Op.RETURN ? m.a(n) : m.b(n));
+            case Op.STORE -> prepare(m.a(n), m.b(n));
+            case Op.EXPR_STMT -> prepare(m.a(n));
+            case Op.SWITCH -> prepare(m.a(n));
+            default -> {
+            }
+        }
+        statementBody(n);
+        temps.clear();
+    }
+
+    private void statementBody(int n) {
+        int op = m.op(n);
         switch (op) {
             case Op.BLOCK -> {
                 line("{");
@@ -254,6 +440,28 @@ final class FunctionEmitter {
             case Op.IF -> ifStatement(n);
             case Op.LOOP -> loopStatement(n);
             case Op.DO_WHILE -> {
+                if (needsTemps(m.b(n))) {
+                    // условие с выносами: проверка внутри цикла, continue ведёт на метку перед ней
+                    String label = "cont_" + (++labelCounter);
+                    loops.add(label);
+                    line("do {");
+                    indent++;
+                    line("{");
+                    indent++;
+                    innerStatements(m.a(n));
+                    indent--;
+                    line("}");
+                    loops.remove(loops.size() - 1);
+                    if (usedLabels.contains(label)) {
+                        raw(label + ":;");
+                    }
+                    prepare(m.b(n));
+                    line("if (!(" + expr(m.b(n)).s() + ")) break;");
+                    temps.clear();
+                    indent--;
+                    line("} while (1);");
+                    return;
+                }
                 loops.add(null);
                 line("do {");
                 indent++;
@@ -287,14 +495,17 @@ final class FunctionEmitter {
     }
 
     private void ifStatement(int n) {
+        prepare(m.a(n));
         line("if (" + expr(m.a(n)).s() + ") {");
+        temps.clear();
         indent++;
         innerStatements(m.b(n));
         indent--;
         int otherwise = m.c(n);
         while (otherwise >= 0) {
             int chained = chainedIf(otherwise);
-            if (chained >= 0 && !opts.debug()) {
+            // условие с выносами нельзя поднять в цепочку else if: выносы вычислялись бы и при истинном первом условии
+            if (chained >= 0 && !opts.debug() && !needsTemps(m.a(chained))) {
                 line("} else if (" + expr(m.a(chained)).s() + ") {");
                 indent++;
                 innerStatements(m.b(chained));
@@ -321,9 +532,35 @@ final class FunctionEmitter {
     }
 
     private void loopStatement(int n) {
-        String cond = expr(m.a(n)).s();
         int body = m.b(n);
         int update = m.c(n);
+        if (needsTemps(m.a(n))) {
+            // условие с выносами: проверка в начале каждой итерации; continue - на метку перед шагом
+            String label = "cont_" + (++labelCounter);
+            loops.add(update >= 0 ? label : null);
+            line("while (1) {");
+            indent++;
+            prepare(m.a(n));
+            line("if (!(" + expr(m.a(n)).s() + ")) break;");
+            temps.clear();
+            line("{");
+            indent++;
+            innerStatements(body);
+            indent--;
+            line("}");
+            loops.remove(loops.size() - 1);
+            if (update >= 0) {
+                if (usedLabels.contains(label)) {
+                    raw(label + ":;");
+                }
+                innerStatements(update);
+            }
+            indent--;
+            line("}");
+            return;
+        }
+        temps.clear();
+        String cond = expr(m.a(n)).s();
         if (update < 0) {
             loops.add(null);
             line("while (" + cond + ") {");
@@ -363,8 +600,12 @@ final class FunctionEmitter {
 
     private boolean isSimpleUpdate(int u) {
         switch (m.op(u)) {
-            case Op.LOCAL_SET, Op.STORE, Op.EXPR_STMT:
-                return true;
+            case Op.LOCAL_SET:
+                return !needsTemps(m.b(u));
+            case Op.STORE:
+                return !needsTemps(m.a(u), m.b(u));
+            case Op.EXPR_STMT:
+                return !needsTemps(m.a(u));
             case Op.BLOCK: {
                 int cnt = Operands.count(m, u);
                 if (cnt == 0) {
@@ -430,6 +671,10 @@ final class FunctionEmitter {
     // ---- выражения ---------------------------------------------------------------------------
 
     private Ex expr(int n) {
+        String temp = temps.get(n);
+        if (temp != null) {
+            return new Ex(temp, P_ATOM);
+        }
         int op = m.op(n);
         int t = m.type(n);
         switch (op) {
@@ -613,7 +858,7 @@ final class FunctionEmitter {
         if (k != null) {
             return new Ex(CTypes.unsignedBits(t, k), P_ATOM);
         }
-        if (wrapsViaUnsigned(node)) {
+        if (wrapsViaUnsigned(node) && !temps.containsKey(node)) {
             return unsignedArith(node);
         }
         if (lay.isVector(t)) {

@@ -249,6 +249,15 @@ class DeviceTest {
         }
     }
 
+    /** Глубокие выражения: выносы во временные переменные, ленивая ветка, циклы с глубокими условиями. */
+    @Test
+    void deepExpressions() {
+        for (int depth : new int[]{40, 400}) {
+            check("deep(" + depth + ")", HandModules.deep(depth), NdRange.of1D(4),
+                    () -> new Object[]{new float[]{1f, -2f, 0.5f, 3f, 7f, -1f}, new float[8], new int[16]}, 0);
+        }
+    }
+
     @Test
     void deviceFunctions() {
         check("device_functions", HandModules.deviceFunctions(), NdRange.of1D(1), () -> new Object[]{

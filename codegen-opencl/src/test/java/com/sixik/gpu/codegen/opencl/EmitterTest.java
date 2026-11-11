@@ -661,4 +661,50 @@ class EmitterTest {
     void codegenVersionIsPartOfThePublicContract() {
         assertFalse(OpenClEmitter.VERSION.isBlank());
     }
+
+    // ---- глубокие выражения ------------------------------------------------------------------
+
+    /** Наибольшая вложенность скобок {@code ( [ {} в тексте. */
+    private static int bracketDepth(String src) {
+        int depth = 0;
+        int max = 0;
+        for (int i = 0; i < src.length(); i++) {
+            char c = src.charAt(i);
+            if (c == '(' || c == '[' || c == '{') {
+                max = Math.max(max, ++depth);
+            } else if (c == ')' || c == ']' || c == '}') {
+                depth--;
+            }
+        }
+        return max;
+    }
+
+    @Test
+    void deepExpressionsStayWithinTheCompilerBracketLimit() {
+        for (EmitOptions o : new EmitOptions[]{EmitOptions.RELEASE, EmitOptions.DEBUG}) {
+            String src = emit(HandModules.deep(400), o).source();
+            assertTrue(bracketDepth(src) < 128, "bracket depth " + bracketDepth(src) + " in\n" + src);
+        }
+    }
+
+    @Test
+    void shallowExpressionsAreNotSplit() {
+        String src = emit(HandModules.deep(3), EmitOptions.RELEASE).source();
+        assertFalse(src.contains(" e1"), src);
+        assertTrue(src.contains("for (;"), "a loop with a shallow condition keeps its form:\n" + src);
+    }
+
+    @Test
+    void deepLazyBranchesBecomeIfElseAndDeepConditionsMoveIntoTheLoop() {
+        String src = emit(HandModules.deep(100), EmitOptions.RELEASE).source();
+        // ветка select с выносами вычисляется только под своим условием
+        assertTrue(java.util.regex.Pattern.compile("(?m)^\\s+if \\(.*< p0_len\\) \\{$").matcher(src).find(), src);
+        assertTrue(java.util.regex.Pattern.compile("(?m)^\\s+e\\d+ = ").matcher(src).find(), src);
+        // условия циклов проверяются на каждой итерации
+        assertTrue(src.contains("while (1) {"), src);
+        assertTrue(src.contains("} while (1);"), src);
+        assertTrue(java.util.regex.Pattern.compile("if \\(!\\(.*\\)\\) break;").matcher(src).find(), src);
+        // глубокое второе условие не поднимается в else if
+        assertFalse(src.contains("} else if ("), src);
+    }
 }
