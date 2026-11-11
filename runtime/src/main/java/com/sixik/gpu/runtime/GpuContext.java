@@ -82,7 +82,7 @@ public final class GpuContext implements AutoCloseable {
 
     final ReentrantLock lock = new ReentrantLock();
     /** Свёртки ({@code @Reduction}): построенные ядра и буферы сумм групп. */
-    private final DeviceReductions reductions = new DeviceReductions(this);
+    final DeviceReductions reductions = new DeviceReductions(this);
     private final ConcurrentHashMap<String, Entry> cache = new ConcurrentHashMap<>();
     /**
      * Быстрый путь {@link #compile} для повторного запроса того же модуля (по идентичности объекта) с теми же ядром и
@@ -197,6 +197,10 @@ public final class GpuContext implements AutoCloseable {
     /** Больше этого размера закреплённый буфер не держится: крупные одиночные передачи идут через обычную память. */
     static final long TRANSFER_POOL_MAX_BYTES = 256L << 20;
     volatile boolean closed;
+    /** Слияние «ядро → свёртка» в фасаде ({@link Builder#fusion}). */
+    boolean fusion = true;
+    /** Отложенные ядра-производители фасада. */
+    final LazyProducers lazy = new LazyProducers(this);
 
     private GpuContext(DeviceApi api, boolean ownsApi, DeviceInfo device, long contextHandle, long queue,
                        EventListener listener, EmitOptions emitOptions, Fallback fallback, DiskCache disk,
@@ -255,6 +259,10 @@ public final class GpuContext implements AutoCloseable {
     public static final String SPLIT_PROPERTY = "javatogpu.split";
     /** Переменная окружения с режимом деления ядер на стадии ({@code off}, {@code auto}, {@code always}). */
     public static final String SPLIT_ENVIRONMENT = "JAVATOGPU_SPLIT";
+    /** Системное свойство слияния «ядро → свёртка» в фасаде ({@code on}/{@code off}). */
+    public static final String FUSION_PROPERTY = "javatogpu.fusion";
+    /** Переменная окружения слияния «ядро → свёртка» в фасаде ({@code on}/{@code off}). */
+    public static final String FUSION_ENVIRONMENT = "JAVATOGPU_FUSION";
 
     /** Построитель {@link GpuContext}. */
     public static final class Builder {
@@ -271,6 +279,7 @@ public final class GpuContext implements AutoCloseable {
         private String codegenVersion = OpenClEmitter.VERSION;
         private OptimizeOptions optimizeOptions = OptimizeOptions.DEFAULT;
         private KernelSplitMode splitMode = KernelSplitMode.OFF;
+        private boolean fusion = true;
 
         private Builder() {
         }
@@ -307,6 +316,38 @@ public final class GpuContext implements AutoCloseable {
             }
             this.splitMode = mode;
             return this;
+        }
+
+        /**
+         * Слияние «ядро → свёртка» в фасаде (по умолчанию включено): вызов ядра-производителя через {@link JavaToGpu}
+         * откладывается, и если его выход затем читает {@code @Reduction}, производитель подставляется в свёртку -
+         * массив не пишется в память (см. {@code LazyProducers}). Отложенное ядро выполняется, как только его результат
+         * понадобится; ошибка его исполнения проявляется тогда же. Явные {@link GpuContext#launch} не откладываются.
+         * Если не вызван {@link #ignoreEnvironment()}, переопределяется свойством {@code javatogpu.fusion} либо
+         * переменной {@code JAVATOGPU_FUSION} ({@code on}/{@code off}).
+         *
+         * @param enabled {@code false} - исполнять каждое ядро сразу
+         * @return этот построитель
+         */
+        public Builder fusion(boolean enabled) {
+            this.fusion = enabled;
+            return this;
+        }
+
+        /** Слияние с учётом свойства и переменной окружения. */
+        boolean effectiveFusion() {
+            if (!environment) {
+                return fusion;
+            }
+            String v = System.getProperty(FUSION_PROPERTY);
+            if (v == null) {
+                v = System.getenv(FUSION_ENVIRONMENT);
+            }
+            if (v == null || v.isBlank()) {
+                return fusion;
+            }
+            String s = v.strip().toLowerCase(java.util.Locale.ROOT);
+            return !(s.equals("off") || s.equals("false") || s.equals("0") || s.equals("no"));
         }
 
         /** Режим деления с учётом свойства и переменной окружения. */
@@ -529,6 +570,7 @@ public final class GpuContext implements AutoCloseable {
                 GpuContext gc = new GpuContext(a, owns, d, ctx, q, listener == null ? EventListener.NONE : listener,
                         emitOptions, fallback == null ? Fallback.ALLOWED : fallback, openDiskCache(owns), openSourceDump(), codegenVersion,
                         effectiveOptimizeOptions(), effectiveSplitMode());
+                gc.fusion = effectiveFusion();
                 gc.emit(GpuEvent.Kind.DEVICE_SELECTED, d.describe(), 0, 0, d.platformName() + ", driver " + d.driverVersion());
                 return Result.ok(gc);
             } catch (DeviceApiException e) {
@@ -1412,11 +1454,46 @@ public final class GpuContext implements AutoCloseable {
         if (closed) {
             return failure("RT-X02", "context is closed");
         }
+        lock.lock();
+        try {
+            // выход отложенного ядра-производителя: свёртка со вставленным производителем, массив не пишется
+            Result<Object> fused = lazy.fusedReduce(module, args, resultClass);
+            if (fused != null) {
+                return fused;
+            }
+        } catch (GpuException e) {
+            return Result.failed(e.diagnostics());
+        } finally {
+            lock.unlock();
+        }
         Result<DeviceReductions.Kernel> k = reductions.kernel(module);
         if (!k.isOk()) {
             return Result.failed(k.diagnostics());
         }
         return reductions.run(k.value(), args, resultClass);
+    }
+
+    /**
+     * Вызов {@code @Kernel}-метода через фасад: ядро-производитель откладывается ({@link LazyProducers}), остальные
+     * исполняются как {@link #launchReusing}.
+     *
+     * @param kernel ядро этого контекста
+     * @param config размеры запуска
+     * @param args   аргументы
+     * @return итог (у отложенного запуска - нулевая статистика) либо диагностики
+     */
+    Result<LaunchStats> launchOrDefer(CompiledKernel kernel, LaunchConfig config, Object[] args) {
+        lock.lock();
+        try {
+            if (!closed && kernel.owner() == this && lazy.defer(kernel, config, args)) {
+                return Result.ok(new LaunchStats(0, 0, 0, 0, 0));
+            }
+        } catch (GpuException e) {
+            return Result.failed(e.diagnostics());
+        } finally {
+            lock.unlock();
+        }
+        return launchReusing(kernel, config, args);
     }
 
     /**
@@ -1526,6 +1603,24 @@ public final class GpuContext implements AutoCloseable {
             }
             reuse.clear();
             reuseBytes = 0;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * @param handle дескриптор ядра драйвера
+     * @return скомпилированное ядро этого контекста с таким дескриптором либо {@code null} (для тестов)
+     */
+    CompiledKernel compiledByHandle(long handle) {
+        lock.lock();
+        try {
+            for (CompiledKernel k : compiled) {
+                if (k.kernel == handle) {
+                    return k;
+                }
+            }
+            return null;
         } finally {
             lock.unlock();
         }
@@ -2369,7 +2464,13 @@ public final class GpuContext implements AutoCloseable {
             if (closed) {
                 return;
             }
-            // массивы GpuArray со свежими данными на устройстве - на хост, пока контекст открыт
+            // отложенные ядра - исполнить, затем массивы GpuArray со свежими данными на устройстве - на хост, пока
+            // контекст открыт
+            try {
+                lazy.materializeAll();
+            } catch (RuntimeException e) {
+                // устройство отказало: выходы отложенных ядер остаются с прежними данными хоста
+            }
             ResidentArrays.syncAll(this, new ArrayList<>(residents.keySet()));
             try {
                 synchronizeQueue();

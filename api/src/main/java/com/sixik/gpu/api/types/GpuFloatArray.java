@@ -64,6 +64,7 @@ public final class GpuFloatArray extends GpuArray {
      * @param value новое значение
      */
     public void set(int i, float value) {
+        beforeHostWrite(false);
         syncHost();
         data[i] = value;
         hostWritten();
@@ -73,6 +74,7 @@ public final class GpuFloatArray extends GpuArray {
      * @param value значение всех элементов
      */
     public void fill(float value) {
+        beforeHostWrite(true);
         Arrays.fill(data, value);
         // все элементы перезаписаны: старые данные устройства не нужны
         markHostOverwritten();
@@ -84,6 +86,7 @@ public final class GpuFloatArray extends GpuArray {
      * @param src источник (не длиннее массива)
      */
     public void copyFrom(float[] src) {
+        beforeHostWrite(src.length == data.length);
         if (src.length != data.length) {
             syncHost();
         }

@@ -35,6 +35,8 @@ public abstract sealed class GpuArray permits GpuFloatArray, GpuIntArray, GpuLon
     private Object residence;
     private boolean hostStale;
     private boolean deviceStale = true;
+    /** Массив участвует в отложенной работе рантайма: перед записью хоста вызывается {@code Residency.settle}. */
+    private boolean watched;
 
     GpuArray() {
     }
@@ -69,6 +71,12 @@ public abstract sealed class GpuArray permits GpuFloatArray, GpuIntArray, GpuLon
             a.residence = null;
             a.hostStale = false;
             a.deviceStale = true;
+            a.watched = false;
+        }
+
+        @Override
+        public void watch(GpuArray a, boolean watched) {
+            a.watched = watched && a.residency != null;
         }
 
         @Override
@@ -104,6 +112,20 @@ public abstract sealed class GpuArray permits GpuFloatArray, GpuIntArray, GpuLon
                 throw new IllegalStateException("the array data is on a device that is no longer available");
             }
             r.toHost(this);
+        }
+    }
+
+    /**
+     * Перед записью хоста: если массив участвует в отложенной работе рантайма, она доводится до конца на прежних данных.
+     *
+     * @param overwrite хост перезапишет массив целиком
+     */
+    final void beforeHostWrite(boolean overwrite) {
+        if (watched) {
+            GpuArrayAccess.Residency r = residency;
+            if (r != null) {
+                r.settle(this, overwrite);
+            }
         }
     }
 

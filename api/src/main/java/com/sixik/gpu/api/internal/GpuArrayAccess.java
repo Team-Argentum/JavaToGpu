@@ -22,6 +22,17 @@ public abstract class GpuArrayAccess {
          * @param array массив, у которого свежие данные на устройстве
          */
         void toHost(GpuArray array);
+
+        /**
+         * Хост собирается изменить массив, который участвует в отложенной работе рантайма ({@link #watch}): рантайм
+         * доводит эту работу до конца, пока данные ещё прежние.
+         *
+         * @param array     массив
+         * @param overwrite {@code true}, если хост перезапишет массив целиком ({@code fill}, {@code copyFrom} всего
+         *                  массива): прежнее содержимое не понадобится
+         */
+        default void settle(GpuArray array, boolean overwrite) {
+        }
     }
 
     /** Только для {@link GpuArray}: подклассы создаются ровно один раз, см. {@link #install}. */
@@ -110,4 +121,12 @@ public abstract class GpuArrayAccess {
      * @param array массив
      */
     public abstract void markInSync(GpuArray array);
+
+    /**
+     * Включает или выключает вызов {@link Residency#settle} перед записью хоста в массив.
+     *
+     * @param array   массив (должен быть связан с рантаймом через {@link #attach})
+     * @param watched {@code true} - массив участвует в отложенной работе
+     */
+    public abstract void watch(GpuArray array, boolean watched);
 }

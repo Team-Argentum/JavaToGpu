@@ -245,8 +245,9 @@ public final class JavaToGpu {
             policy = c.fallback();
             Result<CompiledKernel> compiled = c.compile(module);
             if (compiled.isOk()) {
-                // повторные вызовы с теми же массивами переиспользуют подготовленный запуск (буферы, pinned-память)
-                Result<LaunchStats> r = c.launchReusing(compiled.value(), config, args);
+                // повторные вызовы с теми же массивами переиспользуют подготовленный запуск (буферы, pinned-память);
+                // ядро-производитель на GpuArray откладывается до того, как его результат понадобится
+                Result<LaunchStats> r = c.launchOrDefer(compiled.value(), config, args);
                 if (!r.isOk()) {
                     throw new GpuException(r.diagnostics());
                 }

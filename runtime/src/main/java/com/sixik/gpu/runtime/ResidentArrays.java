@@ -42,11 +42,27 @@ final class ResidentArrays {
         }
     }
 
-    /** Чтение свежих данных с устройства на хост при обращении хоста к массиву. */
-    static final GpuArrayAccess.Residency RESIDENCY = array -> {
-        Resident r = (Resident) ACCESS.residence(array);
-        r.buffer.read(ACCESS.hostArray(array));
-        ACCESS.markInSync(array);
+    /**
+     * Синхронизация с рантаймом: чтение свежих данных с устройства на хост при обращении хоста к массиву (сначала
+     * исполняется отложенный запуск, если массив - его выход) и доведение отложенной работы перед записью хоста.
+     */
+    static final GpuArrayAccess.Residency RESIDENCY = new GpuArrayAccess.Residency() {
+        @Override
+        public void toHost(GpuArray array) {
+            Resident r = (Resident) ACCESS.residence(array);
+            if (!r.ctx.isClosed()) {
+                r.ctx.lazy.materializeOut(array);
+            }
+            r.buffer.read(ACCESS.hostArray(array));
+            ACCESS.markInSync(array);
+        }
+
+        @Override
+        public void settle(GpuArray array, boolean overwrite) {
+            if (ACCESS.residence(array) instanceof Resident r && !r.ctx.isClosed()) {
+                r.ctx.lazy.settle(array, overwrite);
+            }
+        }
     };
 
     /**
@@ -74,6 +90,8 @@ final class ResidentArrays {
      * @return привязка (аргументы те же объекты, если {@link GpuArray} нет)
      */
     static Bound bind(GpuContext ctx, CompiledKernel kernel, LaunchConfig config, Object[] args) {
+        // отложенные запуски, чей выход ядро получает или чьи входы пишет, исполняются раньше
+        ctx.lazy.beforeLaunch(kernel, args);
         Map<GpuArray, List<Integer>> byArray = null;
         for (int i = 0; i < args.length; i++) {
             if (args[i] instanceof GpuArray a) {

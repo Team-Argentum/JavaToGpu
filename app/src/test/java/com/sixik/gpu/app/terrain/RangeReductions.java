@@ -97,6 +97,18 @@ final class RangeReductions {
         return new MinMax(lo, hi);
     }
 
+    /** Число положительных значений - свёртка по массиву плотностей (для автоматического слияния). */
+    @Reduction
+    public static int solid(GpuFloatArray density) {
+        int count = 0;
+        for (int i = 0; i < density.length(); i++) {
+            if (density.get(i) > 0f) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     @Reduction
     public static float low(GpuFloatArray v) {
         float lo = Float.POSITIVE_INFINITY;

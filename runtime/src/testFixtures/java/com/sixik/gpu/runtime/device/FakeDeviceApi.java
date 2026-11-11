@@ -73,13 +73,20 @@ public final class FakeDeviceApi implements DeviceApi {
         private final long[] global;
         private final long[] local;
         private final FakeDeviceApi owner;
+        private final long kernel;
 
-        private Launch(FakeDeviceApi owner, Object[] args, int dim, long[] global, long[] local) {
+        private Launch(FakeDeviceApi owner, long kernel, Object[] args, int dim, long[] global, long[] local) {
             this.owner = owner;
+            this.kernel = kernel;
             this.args = args;
             this.dim = dim;
             this.global = global;
             this.local = local;
+        }
+
+        /** @return дескриптор запускаемого ядра */
+        public long kernel() {
+            return kernel;
         }
 
         /** @return сколько аргументов ядра выставлено (номера подряд с нуля) */
@@ -150,6 +157,8 @@ public final class FakeDeviceApi implements DeviceApi {
     private final Map<Long, String[]> kernels = new HashMap<>(); // {имя, программа}
     private final Map<Long, Object[]> kernelArgs = new HashMap<>();
     private final Map<String, KernelBody> bodies = new HashMap<>();
+    /** Поведение ядер без своего ({@link #onAnyKernel}) либо {@code null}. */
+    private KernelBody anyBody;
     private final Map<String, Integer> failures = new HashMap<>();
     private final List<String> journal = new ArrayList<>();
     private final List<String> sources = new ArrayList<>();
@@ -191,6 +200,15 @@ public final class FakeDeviceApi implements DeviceApi {
      */
     public FakeDeviceApi onKernel(String entry, KernelBody body) {
         bodies.put(entry, body);
+        return this;
+    }
+
+    /**
+     * @param body что делает любое «ядро», для имени которого нет своего поведения ({@link #onKernel})
+     * @return этот фейк
+     */
+    public FakeDeviceApi onAnyKernel(KernelBody body) {
+        anyBody = body;
         return this;
     }
 
@@ -568,11 +586,12 @@ public final class FakeDeviceApi implements DeviceApi {
         call("enqueue");
         enqueues++;
         String name = kernels.get(kernel)[0];
-        KernelBody body = bodies.get(name);
+        KernelBody body = bodies.getOrDefault(name, anyBody);
         if (body == null) {
             throw new DeviceApiException(-48, "enqueue", "the fake has no behavior for kernel " + name);
         }
-        body.run(new Launch(this, kernelArgs.get(kernel).clone(), dim, global.clone(), local == null ? null : local.clone()));
+        body.run(new Launch(this, kernel, kernelArgs.get(kernel).clone(), dim, global.clone(),
+                local == null ? null : local.clone()));
     }
 
     @Override
