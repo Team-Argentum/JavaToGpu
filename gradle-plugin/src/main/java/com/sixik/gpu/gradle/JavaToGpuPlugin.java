@@ -17,7 +17,7 @@ import java.util.List;
  *
  * <ol>
  *   <li><b>Зависимости.</b> Подключает библиотеки ({@code api, ir, ir-optimizer, codegen-opencl, runtime}) и annotation processor
- *       {@code frontend-java} (с его {@code api} и {@code ir}) к {@code main} и {@code test}. Отключается
+ *       {@code frontend-java} (с его {@code api}, {@code ir} и {@code ir-optimizer}) к {@code main} и {@code test}. Отключается
  *       {@code gpu { autoDependencies = false }}.</li>
  *   <li><b>Weave-шаг.</b> После каждой задачи {@code JavaCompile} подменяет тела {@code @Kernel}-методов
  *       ({@link Weaver#weaveTree}): оригинал уходит в {@code <имя>$jvm}, метод становится вызовом хост-фасада. Класс-файлы
@@ -44,7 +44,7 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
     /** Модули, которые попадают в classpath приложения. */
     static final List<String> RUNTIME_MODULES = List.of("api", "ir", "ir-optimizer", "codegen-opencl", "runtime");
     /** Модули processor path. */
-    static final List<String> PROCESSOR_MODULES = List.of("frontend-java", "api", "ir");
+    static final List<String> PROCESSOR_MODULES = List.of("frontend-java", "api", "ir", "ir-optimizer");
 
     @Override
     public void apply(Project project) {

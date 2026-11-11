@@ -98,6 +98,8 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
     private TreePath methodPath;
     private ExecutableElement method;
     private boolean kernel;
+    /** Проверяемый метод - {@code @Reduction}. */
+    private boolean reduction;
 
     SubsetChecker(Trees trees, Reporter rep) {
         this.trees = trees;
@@ -116,7 +118,9 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         callSites.clear();
         methodPath = path;
         method = e;
-        kernel = e.getAnnotation(Kernel.class) != null;
+        reduction = e.getAnnotation(com.sixik.gpu.api.annotations.Reduction.class) != null;
+        // свёртка - точка входа, как ядро: те же правила параметров, но результат - значение аккумулятора
+        kernel = e.getAnnotation(Kernel.class) != null || reduction;
         int before = rep.errorCount();
         MethodTree mt = (MethodTree) path.getLeaf();
         checkSignature(path, mt, e);
@@ -141,13 +145,21 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
     private void checkSignature(TreePath path, MethodTree mt, ExecutableElement e) {
         String name = e.getSimpleName().toString();
         if (!e.getModifiers().contains(Modifier.STATIC)) {
-            rep.report(path, "GPU0001", name, kernel ? "Kernel" : "DeviceFunction");
+            rep.report(path, "GPU0001", name, reduction ? "Reduction" : kernel ? "Kernel" : "DeviceFunction");
         }
         if (!e.getTypeParameters().isEmpty() || e.isVarArgs() || !e.getThrownTypes().isEmpty()) {
             rep.report(path, "GPU0007", name);
         }
         int ret = JavaTypes.kindOf(e.getReturnType());
-        if (kernel) {
+        if (reduction) {
+            if (e.getAnnotation(Kernel.class) != null) {
+                rep.report(path, "GPU0017", name);
+            }
+            if (!(ret == JavaTypes.K_INT || ret == JavaTypes.K_LONG || ret == JavaTypes.K_FLOAT
+                    || ret == JavaTypes.K_DOUBLE)) {
+                rep.report(path, "GPU0016", name);
+            }
+        } else if (kernel) {
             if (ret != JavaTypes.K_VOID) {
                 rep.report(path, "GPU0002", name);
             }

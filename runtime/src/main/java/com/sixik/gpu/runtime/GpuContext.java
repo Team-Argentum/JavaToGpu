@@ -81,6 +81,8 @@ public final class GpuContext implements AutoCloseable {
     private final Set<String> fallbackReported = ConcurrentHashMap.newKeySet();
 
     final ReentrantLock lock = new ReentrantLock();
+    /** Свёртки ({@code @Reduction}): построенные ядра и буферы сумм групп. */
+    private final DeviceReductions reductions = new DeviceReductions(this);
     private final ConcurrentHashMap<String, Entry> cache = new ConcurrentHashMap<>();
     /**
      * Быстрый путь {@link #compile} для повторного запроса того же модуля (по идентичности объекта) с теми же ядром и
@@ -1397,6 +1399,39 @@ public final class GpuContext implements AutoCloseable {
         return withResidentArrays(kernel, config, args, true);
     }
 
+    /**
+     * Исполняет свёртку ({@code @Reduction}) на устройстве - путь вызова метода свёртки через фасад {@link JavaToGpu}.
+     *
+     * @param module модуль фронтенда, последняя функция - свёртка
+     * @param args   аргументы метода: массивы Java, {@code GpuArray}, {@link GpuBuffer}, упакованные скаляры
+     * @return упакованный результат либо диагностики: {@code OPT-R01/R02} (тело не свёртка либо ядро не строится),
+     *         ошибки компиляции ({@code RT-C01}, ...) и запуска, как у {@link #launch}
+     */
+    Result<Object> reduce(IrModule module, Object[] args) {
+        if (closed) {
+            return failure("RT-X02", "context is closed");
+        }
+        Result<DeviceReductions.Kernel> k = reductions.kernel(module);
+        if (!k.isOk()) {
+            return Result.failed(k.diagnostics());
+        }
+        return reductions.run(k.value(), args);
+    }
+
+    /**
+     * Строит и компилирует ядро свёртки, не запуская его (чтобы решить, нужен ли JVM-fallback).
+     *
+     * @param module модуль фронтенда
+     * @return ядро либо диагностики
+     */
+    Result<CompiledKernel> compileReduction(IrModule module) {
+        if (closed) {
+            return failure("RT-X02", "context is closed");
+        }
+        Result<DeviceReductions.Kernel> k = reductions.kernel(module);
+        return k.isOk() ? Result.ok(k.value().compiled()) : Result.failed(k.diagnostics());
+    }
+
     /** {@link #launchReusing} без привязки {@code GpuArray} (аргументы уже привязаны). */
     private Result<LaunchStats> launchReusingHost(CompiledKernel kernel, LaunchConfig config, Object[] args) {
         lock.lock();
@@ -2297,6 +2332,7 @@ public final class GpuContext implements AutoCloseable {
             }
             launchers.clear();
             reuse.clear();
+            reductions.clear();
             reuseBytes = 0;
             closed = true;
             for (CompiledKernel k : compiled) {

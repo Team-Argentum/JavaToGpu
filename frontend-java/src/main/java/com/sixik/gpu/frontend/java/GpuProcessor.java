@@ -3,6 +3,8 @@ package com.sixik.gpu.frontend.java;
 import com.sixik.gpu.api.annotations.Constant;
 import com.sixik.gpu.api.annotations.DeviceFunction;
 import com.sixik.gpu.api.annotations.Kernel;
+import com.sixik.gpu.api.annotations.Reduction;
+import com.sixik.gpu.ir.optimizer.Reductions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 
@@ -73,7 +75,8 @@ public class GpuProcessor extends AbstractProcessor {
 
     @Override
     public Set<String> getSupportedAnnotationTypes() {
-        return Set.of(Kernel.class.getName(), DeviceFunction.class.getName(), Constant.class.getName());
+        return Set.of(Kernel.class.getName(), Reduction.class.getName(), DeviceFunction.class.getName(),
+                Constant.class.getName());
     }
 
     @Override
@@ -108,6 +111,13 @@ public class GpuProcessor extends AbstractProcessor {
         for (Element e : round.getElementsAnnotatedWith(Kernel.class)) {
             if (e instanceof ExecutableElement ee) {
                 guarded(ee, () -> compileAndWrite(ee));
+            }
+        }
+        for (Element e : round.getElementsAnnotatedWith(Reduction.class)) {
+            if (e instanceof ExecutableElement ee && ee.getAnnotation(Kernel.class) == null) {
+                guarded(ee, () -> compileAndWrite(ee));
+            } else if (e instanceof ExecutableElement ee) {
+                guarded(ee, () -> compiler.check(ee)); // GPU0017: обе аннотации сразу
             }
         }
         return false;
@@ -159,6 +169,18 @@ public class GpuProcessor extends AbstractProcessor {
         ModuleCompiler.Compiled c = compileKernel(kernel);
         if (c == null) {
             return;
+        }
+        if (kernel.getAnnotation(Reduction.class) != null) {
+            // шаблон свёртки проверяется при компиляции тем же кодом, которым рантайм строит параллельное ядро
+            var plan = Reductions.analyze(c.module());
+            if (!plan.isOk()) {
+                String why = plan.diagnostics().get(0).message();
+                String prefix = "reduction " + kernel.getSimpleName() + ": ";
+                TreePath at = trees.getPath(kernel);
+                rep.report(at, "GPU0018", kernel.getSimpleName(),
+                        why.startsWith(prefix) ? why.substring(prefix.length()) : why);
+                return;
+            }
         }
         String path = KernelResources.irPath(c.kernelId());
         try {

@@ -27,15 +27,15 @@ import java.util.List;
 /**
  * Подмена тела {@code @Kernel}-метода в байткоде (REWORK_ARCHITECTURE.md, 3.6).
  *
- * <p>Для каждого статического {@code void}-метода с аннотацией {@code @Kernel}, у которого в индексе ядер есть
- * {@code kernelId}:</p>
+ * <p>Для каждого статического {@code void}-метода с аннотацией {@code @Kernel} (и метода {@code @Reduction}, который
+ * возвращает {@code int/long/float/double}), у которого в индексе ядер есть {@code kernelId}:</p>
  * <ol>
  *   <li>исходное тело (инструкции, локали, обработчики исключений, номера строк) переезжает в новый метод
  *       {@code <имя>$jvm} с той же сигнатурой и теми же флагами доступа, но без аннотаций: это эталон для JVM-fallback
  *       и {@code @GPUTest} (то же ядро, исполняемое на JVM);</li>
  *   <li>исходный метод остаётся (имя, сигнатура, аннотации, аннотации параметров), а тело заменяется делегатом:
  *       {@code JavaToGpu.invoke(Owner.class, "имя", "<kernelId>", new Object[]{арг0, арг1, ...})}, скаляры
- *       упаковываются в обёртки.</li>
+ *       упаковываются в обёртки; у свёртки - {@code return JavaToGpu.reduce(...)} с распаковкой результата.</li>
  * </ol>
  *
  * <p>Функция чистая: байты класса и индекс на входе, байты класса и список замечаний на выходе. Подмена
@@ -47,6 +47,13 @@ public final class Weaver {
 
     /** Дескриптор аннотации {@code @Kernel}. */
     public static final String KERNEL_ANNOTATION = "Lcom/sixik/gpu/api/annotations/Kernel;";
+    /** Дескриптор аннотации {@code @Reduction}. */
+    public static final String REDUCTION_ANNOTATION = "Lcom/sixik/gpu/api/annotations/Reduction;";
+    /** Имя метода фасада, который вызывает делегат свёртки. */
+    public static final String REDUCE_METHOD = "reduce";
+    /** Дескриптор метода фасада свёртки: владелец, имя метода, kernelId, аргументы; результат упакован. */
+    public static final String REDUCE_DESCRIPTOR =
+            "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;";
     /** Суффикс метода с исходным телом. */
     public static final String JVM_SUFFIX = "$jvm";
     /** Внутреннее имя класса хост-фасада, который вызывает делегат. */
@@ -118,7 +125,13 @@ public final class Weaver {
                 problems.add(where + ": the kernel has no body");
                 continue;
             }
-            if (Type.getReturnType(m.desc).getSort() != Type.VOID) {
+            boolean reduction = isReduction(m);
+            int sort = Type.getReturnType(m.desc).getSort();
+            if (reduction && sort != Type.INT && sort != Type.LONG && sort != Type.FLOAT && sort != Type.DOUBLE) {
+                problems.add(where + ": the reduction must return int, long, float or double");
+                continue;
+            }
+            if (!reduction && sort != Type.VOID) {
                 problems.add(where + ": the kernel must return void");
                 continue;
             }
@@ -184,13 +197,19 @@ public final class Weaver {
     // ---- внутреннее --------------------------------------------------------------------------
 
     private static boolean isKernel(MethodNode m) {
-        return hasAnnotation(m.invisibleAnnotations) || hasAnnotation(m.visibleAnnotations);
+        return hasAnnotation(m.invisibleAnnotations, KERNEL_ANNOTATION) || hasAnnotation(m.visibleAnnotations, KERNEL_ANNOTATION)
+                || isReduction(m);
     }
 
-    private static boolean hasAnnotation(List<AnnotationNode> list) {
+    private static boolean isReduction(MethodNode m) {
+        return hasAnnotation(m.invisibleAnnotations, REDUCTION_ANNOTATION)
+                || hasAnnotation(m.visibleAnnotations, REDUCTION_ANNOTATION);
+    }
+
+    private static boolean hasAnnotation(List<AnnotationNode> list, String descriptor) {
         if (list != null) {
             for (AnnotationNode a : list) {
-                if (KERNEL_ANNOTATION.equals(a.desc)) {
+                if (descriptor.equals(a.desc)) {
                     return true;
                 }
             }
@@ -240,8 +259,24 @@ public final class Weaver {
             code.add(new InsnNode(Opcodes.AASTORE));
             slot += args[i].getSize();
         }
-        code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FACADE, FACADE_METHOD, FACADE_DESCRIPTOR, false));
-        code.add(new InsnNode(Opcodes.RETURN));
+        Type ret = Type.getReturnType(m.desc);
+        if (ret.getSort() == Type.VOID) {
+            code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FACADE, FACADE_METHOD, FACADE_DESCRIPTOR, false));
+            code.add(new InsnNode(Opcodes.RETURN));
+        } else {
+            // свёртка: фасад возвращает упакованный результат того же типа
+            code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FACADE, REDUCE_METHOD, REDUCE_DESCRIPTOR, false));
+            String wrapper = switch (ret.getSort()) {
+                case Type.INT -> "java/lang/Integer";
+                case Type.LONG -> "java/lang/Long";
+                case Type.FLOAT -> "java/lang/Float";
+                default -> "java/lang/Double";
+            };
+            code.add(new TypeInsnNode(Opcodes.CHECKCAST, wrapper));
+            code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, wrapper, ret.getClassName() + "Value",
+                    "()" + ret.getDescriptor(), false));
+            code.add(new InsnNode(ret.getOpcode(Opcodes.IRETURN)));
+        }
 
         m.instructions = code;
         m.tryCatchBlocks = new ArrayList<>();

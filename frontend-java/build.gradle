@@ -3,11 +3,15 @@ description = 'Java frontend: an annotation processor on the javac Tree API, wri
 dependencies {
     implementation project(':api')
     implementation project(':ir')
+    // распознавание шаблона @Reduction - тот же код, которым рантайм строит параллельное ядро
+    implementation project(':ir-optimizer')
 
     // Эталонные модули IR (Fixtures) для сравнения вывода фронтенда с модулями, собранными вручную.
     testImplementation testFixtures(project(':ir'))
     // Текстовый дамп IR для golden-тестов. Только тесты: в production-артефакт tools не входит.
     testImplementation project(':tools')
+    // свёртки (@Reduction): построенное ядро исполняется интерпретатором и сверяется с эталоном
+    testImplementation project(':ir-interpreter')
 }
 
 // Таблица диагностик GPU#### лежит в корне репозитория (diagnostics/diagnostics.def) и упаковывается как ресурс модуля:

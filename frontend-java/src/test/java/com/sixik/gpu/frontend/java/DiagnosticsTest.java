@@ -88,6 +88,15 @@ class DiagnosticsTest {
             new Case("GPU0015", """
                     @Constant static int notFinal = 3; // <-
                     """),
+            new Case("GPU0016", """
+                    @Reduction public static void r(int[] a) { } // <-
+                    """),
+            new Case("GPU0017", """
+                    @Kernel @Reduction public static int r(int[] a) { return 0; } // <-
+                    """),
+            new Case("GPU0018", """
+                    @Reduction public static int r(int[] a) { int s = 0; for (int i = 0; i < a.length; i++) { if (a[i] < 0) break; s += a[i]; } return s; } // <-
+                    """),
             new Case("GPU0101", """
                     @Kernel public static void k(@Global int[] a) {
                         try { a[0] = 1; } catch (RuntimeException e) { a[0] = 2; } // <-

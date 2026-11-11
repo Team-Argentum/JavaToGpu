@@ -270,6 +270,58 @@ public final class JavaToGpu {
     }
 
     /**
+     * Делегат метода {@code @Reduction}: исполняет свёртку на устройстве и возвращает результат. Вызывается
+     * подменённым телом метода (его генерирует weaver), напрямую не используется. Контекст - из {@link #use} либо по
+     * умолчанию; без устройства (и при политике, разрешающей fallback) исполняется исходное тело {@code <имя>$jvm}.
+     *
+     * @param owner    класс со свёрткой
+     * @param method   имя метода
+     * @param kernelId идентификатор модуля (хэш IR без отладочных данных)
+     * @param args     аргументы вызова: Java-массивы, {@code GpuArray}, {@link GpuBuffer} и упакованные скаляры
+     * @return упакованный результат того же типа, что у метода
+     * @throws GpuException если свёртку нельзя выполнить ни на устройстве, ни на JVM
+     */
+    public static Object reduce(Class<?> owner, String method, String kernelId, Object[] args) {
+        IrModule module = module(owner, kernelId);
+        GpuContext ctx = CONTEXTS.get().peek();
+        Optional<GpuContext> chosen = ctx != null ? Optional.of(ctx) : defaultContext();
+        List<Diagnostic> reason;
+        GpuContext.Fallback policy = GpuContext.Fallback.ALLOWED;
+        if (chosen.isPresent()) {
+            GpuContext c = chosen.get();
+            policy = c.fallback();
+            Result<CompiledKernel> compiled = c.compileReduction(module);
+            if (compiled.isOk()) {
+                Result<Object> r = c.reduce(module, args);
+                if (!r.isOk()) {
+                    throw new GpuException(r.diagnostics());
+                }
+                return r.value();
+            }
+            reason = compiled.diagnostics();
+        } else {
+            synchronized (LOCK) {
+                reason = defaultFailure == null ? List.of() : defaultFailure;
+                policy = defaultFallback;
+            }
+        }
+        if (policy == GpuContext.Fallback.NEVER) {
+            throw new GpuException(reason);
+        }
+        if (chosen.isPresent()) {
+            chosen.get().reportFallback(kernelId, describe(reason));
+        }
+        MethodHandle body = JVM_BODIES.get(owner).computeIfAbsent(kernelId, k -> jvmBody(owner, method, args.length));
+        try {
+            return body.invoke(args);
+        } catch (RuntimeException | Error e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new IllegalStateException(t);
+        }
+    }
+
+    /**
      * Готовит повторные запуски {@code @Kernel}-метода с одними и теми же аргументами (горячий путь, см.
      * {@link PreparedLauncher}). Использует контекст из {@link #use} либо контекст по умолчанию. JVM-fallback здесь нет:
      * подготовленный запуск владеет буферами устройства, поэтому без устройства он невозможен.

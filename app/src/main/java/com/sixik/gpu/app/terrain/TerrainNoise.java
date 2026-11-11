@@ -4,6 +4,9 @@ import com.sixik.gpu.api.Gpu;
 import com.sixik.gpu.api.annotations.DeviceFunction;
 import com.sixik.gpu.api.annotations.Global;
 import com.sixik.gpu.api.annotations.Kernel;
+import com.sixik.gpu.api.annotations.Local;
+import com.sixik.gpu.api.annotations.Reduction;
+import com.sixik.gpu.api.annotations.WorkGroup;
 import com.sixik.gpu.api.types.GpuFloatArray;
 import com.sixik.gpu.api.types.GpuIntArray;
 
@@ -235,5 +238,118 @@ public final class TerrainNoise {
             }
         }
         partial.set(g, count);
+    }
+
+    /**
+     * Слитые {@link #generateResident} и {@link #countSolid} с той же формой запуска, что у {@code countSolid}: work-item
+     * {@code g} вычисляет плотности образцов {@code g, g + P, ...} и сразу считает «породу»; плотности не пишутся в
+     * память. Опыт для оценки слияния ядер (REWORK_ARCHITECTURE.md, 7.1).
+     *
+     * @param partial частичные суммы, по одной на work-item (длина задаёт размер запуска)
+     * @param chunkX X чанков
+     * @param chunkZ Z чанков
+     * @param samples число образцов порции
+     * @param horizontal число горизонтальных образцов
+     * @param vertical число вертикальных образцов
+     * @param stepXZ горизонтальный шаг в блоках
+     * @param stepY вертикальный шаг в блоках
+     * @param seed seed прохода
+     * @param octaves число октав, [1, 12]
+     */
+    @Kernel
+    public static void countSolidFusedStrided(GpuIntArray partial, GpuIntArray chunkX, GpuIntArray chunkZ, int samples,
+                                              int horizontal, int vertical, int stepXZ, int stepY, int seed,
+                                              int octaves) {
+        int g = Gpu.getGlobalId(0);
+        int stride = partial.length();
+        int perChunk = horizontal * horizontal * vertical;
+        int count = 0;
+        for (int i = g; i < samples; i += stride) {
+            int chunk = i / perChunk;
+            if (sampleIn(i % perChunk, chunkX.get(chunk), chunkZ.get(chunk), horizontal, vertical, stepXZ, stepY, seed,
+                    octaves) > 0f) {
+                count++;
+            }
+        }
+        partial.set(g, count);
+    }
+
+    /**
+     * Число образцов «порода» ({@code density > 0}) порции - свёртка: последовательный цикл, который рантайм исполняет
+     * на устройстве параллельно (work-item на образец, суммы групп в local-памяти), плотности не пишутся в память.
+     *
+     * @param chunkX X чанков
+     * @param chunkZ Z чанков
+     * @param samples число образцов порции
+     * @param horizontal число горизонтальных образцов
+     * @param vertical число вертикальных образцов
+     * @param stepXZ горизонтальный шаг в блоках
+     * @param stepY вертикальный шаг в блоках
+     * @param seed seed прохода
+     * @param octaves число октав, [1, 12]
+     * @return число образцов с положительной плотностью
+     */
+    @Reduction
+    public static int solidCount(GpuIntArray chunkX, GpuIntArray chunkZ, int samples, int horizontal, int vertical,
+                                 int stepXZ, int stepY, int seed, int octaves) {
+        int perChunk = horizontal * horizontal * vertical;
+        int count = 0;
+        for (int i = 0; i < samples; i++) {
+            int chunk = i / perChunk;
+            if (sampleIn(i % perChunk, chunkX.get(chunk), chunkZ.get(chunk), horizontal, vertical, stepXZ, stepY, seed,
+                    octaves) > 0f) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** Размер work-group ядра {@link #countSolidFusedGroups}. */
+    public static final int FUSED_GROUP = 256;
+
+    /**
+     * Слитые {@link #generateResident} и {@link #countSolid} с формой запуска {@code generate}: work-item на образец,
+     * «порода» суммируется деревом в local-памяти, {@code partial[группа]} - сумма группы. Запуск - число образцов,
+     * округлённое вверх до {@link #FUSED_GROUP}. Опыт для оценки слияния ядер (REWORK_ARCHITECTURE.md, 7.1).
+     *
+     * @param partial суммы групп, длина не меньше числа групп
+     * @param chunkX X чанков
+     * @param chunkZ Z чанков
+     * @param samples число образцов порции
+     * @param horizontal число горизонтальных образцов
+     * @param vertical число вертикальных образцов
+     * @param stepXZ горизонтальный шаг в блоках
+     * @param stepY вертикальный шаг в блоках
+     * @param seed seed прохода
+     * @param octaves число октав, [1, 12]
+     */
+    @Kernel
+    @WorkGroup(x = FUSED_GROUP)
+    public static void countSolidFusedGroups(GpuIntArray partial, GpuIntArray chunkX, GpuIntArray chunkZ, int samples,
+                                             int horizontal, int vertical, int stepXZ, int stepY, int seed,
+                                             int octaves) {
+        @Local int[] tile = new int[FUSED_GROUP];
+        int index = Gpu.getGlobalId(0);
+        int lid = Gpu.getLocalId(0);
+        int solid = 0;
+        if (index < samples) {
+            int perChunk = horizontal * horizontal * vertical;
+            int chunk = index / perChunk;
+            if (sampleIn(index % perChunk, chunkX.get(chunk), chunkZ.get(chunk), horizontal, vertical, stepXZ, stepY,
+                    seed, octaves) > 0f) {
+                solid = 1;
+            }
+        }
+        tile[lid] = solid;
+        Gpu.barrier();
+        for (int s = FUSED_GROUP / 2; s > 0; s >>= 1) {
+            if (lid < s) {
+                tile[lid] += tile[lid + s];
+            }
+            Gpu.barrier();
+        }
+        if (lid == 0) {
+            partial.set(Gpu.getGroupId(0), tile[0]);
+        }
     }
 }

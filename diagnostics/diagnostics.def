@@ -28,6 +28,9 @@ GPU0012 error   optLevel {0} of kernel {1} is outside the range 0..3 | Specify a
 GPU0013 error   Work-group size must be positive on every axis: {0} | Specify x, y, z greater than zero
 GPU0014 error   The fallback chain is cyclic: {0} | fallback must not refer to a kernel that is already in the chain
 GPU0015 error   Field {0} with @Constant must be static final of a primitive type with a constant value | Set a constant expression in the initializer
+GPU0016 error   Method {0} with @Reduction must return int, long, float or double | Return the accumulator of the loop
+GPU0017 error   Method {0} has both @Kernel and @Reduction | Keep one of them
+GPU0018 error   Method {0} is not a reduction: {1} | Write the body as: declarations; T acc = init; for (int i = start; i < end; i++) { acc += e; } return acc;
 
 # --- constructs and types in method bodies ------------------------------------------------------
 GPU0101 error   Exceptions are not supported in GPU code ({0}) | Remove try/catch/finally/throw; return errors as values

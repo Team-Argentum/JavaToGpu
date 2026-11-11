@@ -117,7 +117,7 @@ class SplitLaunchTest {
     }
 
     /** Тело ядра фейка: исполняет функцию {@code k} интерпретатором над буферами запуска (массивы - {@code float}/{@code int}). */
-    private static FakeDeviceApi.KernelBody interpreting(CompiledKernel k) {
+    static FakeDeviceApi.KernelBody interpreting(CompiledKernel k) {
         return l -> {
             IrModule m = k.module();
             int f = k.function();

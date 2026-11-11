@@ -61,7 +61,8 @@ def allowedProjectDeps = [
         'ir-optimizer'  : ['ir'],
         'codegen-opencl': ['ir'],
         'runtime'       : ['api', 'ir', 'ir-optimizer', 'codegen-opencl'],
-        'frontend-java' : ['api', 'ir'],
+        // ir-optimizer: шаблон @Reduction проверяется при компиляции тем же кодом, которым рантайм строит ядро
+        'frontend-java' : ['api', 'ir', 'ir-optimizer'],
         'weaver'        : [],
         'gradle-plugin' : ['weaver'],
         'test-support'  : ['api', 'ir', 'ir-interpreter', 'runtime'],
