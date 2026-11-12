@@ -31,9 +31,25 @@ public final class FakeDeviceApi implements DeviceApi {
      * @param extensions строка расширений
      * @param maxGroup   наибольший размер work-group
      * @param maxConstant наибольший размер буфера {@code __constant}, байт
+     * @param fpConfig   {@code CL_DEVICE_SINGLE_FP_CONFIG} (и {@code DOUBLE}, если есть {@code cl_khr_fp64})
      */
     public record Spec(String platform, String name, String vendor, long type, long memory, String extensions,
-                       long maxGroup, long maxConstant) {
+                       long maxGroup, long maxConstant, long fpConfig) {
+
+        /** Возможности float обычного GPU: денормалы, INF/NaN, все округления и аппаратный FMA. */
+        public static final long FP_CONFIG_GPU = 0x3F;
+
+        /** Устройство с {@link #FP_CONFIG_GPU}. */
+        public Spec(String platform, String name, String vendor, long type, long memory, String extensions,
+                    long maxGroup, long maxConstant) {
+            this(platform, name, vendor, type, memory, extensions, maxGroup, maxConstant, FP_CONFIG_GPU);
+        }
+
+        /** @return копия без аппаратного FMA ({@code CL_FP_FMA} снят) */
+        public Spec withoutFma() {
+            return new Spec(platform, name, vendor, type, memory, extensions, maxGroup, maxConstant,
+                    fpConfig & ~DeviceApi.FP_FMA);
+        }
         /** @return GPU с fp64 и 64-битными атомиками, 8 ГиБ, группа до 1024 */
         public static Spec gpu() {
             return new Spec("Fake Platform", "Fake GPU", "Fake Vendor", TYPE_GPU, 8L << 30,
@@ -47,22 +63,22 @@ public final class FakeDeviceApi implements DeviceApi {
 
         /** @param ext расширения @return копия с другими расширениями */
         public Spec withExtensions(String ext) {
-            return new Spec(platform, name, vendor, type, memory, ext, maxGroup, maxConstant);
+            return new Spec(platform, name, vendor, type, memory, ext, maxGroup, maxConstant, fpConfig);
         }
 
         /** @param n имя @return копия с другим именем */
         public Spec withName(String n) {
-            return new Spec(platform, n, vendor, type, memory, extensions, maxGroup, maxConstant);
+            return new Spec(platform, n, vendor, type, memory, extensions, maxGroup, maxConstant, fpConfig);
         }
 
         /** @param bytes размер @return копия с другим пределом буфера {@code __constant} */
         public Spec withMaxConstant(long bytes) {
-            return new Spec(platform, name, vendor, type, memory, extensions, maxGroup, bytes);
+            return new Spec(platform, name, vendor, type, memory, extensions, maxGroup, bytes, fpConfig);
         }
 
         /** @param v производитель @return копия с другим производителем */
         public Spec withVendor(String v) {
-            return new Spec(platform, name, v, type, memory, extensions, maxGroup, maxConstant);
+            return new Spec(platform, name, v, type, memory, extensions, maxGroup, maxConstant, fpConfig);
         }
     }
 
@@ -436,6 +452,8 @@ public final class FakeDeviceApi implements DeviceApi {
             case DEVICE_LOCAL_MEM_SIZE -> 48 * 1024;
             case DEVICE_MAX_CONSTANT_BUFFER_SIZE -> s.maxConstant();
             case DEVICE_MAX_CONSTANT_ARGS -> 8;
+            case DEVICE_SINGLE_FP_CONFIG -> s.fpConfig();
+            case DEVICE_DOUBLE_FP_CONFIG -> s.extensions().contains("cl_khr_fp64") ? s.fpConfig() : 0;
             default -> 0;
         };
     }

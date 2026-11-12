@@ -1,5 +1,5 @@
 === assignAsValue ===
-module format=1 builtins=1 nodes=35 functions=1
+module format=2 builtins=1 nodes=35 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "assignAsValue" kernel ret=void features=- group_sync=no
@@ -47,7 +47,7 @@ nodes:
   n34 block void [n1, n3, n7, n10, n14, n16, n20, n25, n28, n33]
 
 === calls ===
-module format=1 builtins=1 nodes=47 functions=2
+module format=2 builtins=1 nodes=47 functions=2
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "bump" device ret=i32 features=- group_sync=no
@@ -112,7 +112,7 @@ nodes:
   n46 block void [n19, n24, n27, n31, n38, n45]
 
 === compound ===
-module format=1 builtins=1 nodes=23 functions=1
+module format=2 builtins=1 nodes=23 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "compound" kernel ret=void features=- group_sync=no
@@ -148,7 +148,7 @@ nodes:
   n22 block void [n1, n3, n15, n9, n13, n21]
 
 === loopsWithEffects ===
-module format=1 builtins=1 nodes=61 functions=1
+module format=2 builtins=1 nodes=61 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "loopsWithEffects" kernel ret=void features=- group_sync=no
@@ -222,7 +222,7 @@ nodes:
   n60 block void [n1, n23, n46, n59]
 
 === postfixIndex ===
-module format=1 builtins=1 nodes=14 functions=1
+module format=2 builtins=1 nodes=14 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "postfixIndex" kernel ret=void features=- group_sync=no
@@ -247,7 +247,7 @@ nodes:
   n13 block void [n1, n3, n7, n12]
 
 === readThenWrite ===
-module format=1 builtins=1 nodes=26 functions=1
+module format=2 builtins=1 nodes=26 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "readThenWrite" kernel ret=void features=- group_sync=no
@@ -286,7 +286,7 @@ nodes:
   n25 block void [n1, n16, n8, n12, n19, n24]
 
 === shortCircuit ===
-module format=1 builtins=1 nodes=64 functions=1
+module format=2 builtins=1 nodes=64 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "shortCircuit" kernel ret=void features=- group_sync=no
@@ -367,7 +367,7 @@ nodes:
   n63 block void [n1, n17, n21, n23, n39, n44, n46, n54, n62]
 
 === ternaryEffects ===
-module format=1 builtins=1 nodes=40 functions=1
+module format=2 builtins=1 nodes=40 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "ternaryEffects" kernel ret=void features=- group_sync=no

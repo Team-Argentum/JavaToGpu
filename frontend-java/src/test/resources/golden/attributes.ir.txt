@@ -1,5 +1,5 @@
 === localArray ===
-module format=1 builtins=1 nodes=24 functions=1
+module format=2 builtins=1 nodes=24 functions=1
 type t16 = array<global,f32>
 type t17 = array<local,f32>
 type t18 = ptr<global,f32>
@@ -37,7 +37,7 @@ nodes:
   n23 block void [n1, n4, n13, n22]
 
 === processSteps ===
-module format=1 builtins=1 nodes=51 functions=2
+module format=2 builtins=1 nodes=51 functions=2
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "processStepsSimple" kernel ret=void features=- group_sync=no
@@ -108,7 +108,7 @@ nodes:
   n50 block void [n22, n27, n29, n44, n49]
 
 === processStepsSimple ===
-module format=1 builtins=1 nodes=20 functions=1
+module format=2 builtins=1 nodes=20 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "processStepsSimple" kernel ret=void features=- group_sync=no
@@ -140,7 +140,7 @@ nodes:
   n19 block void [n2, n18]
 
 === spaces ===
-module format=1 builtins=1 nodes=20 functions=1
+module format=2 builtins=1 nodes=20 functions=1
 type t16 = array<constant,f32>
 type t17 = array<local,f32>
 type t18 = array<global,f32>

@@ -65,6 +65,7 @@ class AnnotationsTest {
         assertEquals(0, Kernel.class.getMethod("workgroup").getDefaultValue());
         assertArrayEquals(new String[0], (String[]) Kernel.class.getMethod("required").getDefaultValue());
         assertEquals("", Kernel.class.getMethod("fallback").getDefaultValue());
+        assertEquals("", Kernel.class.getMethod("compilationProperties").getDefaultValue());
         assertEquals(0, Struct.class.getMethod("alignment").getDefaultValue());
         assertEquals(false, Global.class.getMethod("constant").getDefaultValue());
         for (String axis : new String[]{"x", "y", "z"}) {

@@ -740,6 +740,7 @@ public final class IrBuilder {
         funcs[IrModule.F_PARAM_COUNT].set(cur, paramTypes.length);
         funcs[IrModule.F_BODY].set(cur, -1);
         funcs[IrModule.F_FALLBACK].set(cur, -1);
+        funcs[IrModule.F_OPT].set(cur, IrModule.OPT_INHERIT);
         dbgFuncName.add(-1);
         dbgParamNames.add(null);
         dbgLocalNames.add(null);
@@ -772,10 +773,16 @@ public final class IrBuilder {
         funcs[IrModule.F_INLINE].set(cur, policy);
     }
 
-    /** @param level уровень оптимизации 0..3 */
+    /** @param level уровень оптимизации 0..3 либо {@link IrModule#OPT_INHERIT} (по умолчанию: уровень контекста) */
     public void optLevel(int level) {
         requireFunction();
         funcs[IrModule.F_OPT].set(cur, level);
+    }
+
+    /** @param mask разрешения вещественной арифметики, маска {@code IrModule.FP_*} (по умолчанию 0 - строгий float) */
+    public void fpMode(int mask) {
+        requireFunction();
+        funcs[IrModule.F_FP].set(cur, mask);
     }
 
     /** @param names имена требуемых возможностей (директива {@code required}) */

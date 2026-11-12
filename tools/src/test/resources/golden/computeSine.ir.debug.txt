@@ -1,4 +1,4 @@
-module format=1 builtins=1 nodes=15 functions=1
+module format=2 builtins=1 nodes=15 functions=1
 type t16 = array<global,f32>
 type t17 = ptr<global,f32>
 func f0 "computeSine" kernel ret=void reqd_wg=(256,1,1) features=- group_sync=no

@@ -6,14 +6,21 @@ import com.sixik.gpu.ir.IrBuilder;
 import com.sixik.gpu.ir.IrModule;
 import com.sun.source.util.TreePath;
 
+import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
 /**
  * Атрибуты ядра из аннотаций {@code @Kernel} и {@code @WorkGroup}, превращаемые в атрибуты функции IR
- * (REWORK_ARCHITECTURE.md, 3.B).
+ * (REWORK_ARCHITECTURE.md, 3.B). Настройки генерации ({@code fp}, {@code opt}, {@code inline}) берутся из строки
+ * {@code compilationProperties} ({@link CompilationProperties}); устаревшие элементы {@code optLevel} и {@code inline}
+ * учитываются, только если заданы явно, и не могут дублировать ключ строки.
  *
  * <p>Имена {@code required} приводятся к канонической форме (без повторов, по алфавиту), чтобы порядок записи в
  * исходнике не менял хэш ядра.</p>
@@ -25,12 +32,14 @@ final class KernelAttrs {
 
     private final int inline;
     private final int optLevel;
+    private final int fp;
     private final int[] workGroup;
     private final String[] required;
 
-    private KernelAttrs(int inline, int optLevel, int[] workGroup, String[] required) {
+    private KernelAttrs(int inline, int optLevel, int fp, int[] workGroup, String[] required) {
         this.inline = inline;
         this.optLevel = optLevel;
+        this.fp = fp;
         this.workGroup = workGroup;
         this.required = required;
     }
@@ -61,8 +70,37 @@ final class KernelAttrs {
             rep.report(path, "GPU0013", Arrays.toString(wg));
             wg = null;
         }
-        if (k.optLevel() < 0 || k.optLevel() > 3) {
-            rep.report(path, "GPU0012", k.optLevel(), name);
+        CompilationProperties props = CompilationProperties.parse(k.compilationProperties());
+        for (CompilationProperties.Problem p : props.problems) {
+            Object[] args = new Object[p.args().length + 1];
+            args[0] = name;
+            System.arraycopy(p.args(), 0, args, 1, p.args().length);
+            rep.report(path, p.code(), args);
+        }
+        // устаревшие элементы читаются через AnnotationMirror: так видно, задан ли элемент явно
+        Object legacyOpt = explicitValue(kernel, "optLevel");
+        Object legacyInline = explicitValue(kernel, "inline");
+        int opt = props.opt;
+        if (legacyOpt != null) {
+            int level = (Integer) legacyOpt;
+            if (level < 0 || level > 3) {
+                rep.report(path, "GPU0012", level, name);
+            }
+            if (props.hasOpt()) {
+                rep.report(path, "GPU0023", name, "opt", "optLevel");
+            }
+            opt = level;
+        }
+        int inline = props.hasInline() ? props.inline : IrModule.INLINE_DEFAULT;
+        if (legacyInline != null) {
+            if (props.hasInline()) {
+                rep.report(path, "GPU0023", name, "inline", "inline");
+            }
+            inline = switch (legacyInline.toString()) {
+                case "ALWAYS" -> IrModule.INLINE_ALWAYS;
+                case "NEVER" -> IrModule.INLINE_NEVER;
+                default -> IrModule.INLINE_DEFAULT;
+            };
         }
         Set<String> req = new TreeSet<>();
         for (String r : k.required()) {
@@ -75,12 +113,30 @@ final class KernelAttrs {
         if (rep.errorCount() != before) {
             return null;
         }
-        int inline = switch (k.inline()) {
-            case DEFAULT -> IrModule.INLINE_DEFAULT;
-            case ALWAYS -> IrModule.INLINE_ALWAYS;
-            case NEVER -> IrModule.INLINE_NEVER;
-        };
-        return new KernelAttrs(inline, k.optLevel(), wg, req.toArray(new String[0]));
+        return new KernelAttrs(inline, opt, props.fp, wg, req.toArray(new String[0]));
+    }
+
+    /**
+     * Значение элемента {@code @Kernel}, заданное в исходнике явно (значение по умолчанию не считается).
+     *
+     * @param kernel  элемент ядра
+     * @param element имя элемента аннотации
+     * @return значение ({@link Integer} для чисел, константа перечисления для enum) либо {@code null}
+     */
+    private static Object explicitValue(ExecutableElement kernel, String element) {
+        for (AnnotationMirror am : kernel.getAnnotationMirrors()) {
+            if (!((TypeElement) am.getAnnotationType().asElement()).getQualifiedName()
+                    .contentEquals(Kernel.class.getCanonicalName())) {
+                continue;
+            }
+            for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> e : am.getElementValues().entrySet()) {
+                if (e.getKey().getSimpleName().contentEquals(element)) {
+                    Object v = e.getValue().getValue();
+                    return v instanceof VariableElement ve ? ve.getSimpleName().toString() : v;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -92,6 +148,7 @@ final class KernelAttrs {
     void apply(IrBuilder b, int fallbackIndex) {
         b.inlinePolicy(inline);
         b.optLevel(optLevel);
+        b.fpMode(fp);
         if (workGroup != null) {
             b.requireWorkGroup(workGroup[0], workGroup[1], workGroup[2]);
         }

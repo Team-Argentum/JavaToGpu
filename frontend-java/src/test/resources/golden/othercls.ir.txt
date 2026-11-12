@@ -1,5 +1,5 @@
 === useLib ===
-module format=1 builtins=1 nodes=22 functions=2
+module format=2 builtins=1 nodes=22 functions=2
 type t16 = array<global,f32>
 type t17 = ptr<global,f32>
 func f0 "sq" device ret=f32 features=- group_sync=no

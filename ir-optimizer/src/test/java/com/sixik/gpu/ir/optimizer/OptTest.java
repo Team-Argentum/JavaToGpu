@@ -40,6 +40,23 @@ final class OptTest {
         return opt(m, OptimizeOptions.DEFAULT);
     }
 
+    /**
+     * Копия модуля, в которой у всех ядер маска {@code fp} (как от {@code compilationProperties = "fp=..."}).
+     *
+     * @param m    модуль
+     * @param mask маска {@code IrModule.FP_*}
+     * @return модуль с маской
+     */
+    static IrModule withFp(IrModule m, int mask) {
+        Codec.ModuleTree mt = Codec.lift(m);
+        for (FnTree fn : mt.fns) {
+            if (fn.kind == IrModule.KERNEL) {
+                fn.fp = mask;
+            }
+        }
+        return Codec.lower(mt);
+    }
+
     static IrModule opt(IrModule m, OptimizeOptions o) {
         OptimizeResult r = Optimizer.optimize(m, o);
         assertTrue(r.ok(), () -> "optimizer rejected passes: " + r.failures());

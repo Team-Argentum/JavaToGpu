@@ -112,18 +112,21 @@ class EmitterTest {
     // ---- математика float ---------------------------------------------------------------------
 
     @Test
-    void strictFloatByDefault() {
-        Artifact a = emit(Fixtures.computeSine(), EmitOptions.RELEASE);
-        assertTrue(a.source().contains("#pragma OPENCL FP_CONTRACT OFF"));
-        assertEquals("", a.buildOptions());
-    }
-
-    @Test
-    void fastMathDropsContractPragmaAndAddsBuildOption() {
-        Artifact a = emit(Fixtures.computeSine(), EmitOptions.RELEASE.withFastMath(true));
-        assertFalse(a.source().contains("FP_CONTRACT"));
-        assertEquals("-cl-fast-relaxed-math", a.buildOptions());
-        assertTrue(a.options().fastMath());
+    void floatIsAlwaysStrictForTheDriver() {
+        // даже ядро с fp=relaxed: неточные преобразования делает оптимизатор явным кодом, драйверу их не доверяем
+        IrBuilder b = new IrBuilder();
+        int arr = b.array(AddressSpace.GLOBAL, Types.F32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        b.fpMode(IrModule.FP_ALL);
+        int p = b.elemPtr(b.param(0), b.constI32(0));
+        b.endFunction(b.block(b.store(p, b.binary(Op.ADD, b.binary(Op.MUL, b.load(p), b.load(p)), b.constF32(1f)))));
+        for (IrModule m : new IrModule[]{Fixtures.computeSine(), b.build()}) {
+            for (EmitOptions o : new EmitOptions[]{EmitOptions.RELEASE, EmitOptions.DEBUG}) {
+                Artifact a = emit(m, o);
+                assertTrue(a.source().contains("#pragma OPENCL FP_CONTRACT OFF"), a.source());
+                assertEquals("", a.buildOptions());
+            }
+        }
     }
 
     // ---- возможности устройства ---------------------------------------------------------------

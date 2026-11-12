@@ -1,5 +1,5 @@
 === helpers ===
-module format=1 builtins=1 nodes=56 functions=5
+module format=2 builtins=1 nodes=56 functions=5
 type t16 = array<global,f32>
 type t17 = ptr<global,f32>
 func f0 "lerp" device ret=f32 features=- group_sync=no
@@ -85,7 +85,7 @@ nodes:
   n55 block void [n32, n46, n54]
 
 === privateArray ===
-module format=1 builtins=1 nodes=39 functions=1
+module format=2 builtins=1 nodes=39 functions=1
 type t16 = array<global,i32>
 type t17 = array<private,i32>
 type t18 = ptr<private,i32>

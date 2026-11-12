@@ -36,11 +36,17 @@ class OptimizerIntegrationTest {
 
     /** Неиспользуемая device-функция, затем ядро {@code out[0] = (2 + 3) * x[0]}. */
     private static IrModule module() {
+        return module(IrModule.OPT_INHERIT);
+    }
+
+    /** @param kernelOpt уровень оптимизации из свойств ядра */
+    private static IrModule module(int kernelOpt) {
         IrBuilder b = new IrBuilder();
         int arr = b.array(AddressSpace.GLOBAL, Types.I32);
         b.beginFunction(IrModule.DEVICE, Types.I32, Types.I32);
         b.endFunction(b.block(b.returnStmt(b.binary(Op.MUL, b.param(0), b.constI32(7)))));
         b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        b.optLevel(kernelOpt);
         int x = b.load(b.elemPtr(b.param(0), b.constI32(0)));
         int v = b.binary(Op.MUL, b.binary(Op.ADD, b.constI32(2), b.constI32(3)), x);
         b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), v)));
@@ -67,6 +73,60 @@ class OptimizerIntegrationTest {
             CompiledKernel k = ctx.compile(module()).value();
             assertEquals(2, k.module().functionCount());
             assertEquals(1, count(k.module(), Op.ADD));
+        }
+    }
+
+    @Test
+    void kernelOptLevelOverridesTheContext() {
+        try (GpuContext ctx = GpuContext.builder().api(FakeDeviceApi.withGpu()).ignoreEnvironment().build()) {
+            CompiledKernel k = ctx.compile(module(0)).value();
+            assertEquals(1, count(k.module(), Op.ADD), "opt=0 of the kernel turns the optimizer off");
+        }
+        try (GpuContext ctx = GpuContext.builder().api(FakeDeviceApi.withGpu()).ignoreEnvironment()
+                .optimize(OptimizeOptions.NONE).build()) {
+            CompiledKernel k = ctx.compile(module(2)).value();
+            assertEquals(0, count(k.module(), Op.ADD), "opt=2 of the kernel works under a context without optimizer");
+        }
+    }
+
+    /** Ядро с {@code fp=contract}: {@code a[0] = a[0] * a[1] + 1.5f}. */
+    private static IrModule contractKernel() {
+        IrBuilder b = new IrBuilder();
+        int arr = b.array(AddressSpace.GLOBAL, Types.F32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        b.fpMode(IrModule.FP_CONTRACT);
+        int x = b.load(b.elemPtr(b.param(0), b.constI32(0)));
+        int y = b.load(b.elemPtr(b.param(0), b.constI32(1)));
+        int v = b.binary(Op.ADD, b.binary(Op.MUL, x, y), b.constF32(1.5f));
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), v)));
+        return b.build();
+    }
+
+    private static int fmas(IrModule m) {
+        int fma = com.sixik.gpu.ir.Builtins.idOf("fma");
+        int c = 0;
+        for (int n = 0; n < m.nodeCount(); n++) {
+            if (m.op(n) == Op.INTRINSIC && m.a(n) == fma) {
+                c++;
+            }
+        }
+        return c;
+    }
+
+    @Test
+    void contractionFollowsTheDeviceFma() {
+        try (GpuContext ctx = GpuContext.builder().api(FakeDeviceApi.withGpu()).ignoreEnvironment().build()) {
+            assertTrue(ctx.device().hardwareFma(false));
+            CompiledKernel k = ctx.compile(contractKernel()).value();
+            assertEquals(1, fmas(k.module()), "hardware FMA: a*b+c becomes fma");
+            assertTrue(k.artifact().source().contains("fma("), k.artifact().source());
+        }
+        FakeDeviceApi noFma = new FakeDeviceApi(FakeDeviceApi.Spec.gpu().withoutFma());
+        try (GpuContext ctx = GpuContext.builder().api(noFma).ignoreEnvironment().build()) {
+            assertFalse(ctx.device().hardwareFma(false));
+            assertFalse(ctx.device().hardwareFma(true));
+            CompiledKernel k = ctx.compile(contractKernel()).value();
+            assertEquals(0, fmas(k.module()), "a software fma() would be slower than mul + add");
         }
     }
 

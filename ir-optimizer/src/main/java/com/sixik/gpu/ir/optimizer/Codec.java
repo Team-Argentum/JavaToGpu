@@ -122,6 +122,7 @@ final class Codec {
             fn.wgz = m.fReqWorkGroup(f, 2);
             fn.inline = m.fInline(f);
             fn.opt = m.fOpt(f);
+            fn.fp = m.fFp(f);
             fn.required = new String[m.fRequiredCount(f)];
             for (int i = 0; i < fn.required.length; i++) {
                 fn.required[i] = m.string(m.fRequiredName(f, i));
@@ -340,6 +341,7 @@ final class Codec {
         }
         b.inlinePolicy(fn.inline);
         b.optLevel(fn.opt);
+        b.fpMode(fn.fp);
         if (fn.required.length > 0) {
             b.required(fn.required);
         }

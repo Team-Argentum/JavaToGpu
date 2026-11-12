@@ -53,7 +53,8 @@ public final class IrModule {
     static final int F_FALLBACK = 15;
     static final int F_TUNE_OFF = 16;
     static final int F_TUNE_COUNT = 17;
-    static final int F_COLS = 18;
+    static final int F_FP = 18;
+    static final int F_COLS = 19;
 
     /** Вид функции: точка входа (kernel). */
     public static final int KERNEL = 0;
@@ -66,6 +67,26 @@ public final class IrModule {
     public static final int INLINE_ALWAYS = 1;
     /** Политика inline: никогда. */
     public static final int INLINE_NEVER = 2;
+
+    /** Уровень оптимизации функции не задан: берётся уровень контекста. */
+    public static final int OPT_INHERIT = -1;
+
+    // Разрешения вещественной арифметики функции (битовая маска fFp). Без битов float строгий: результат совпадает с
+    // JVM с точностью до табличных допусков builtins. Каждый бит разрешает преобразования, которые выполняет наш
+    // оптимизатор явным кодом; опции сборки драйвера от маски не зависят.
+
+    /** Слияние {@code a*b+c} в {@code fma}/{@code mad}. */
+    public static final int FP_CONTRACT = 1;
+    /** Деление на значение через умножение на обратное: {@code x/c → x*(1/c)}. */
+    public static final int FP_RECIPROCAL = 1 << 1;
+    /** Значения конечны: NaN и бесконечности не встречаются ({@code x*0 → 0}, {@code x-x → 0}). */
+    public static final int FP_FINITE = 1 << 2;
+    /** Знак нуля не важен ({@code x+0 → x}, {@code -0 == +0}). */
+    public static final int FP_NO_SIGNED_ZERO = 1 << 3;
+    /** Аппаратные приближённые функции ({@code native_sin} и т.п.) вместо точных. */
+    public static final int FP_NATIVE = 1 << 4;
+    /** Все известные биты маски. */
+    public static final int FP_ALL = FP_CONTRACT | FP_RECIPROCAL | FP_FINITE | FP_NO_SIGNED_ZERO | FP_NATIVE;
 
     /** Тип тела функции: IR. */
     public static final int BODY_IR = 0;
@@ -318,9 +339,14 @@ public final class IrModule {
         return funcs[F_INLINE][f];
     }
 
-    /** @param f индекс функции @return уровень оптимизации 0..3 */
+    /** @param f индекс функции @return уровень оптимизации 0..3 либо {@link #OPT_INHERIT} (уровень контекста) */
     public int fOpt(int f) {
         return funcs[F_OPT][f];
+    }
+
+    /** @param f индекс функции @return разрешения вещественной арифметики, маска {@code FP_*} (0 - строгий float) */
+    public int fFp(int f) {
+        return funcs[F_FP][f];
     }
 
     /** @param f индекс функции @return число объявленных требований ({@code required}) */

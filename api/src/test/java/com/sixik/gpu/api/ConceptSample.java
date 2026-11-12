@@ -6,7 +6,6 @@ import com.sixik.gpu.api.annotations.Global;
 import com.sixik.gpu.api.annotations.Kernel;
 import com.sixik.gpu.api.annotations.Struct;
 import com.sixik.gpu.api.annotations.WorkGroup;
-import com.sixik.gpu.api.enums.InlinePolicy;
 import com.sixik.gpu.api.types.Float2;
 import com.sixik.gpu.api.types.FloatPtr;
 
@@ -51,7 +50,7 @@ public final class ConceptSample {
     }
 
     /** Kernel с явными директивами кодогенерации. */
-    @Kernel(inline = InlinePolicy.ALWAYS, optLevel = 0, workgroup = 32, required = {"SIMD"},
+    @Kernel(compilationProperties = "inline=always; opt=0", workgroup = 32, required = {"SIMD"},
             fallback = "processStepsSimple")
     public static void processSteps(
             @Global int[] input,

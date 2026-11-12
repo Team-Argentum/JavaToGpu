@@ -35,7 +35,7 @@ import java.util.List;
 public final class IrBinary {
 
     /** Версия формата контейнера. */
-    public static final int FORMAT = 1;
+    public static final int FORMAT = 2;
 
     private static final byte[] MAGIC = {'G', 'I', 'R', 0};
     private static final int TAG_TYPE = tag("TYPE");

@@ -1,5 +1,5 @@
 === exchange ===
-module format=1 builtins=1 nodes=45 functions=1
+module format=2 builtins=1 nodes=45 functions=1
 type t16 = array<global,i32>
 type t17 = array<local,i32>
 type t18 = ptr<global,i32>

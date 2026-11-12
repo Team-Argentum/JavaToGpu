@@ -130,16 +130,18 @@ class PassesTest {
     }
 
     @Test
-    void floatDivisionByArbitraryConstantNeedsFastMath() {
+    void floatDivisionByArbitraryConstantNeedsReciprocalFlag() {
         IrModule m = floatDivision(3.0f);
         assertEquals(1, OptTest.count(OptTest.opt(m), Op.DIV), "exact semantics keep the division");
-        IrModule fast = OptTest.opt(m, OptimizeOptions.DEFAULT.withFastMath(true));
+        assertEquals(1, OptTest.count(OptTest.opt(OptTest.withFp(m, IrModule.FP_ALL & ~IrModule.FP_RECIPROCAL)), Op.DIV),
+                "other flags do not allow it");
+        IrModule fast = OptTest.opt(OptTest.withFp(m, IrModule.FP_RECIPROCAL));
         assertEquals(0, OptTest.count(fast, Op.DIV));
         assertEquals(1, OptTest.count(fast, Op.MUL));
     }
 
     @Test
-    void multiplyAddBecomesFmaOnlyWithFastMath() {
+    void multiplyAddBecomesFmaOnlyWithContractFlag() {
         IrModule m = OptTest.kernel(new int[]{Types.F32, Types.F32}, new int[]{Types.I32}, (b, l) -> {
             int x = OptTest.loadAt(b, 0, b.localGet(l[0]));
             int y = OptTest.loadAt(b, 0, b.localGet(l[0]));
@@ -147,8 +149,9 @@ class PassesTest {
             return new int[]{b.localDecl(l[0], OptTest.gid(b)), OptTest.storeAt(b, 1, b.localGet(l[0]), fma)};
         });
         assertEquals(0, OptTest.countIntrinsic(OptTest.opt(m), Builtins_FMA));
-        assertEquals(1, OptTest.countIntrinsic(OptTest.opt(m, OptimizeOptions.DEFAULT.withFastMath(true)),
-                Builtins_FMA));
+        assertEquals(0, OptTest.countIntrinsic(OptTest.opt(OptTest.withFp(m, IrModule.FP_ALL & ~IrModule.FP_CONTRACT)),
+                Builtins_FMA), "other flags do not allow it");
+        assertEquals(1, OptTest.countIntrinsic(OptTest.opt(OptTest.withFp(m, IrModule.FP_CONTRACT)), Builtins_FMA));
     }
 
     private static final int Builtins_FMA = com.sixik.gpu.ir.Builtins.idOf("fma");

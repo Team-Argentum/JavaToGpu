@@ -205,7 +205,8 @@ public final class GpuContext implements AutoCloseable {
     private GpuContext(DeviceApi api, boolean ownsApi, DeviceInfo device, long contextHandle, long queue,
                        EventListener listener, EmitOptions emitOptions, Fallback fallback, DiskCache disk,
                        Path sourceDump, String codegenVersion, OptimizeOptions optimizeOptions, KernelSplitMode splitMode) {
-        this.optimizeOptions = optimizeOptions;
+        // слияние в fma только там, где устройство делает его аппаратно (явный fma() иначе эмулируется программно)
+        this.optimizeOptions = optimizeOptions.withHardwareFma(device.hardwareFma(false), device.hardwareFma(true));
         this.splitMode = splitMode;
         this.disk = disk;
         this.sourceDump = sourceDump;
@@ -808,7 +809,7 @@ public final class GpuContext implements AutoCloseable {
     }
 
     private String cacheKey(IrModule m, int kernel, EmitOptions o) {
-        return kernelIdOf(m) + "#" + kernel + "|" + o.debug() + "," + o.fastMath() + "|" + optimizeKey() + "|"
+        return kernelIdOf(m) + "#" + kernel + "|" + o.debug() + "," + o.sourceName() + "|" + optimizeKey() + "|"
                 + target.id() + "|"
                 + device.name() + "|" + device.driverVersion();
     }
@@ -923,7 +924,7 @@ public final class GpuContext implements AutoCloseable {
     /** Часть ключей кэша, зависящая от настроек оптимизатора. */
     private String optimizeKey() {
         OptimizeOptions o = optimizeOptions;
-        return "opt" + o.level() + (o.fastMath() ? "f" : "") + (o.contractFma() ? "c" : "") + "/" + o.registerBudget()
+        return "opt" + o.level() + "/" + o.registerBudget() + "/fma=" + (o.fmaF32() ? "s" : "") + (o.fmaF64() ? "d" : "")
                 + "/split=" + splitMode.name().toLowerCase(java.util.Locale.ROOT);
     }
 
@@ -949,12 +950,15 @@ public final class GpuContext implements AutoCloseable {
      * @return результат оптимизации либо {@code null}, если модуль генерируется как есть
      */
     private OptimizeResult optimizeForEmit(IrModule m, int kernel, EmitOptions options) {
-        if (options.debug() || optimizeOptions.level() <= 0) {
+        // уровень из compilationProperties ядра важнее уровня контекста
+        int level = m.fOpt(kernel) != IrModule.OPT_INHERIT ? m.fOpt(kernel) : optimizeOptions.level();
+        if (options.debug() || level <= 0) {
             return null;
         }
         OptimizeResult r;
         try {
-            r = Optimizer.optimize(m, optimizeOptions);
+            r = Optimizer.optimize(m, level == optimizeOptions.level() ? optimizeOptions
+                    : optimizeOptions.withLevel(level));
         } catch (RuntimeException e) {
             emit(GpuEvent.Kind.WARNING, "f" + kernel, 0, 0, "IR optimizer failed, the kernel is compiled unoptimized: " + e);
             return null;
@@ -1370,7 +1374,7 @@ public final class GpuContext implements AutoCloseable {
      */
     private String diskKey(IrModule m, int kernel, EmitOptions o, Artifact art) {
         return "gbc1|codegen=" + codegenVersion + "|" + optimizeKey() + "|ir=" + kernelIdOf(m) + "#" + kernel
-                + "|emit=" + o.debug() + "," + o.fastMath() + "|build=" + buildOptions(art)
+                + "|emit=" + o.debug() + "|build=" + buildOptions(art)
                 + "|device=" + device.vendor() + "/" + device.name() + "|driver=" + device.driverVersion()
                 + "|opencl=" + device.openClVersion()
                 + "|src=" + java.util.HexFormat.of().formatHex(DiskCache.sha256(

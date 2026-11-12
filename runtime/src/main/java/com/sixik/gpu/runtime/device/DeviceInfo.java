@@ -27,11 +27,15 @@ import java.util.List;
  * @param maxConstantArgs число аргументов ядра в {@code __constant} ({@code CL_DEVICE_MAX_CONSTANT_ARGS})
  * @param extensions      строка расширений, разделённых пробелами
  * @param features        маска {@link Features}, которую устройство поддерживает (по расширениям)
+ * @param singleFpConfig  {@code CL_DEVICE_SINGLE_FP_CONFIG}: возможности {@code float} (биты {@code CL_FP_*})
+ * @param doubleFpConfig  {@code CL_DEVICE_DOUBLE_FP_CONFIG}: возможности {@code double}; 0 - нет данных или нет
+ *                        {@code double}
  */
 public record DeviceInfo(int index, long platform, long handle, String platformName, String name, String vendor,
                          long type, String openClVersion, String driverVersion, long globalMemory,
                          long maxAllocation, int computeUnits, long maxWorkGroupSize, long localMemory,
-                         long maxConstantBuffer, int maxConstantArgs, String extensions, int features) {
+                         long maxConstantBuffer, int maxConstantArgs, String extensions, int features,
+                         long singleFpConfig, long doubleFpConfig) {
 
     /**
      * Перечисляет все устройства всех платформ.
@@ -65,7 +69,29 @@ public record DeviceInfo(int index, long platform, long handle, String platformN
                 api.deviceLong(device, DeviceApi.DEVICE_LOCAL_MEM_SIZE),
                 api.deviceLong(device, DeviceApi.DEVICE_MAX_CONSTANT_BUFFER_SIZE),
                 (int) api.deviceLong(device, DeviceApi.DEVICE_MAX_CONSTANT_ARGS),
-                extensions, featuresOf(extensions));
+                extensions, featuresOf(extensions),
+                optionalLong(api, device, DeviceApi.DEVICE_SINGLE_FP_CONFIG),
+                optionalLong(api, device, DeviceApi.DEVICE_DOUBLE_FP_CONFIG));
+    }
+
+    /** Необязательный параметр устройства: старый драйвер может его не знать - тогда 0 («нет данных»). */
+    private static long optionalLong(DeviceApi api, long device, int param) {
+        try {
+            return api.deviceLong(device, param);
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Есть ли аппаратный FMA. Явный {@code fma()} в OpenCL C обязан давать одно округление на любом устройстве; без
+     * аппаратной поддержки драйвер эмулирует его программно, и это в разы медленнее отдельных умножения и сложения.
+     *
+     * @param f64 {@code true} - для {@code double}, иначе для {@code float}
+     * @return {@code true}, если драйвер сообщает {@code CL_FP_FMA}
+     */
+    public boolean hardwareFma(boolean f64) {
+        return ((f64 ? doubleFpConfig : singleFpConfig) & DeviceApi.FP_FMA) != 0;
     }
 
     /**

@@ -29,8 +29,10 @@ final class FnTree {
     int wgx, wgy, wgz;
     /** Политика inline. */
     int inline;
-    /** Уровень оптимизации функции 0..3. */
+    /** Уровень оптимизации функции 0..3 либо {@code IrModule.OPT_INHERIT}. */
     int opt;
+    /** Разрешения вещественной арифметики, маска {@code IrModule.FP_*}. */
+    int fp;
     /** Имена требуемых возможностей. */
     String[] required = new String[0];
     /** Индекс fallback-функции в исходной нумерации либо {@code -1}. */
@@ -88,6 +90,7 @@ final class FnTree {
         c.wgz = wgz;
         c.inline = inline;
         c.opt = opt;
+        c.fp = fp;
         c.required = required.clone();
         c.fallback = fallback;
         c.name = name;

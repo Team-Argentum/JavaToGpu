@@ -31,6 +31,11 @@ GPU0015 error   Field {0} with @Constant must be static final of a primitive typ
 GPU0016 error   Method {0} with @Reduction must return int, long, float, double, or a vector or @Struct of them | Return the accumulator of the loop, or new R(acc1, acc2, ...) for several
 GPU0017 error   Method {0} has both @Kernel and @Reduction | Keep one of them
 GPU0018 error   Method {0} is not a reduction: {1} | Write the body as: declarations; T acc = init; for (int i = start; i < end; i++) { acc += e; } return acc;
+GPU0019 error   Kernel {0}: malformed compilation property '{1}' | Write key=value pairs separated by ';', for example "fp=contract,native; opt=2"
+GPU0020 error   Kernel {0}: unknown compilation property {1} | Known properties: fp, opt, inline{2}
+GPU0021 error   Kernel {0}: invalid value {2} of compilation property {1} | Allowed values: {3}
+GPU0022 error   Kernel {0}: compilation property {1} is set more than once | Set each property once
+GPU0023 error   Kernel {0}: {1} is set both in compilationProperties and by the deprecated @Kernel element {2} | Keep only compilationProperties
 
 # --- constructs and types in method bodies ------------------------------------------------------
 GPU0101 error   Exceptions are not supported in GPU code ({0}) | Remove try/catch/finally/throw; return errors as values

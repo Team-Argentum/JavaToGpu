@@ -170,9 +170,9 @@ class GpuContextTest {
             int k = m.functionCount() - 1;
             assertTrue(ctx.compile(m, k, EmitOptions.RELEASE).isOk());
             assertTrue(ctx.compile(m, k, EmitOptions.DEBUG).isOk());
-            assertTrue(ctx.compile(m, k, EmitOptions.RELEASE.withFastMath(true)).isOk());
+            assertTrue(ctx.compile(m, k, EmitOptions.DEBUG.withSourceName("Sine.java")).isOk());
             assertEquals(3, fake.builds());
-            assertEquals(List.of("", "", "-cl-fast-relaxed-math"), fake.buildOptions());
+            assertEquals(List.of("", "", ""), fake.buildOptions(), "math options are never passed to the driver");
         }
     }
 

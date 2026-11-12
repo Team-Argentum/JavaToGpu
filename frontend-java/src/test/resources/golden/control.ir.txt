@@ -1,5 +1,5 @@
 === branches ===
-module format=1 builtins=1 nodes=47 functions=1
+module format=2 builtins=1 nodes=47 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "branches" kernel ret=void features=- group_sync=no
@@ -56,7 +56,7 @@ nodes:
   n46 block void [n2, n29, n40, n45]
 
 === forLoop ===
-module format=1 builtins=1 nodes=42 functions=1
+module format=2 builtins=1 nodes=42 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "forLoop" kernel ret=void features=- group_sync=no
@@ -110,7 +110,7 @@ nodes:
   n41 block void [n1, n35, n40]
 
 === parameters ===
-module format=1 builtins=1 nodes=19 functions=1
+module format=2 builtins=1 nodes=19 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "parameters" kernel ret=void features=- group_sync=no
@@ -141,7 +141,7 @@ nodes:
   n18 block void [n1, n5, n9, n17]
 
 === switches ===
-module format=1 builtins=1 nodes=56 functions=1
+module format=2 builtins=1 nodes=56 functions=1
 type t16 = array<global,i32>
 type t17 = array<global,u16>
 type t18 = ptr<global,u16>
@@ -211,7 +211,7 @@ nodes:
   n55 block void [n2, n4, n23, n49, n54]
 
 === whileAndDo ===
-module format=1 builtins=1 nodes=26 functions=1
+module format=2 builtins=1 nodes=26 functions=1
 type t16 = array<global,i32>
 type t17 = ptr<global,i32>
 func f0 "whileAndDo" kernel ret=void features=- group_sync=no

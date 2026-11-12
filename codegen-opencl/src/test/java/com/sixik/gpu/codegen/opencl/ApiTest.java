@@ -47,16 +47,11 @@ class ApiTest {
     void emitOptionsConstantsAndWithers() {
         assertFalse(EmitOptions.RELEASE.debug());
         assertTrue(EmitOptions.DEBUG.debug());
-        assertFalse(EmitOptions.RELEASE.fastMath());
         assertNull(EmitOptions.RELEASE.sourceName());
-        EmitOptions fast = EmitOptions.DEBUG.withFastMath(true);
-        assertTrue(fast.fastMath());
-        assertTrue(fast.debug());
-        EmitOptions named = fast.withSourceName("Kernels.java");
+        EmitOptions named = EmitOptions.DEBUG.withSourceName("Kernels.java");
         assertEquals("Kernels.java", named.sourceName());
-        assertTrue(named.fastMath());
-        assertFalse(EmitOptions.DEBUG.fastMath(), "source constant is unchanged");
-        assertNull(EmitOptions.DEBUG.sourceName());
+        assertTrue(named.debug());
+        assertNull(EmitOptions.DEBUG.sourceName(), "source constant is unchanged");
     }
 
     @Test

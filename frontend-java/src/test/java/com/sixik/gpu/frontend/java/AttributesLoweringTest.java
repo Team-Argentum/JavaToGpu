@@ -127,6 +127,75 @@ class AttributesLoweringTest {
         }
     }
 
+    private static String propsKernel(String annotation) {
+        return """
+                package demo;
+
+                import com.sixik.gpu.api.Gpu;
+                import com.sixik.gpu.api.annotations.Global;
+                import com.sixik.gpu.api.annotations.Kernel;
+
+                public final class Props {
+                    static final String FAST = "fp=contract, native";
+
+                    %s
+                    public static void k(@Global float[] a) {
+                        int i = Gpu.getGlobalId(0);
+                        a[i] = a[i] * 2.0f + 1.0f;
+                    }
+                }
+                """.formatted(annotation);
+    }
+
+    private static int kernelIndex(IrModule m) {
+        for (int f = 0; f < m.functionCount(); f++) {
+            if (m.fKind(f) == IrModule.KERNEL) {
+                return f;
+            }
+        }
+        throw new AssertionError("no kernel in the module");
+    }
+
+    @Test
+    void compilationPropertiesBecomeFunctionAttributes() {
+        FrontendHarness.Outcome plain = FrontendHarness.compile(propsKernel("@Kernel"));
+        FrontendHarness.Outcome tuned = FrontendHarness.compile(
+                propsKernel("@Kernel(compilationProperties = FAST + \"; opt=3 ; inline=never;\")"));
+        assertTrue(plain.success() && tuned.success(), plain.describe() + tuned.describe());
+
+        IrModule p = plain.module();
+        int pk = kernelIndex(p);
+        assertEquals(0, p.fFp(pk), "without properties float is strict");
+        assertEquals(IrModule.OPT_INHERIT, p.fOpt(pk), "without opt the context level is used");
+        assertEquals(IrModule.INLINE_DEFAULT, p.fInline(pk));
+
+        IrModule t = tuned.module();
+        int tk = kernelIndex(t);
+        assertEquals(IrModule.FP_CONTRACT | IrModule.FP_NATIVE, t.fFp(tk));
+        assertEquals(3, t.fOpt(tk));
+        assertEquals(IrModule.INLINE_NEVER, t.fInline(tk));
+        assertNotEquals(IrBinary.kernelId(p), IrBinary.kernelId(t), "properties are part of the kernel hash");
+
+        IrModule back = IrBinary.read(IrBinary.write(t)).value();
+        assertEquals(t.fFp(tk), back.fFp(tk), "the mask survives serialization");
+    }
+
+    @Test
+    void relaxedSetsEveryFloatingPointBit() {
+        FrontendHarness.Outcome o = FrontendHarness.compile(propsKernel("@Kernel(compilationProperties = \"fp=relaxed\")"));
+        assertTrue(o.success(), o.describe());
+        IrModule m = o.module();
+        assertEquals(IrModule.FP_ALL, m.fFp(kernelIndex(m)));
+    }
+
+    @Test
+    void explicitLegacyOptLevelIsStillHonoured() {
+        FrontendHarness.Outcome o = FrontendHarness.compile(propsKernel("@SuppressWarnings(\"deprecation\") @Kernel(optLevel = 0)"));
+        assertTrue(o.success(), o.describe());
+        IrModule m = o.module();
+        assertEquals(0, m.fOpt(kernelIndex(m)), "an explicit optLevel = 0 turns the optimizer off for the kernel");
+    }
+
     private static java.util.Set<String> kernelIds(FrontendHarness.Outcome o) {
         java.util.Set<String> ids = new java.util.TreeSet<>();
         for (IrModule m : o.modules()) {

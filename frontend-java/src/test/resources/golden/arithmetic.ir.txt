@@ -1,5 +1,5 @@
 === booleans ===
-module format=1 builtins=1 nodes=51 functions=1
+module format=2 builtins=1 nodes=51 functions=1
 type t16 = array<global,u8>
 type t17 = array<global,i32>
 type t18 = ptr<global,u8>
@@ -64,7 +64,7 @@ nodes:
   n50 block void [n2, n8, n23, n36, n49]
 
 === constants ===
-module format=1 builtins=1 nodes=29 functions=1
+module format=2 builtins=1 nodes=29 functions=1
 type t16 = array<global,i32>
 type t17 = array<global,i64>
 type t18 = ptr<global,i32>
@@ -106,7 +106,7 @@ nodes:
   n28 block void [n2, n9, n17, n27]
 
 === mixed ===
-module format=1 builtins=1 nodes=68 functions=1
+module format=2 builtins=1 nodes=68 functions=1
 type t16 = array<global,i32>
 type t17 = array<global,i64>
 type t18 = array<global,f32>
@@ -197,7 +197,7 @@ nodes:
   n67 block void [n2, n7, n12, n17, n22, n30, n41, n54, n60, n66]
 
 === narrow ===
-module format=1 builtins=1 nodes=66 functions=1
+module format=2 builtins=1 nodes=66 functions=1
 type t16 = array<global,i8>
 type t17 = array<global,u16>
 type t18 = array<global,i16>
@@ -282,7 +282,7 @@ nodes:
   n65 block void [n2, n14, n26, n43, n52, n64]
 
 === shifts ===
-module format=1 builtins=1 nodes=52 functions=1
+module format=2 builtins=1 nodes=52 functions=1
 type t16 = array<global,i32>
 type t17 = array<global,i64>
 type t18 = ptr<global,i32>
@@ -349,7 +349,7 @@ nodes:
   n51 block void [n2, n7, n12, n19, n26, n34, n42, n50]
 
 === unary ===
-module format=1 builtins=1 nodes=37 functions=1
+module format=2 builtins=1 nodes=37 functions=1
 type t16 = array<global,i32>
 type t17 = array<global,f32>
 type t18 = ptr<global,i32>

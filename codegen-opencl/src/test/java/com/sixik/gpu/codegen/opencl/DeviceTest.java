@@ -496,13 +496,13 @@ class DeviceTest {
         return GoldenTest.names();
     }
 
-    /** Каждый модуль (образцы и ручные), release и debug, строгий и fast-math, компилируется драйвером. */
+    /** Каждый модуль (образцы и ручные), release и debug, с именем исходника, компилируется драйвером. */
     @ParameterizedTest(name = "{0}")
     @MethodSource("allModuleNames")
     void driverAcceptsEveryModule(String name) {
         IrModule m = GoldenTest.modules().get(name);
         for (EmitOptions o : new EmitOptions[]{EmitOptions.RELEASE, EmitOptions.DEBUG,
-                EmitOptions.DEBUG.withFastMath(true).withSourceName("X.java")}) {
+                EmitOptions.DEBUG.withSourceName("X.java")}) {
             Artifact art = OpenClEmitter.emit(m, m.functionCount() - 1, Target.GENERIC, o).value();
             try (ClDevice.Program p = device.build(art.source(), art.buildOptions())) {
                 assertNotNull(p);

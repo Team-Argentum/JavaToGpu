@@ -415,8 +415,13 @@ public final class Validator {
                     err("IR-F04", f, -1, "function f" + f + ": unknown inline policy " + inline);
                 }
                 int opt = m.fOpt(f);
-                if (opt < 0 || opt > 3) {
+                if (opt < IrModule.OPT_INHERIT || opt > 3) {
                     err("IR-F04", f, -1, "function f" + f + ": optimization level " + opt + " outside 0..3");
+                }
+                int fp = m.fFp(f);
+                if ((fp & ~IrModule.FP_ALL) != 0) {
+                    err("IR-F04", f, -1, "function f" + f + ": unknown floating-point mode bits 0x"
+                            + Integer.toHexString(fp & ~IrModule.FP_ALL));
                 }
                 int bodyKind = m.fBodyKind(f);
                 if (bodyKind != IrModule.BODY_IR && bodyKind != IrModule.BODY_NATIVE) {

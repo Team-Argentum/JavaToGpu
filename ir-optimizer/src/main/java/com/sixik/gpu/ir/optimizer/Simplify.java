@@ -12,9 +12,11 @@ import java.util.List;
  * Свёртка констант, алгебраические упрощения и упрощение структуры control flow.
  *
  * <p><b>Выражения</b> переписываются снизу вверх до неподвижной точки. Правила делятся на «точные» (результат
- * побитово совпадает с исходным, включая NaN, знак нуля и переполнение целых) и «быстрые»
- * ({@link OptimizeOptions#fastMath()}): допускают изменение результата в особых случаях (NaN, inf, -0) или округления.
- * Точные правила включены всегда; быстрые - только по явному согласию (REWORK_ARCHITECTURE.md, 8.3).</p>
+ * побитово совпадает с исходным, включая NaN, знак нуля и переполнение целых) и «быстрые»: допускают изменение
+ * результата в особых случаях (NaN, inf, -0) или округления. Точные правила включены всегда; каждое быстрое - только
+ * при своём бите маски {@code fp} функции ({@link FpModes}): {@code nsz} - {@code x+0 -> x}; {@code finite} -
+ * {@code x-x -> 0}; {@code finite} и {@code nsz} - {@code x*0 -> 0}; {@code reciprocal} - {@code x/c -> x*(1/c)};
+ * {@code contract} - {@code a*b+c -> fma} (REWORK_ARCHITECTURE.md, 5.27).</p>
  *
  * <p>Точные правила (для целых {@code I32/U32/I64/U64}): {@code x+0, x-0, x*1, x/1, x|0, x^0, x&-1, x<<0 -> x};
  * {@code x*0, x&0, x%1, x-x, x^x -> 0}; {@code x*2^k -> x<<k}; для беззнаковых {@code x/2^k -> x>>k},
@@ -36,13 +38,35 @@ final class Simplify {
     private static final int MAX = Builtins.idOf("max");
 
     private final Effects fx;
-    private final OptimizeOptions opts;
     private final IrModule src;
+    /** {@code x+0 -> x}, {@code x-(-0) -> x}: знак нуля не важен. */
+    private final boolean nsz;
+    /** {@code x-x -> 0}: нет NaN и бесконечностей. */
+    private final boolean finite;
+    /** {@code x*0 -> 0}: нужны оба условия (NaN/inf дают NaN, отрицательный x - {@code -0}). */
+    private final boolean zeroProduct;
+    /** {@code x/c -> x*(1/c)} для неточной обратной величины. */
+    private final boolean reciprocal;
+    /** {@code a*b+c -> fma(a, b, c)}. */
+    private final boolean contract;
+    /** Настройки (возможности устройства: аппаратный FMA). */
+    private final OptimizeOptions opts;
 
-    Simplify(Effects fx, OptimizeOptions opts, IrModule src) {
-        this.fx = fx;
+    /**
+     * @param fx   эффекты функций модуля
+     * @param fp   разрешения вещественной арифметики функции, маска {@code IrModule.FP_*} ({@link FpModes})
+     * @param opts настройки оптимизатора (аппаратный FMA устройства)
+     * @param src  исходный модуль (таблица типов)
+     */
+    Simplify(Effects fx, int fp, OptimizeOptions opts, IrModule src) {
         this.opts = opts;
+        this.fx = fx;
         this.src = src;
+        this.nsz = (fp & IrModule.FP_NO_SIGNED_ZERO) != 0;
+        this.finite = (fp & IrModule.FP_FINITE) != 0;
+        this.zeroProduct = nsz && finite;
+        this.reciprocal = (fp & IrModule.FP_RECIPROCAL) != 0;
+        this.contract = (fp & IrModule.FP_CONTRACT) != 0;
     }
 
     // =============================================================================================
@@ -224,10 +248,7 @@ final class Simplify {
         if (Types.isFloat(ty)) {
             return arithFloat(t, a, b, ty);
         }
-        if (opts.fastMath()) {
-            return contract(t, a, b);
-        }
-        return t;
+        return contract(t, a, b);
     }
 
     private Tree arithInt(Tree t, Tree a, Tree b, int ty) {
@@ -292,18 +313,17 @@ final class Simplify {
     }
 
     private Tree arithFloat(Tree t, Tree a, Tree b, int ty) {
-        boolean fast = opts.fastMath();
         switch (t.op) {
             case Op.ADD -> {
-                if (isFloatConst(b, -0.0) || (fast && isFloatConst(b, 0.0))) {
+                if (isFloatConst(b, -0.0) || (nsz && isFloatConst(b, 0.0))) {
                     return a;
                 }
             }
             case Op.SUB -> {
-                if (isFloatConst(b, 0.0) || (fast && isFloatConst(b, -0.0))) {
+                if (isFloatConst(b, 0.0) || (nsz && isFloatConst(b, -0.0))) {
                     return a;
                 }
-                if (fast && Tree.same(a, b) && pure(a)) {
+                if (finite && Tree.same(a, b) && pure(a)) {
                     return zero(t, ty);
                 }
             }
@@ -314,7 +334,7 @@ final class Simplify {
                 if (isFloatConst(b, -1.0)) {
                     return t.retarget(Op.NEG, a);
                 }
-                if (fast && (isFloatConst(b, 0.0) || isFloatConst(b, -0.0)) && pure(a)) {
+                if (zeroProduct && (isFloatConst(b, 0.0) || isFloatConst(b, -0.0)) && pure(a)) {
                     return b;
                 }
             }
@@ -326,7 +346,7 @@ final class Simplify {
                     return t.retarget(Op.NEG, a);
                 }
                 if (b.op == Op.CONST_FLOAT) {
-                    Tree recip = reciprocal(t, b, ty, fast);
+                    Tree recip = reciprocal(t, b, ty, reciprocal);
                     if (recip != null) {
                         return t.retarget(Op.MUL, a, recip);
                     }
@@ -335,10 +355,10 @@ final class Simplify {
             default -> {
             }
         }
-        return fast ? contract(t, a, b) : t;
+        return contract(t, a, b);
     }
 
-    /** {@code 1/c} как константа, если она точна (степень двойки) либо разрешена {@code fastMath}. */
+    /** {@code 1/c} как константа, если она точна (степень двойки) либо разрешено {@code fp=reciprocal}. */
     private Tree reciprocal(Tree like, Tree c, int ty, boolean fast) {
         double d = Eval.toDouble(ty, c.k);
         if (d == 0 || Double.isNaN(d) || Double.isInfinite(d)) {
@@ -356,13 +376,9 @@ final class Simplify {
         return null;
     }
 
-    /** Слияние {@code a*b + c} в {@code fma(a, b, c)} (меняет округление; только при {@code fastMath}). */
+    /** Слияние {@code a*b + c} в {@code fma(a, b, c)} (меняет округление; только при {@code fp=contract}). */
     private Tree contract(Tree t, Tree a, Tree b) {
-        if (!opts.contractFma() || FMA < 0 || (t.op != Op.ADD && t.op != Op.SUB)) {
-            return t;
-        }
-        int scalar = Types.isVector(src, t.type) ? Types.scalarOf(src, t.type) : t.type;
-        if (!Types.isFloat(scalar)) {
+        if (!contract || FMA < 0 || (t.op != Op.ADD && t.op != Op.SUB) || !Contract.fusible(src, t.type, opts)) {
             return t;
         }
         if (a.op == Op.MUL) {

@@ -405,6 +405,8 @@ public final class Fusion {
 
         // свёртка: чтения arr[e] -> produce(e, ...), arr.length -> outLen
         FnTree r = red.copy();
+        // в итоговом ядре код обоих ядер: разрешено только то, что разрешили оба (FpModes)
+        r.fp = red.fp & pk.fp;
         int keep = red.params.length - 1;
         int[] newParams = new int[keep + inputs.length + 1];
         String[] newNames = new String[newParams.length];

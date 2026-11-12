@@ -22,6 +22,8 @@ import java.util.function.BooleanSupplier;
  * <ol>
  *   <li><b>simplify</b> ({@link Simplify}): свёртка констант, алгебра, strength reduction, упрощение {@code select/convert/
  *       compare}, векторов и struct; {@code if(const)}, пустые ветки, недостижимый код после переходов;</li>
+ *   <li><b>contract</b> ({@link Contract}): {@code p = x*y; ... p + c -> fma(x, y, c)} через локали - только в функциях
+ *       с флагом {@code fp=contract} ({@link FpModes}) и при аппаратном FMA устройства;</li>
  *   <li><b>local-prop</b> ({@link LocalProp}, уровень 2+): протяжка констант и копий по локалям;</li>
  *   <li><b>dead-locals</b> ({@link DeadCode}): записи в никогда не читаемые локали и неиспользуемые массивы;</li>
  *   <li><b>dead-stores</b> ({@link Liveness}, уровень 2+): записи, перезатираемые до чтения (обратная живость);</li>
@@ -167,22 +169,21 @@ public final class Optimizer implements OptimizerPass {
             int max = Math.max(1, o.maxIterations());
             for (iteration = 1; iteration <= max; iteration++) {
                 boolean changed = false;
-                changed |= step("simplify", () -> perFunction((f, fn) -> {
-                    Simplify s = new Simplify(fx, o, mt.source);
-                    return s.stmt(fn.body);
-                }));
+                changed |= step("simplify", this::simplify);
+                changed |= step("contract", () -> {
+                    int[] fp = FpModes.effective(mt);
+                    return perFunction((f, fn) -> Contract.run(fn, fp[f], mt.source, o));
+                });
                 if (o.level() >= 2) {
                     changed |= step("local-prop", () -> perFunction((f, fn) -> LocalProp.run(fn, mt.source)));
-                    changed |= step("simplify", () -> perFunction((f, fn) -> new Simplify(fx, o, mt.source)
-                            .stmt(fn.body)));
+                    changed |= step("simplify", this::simplify);
                 }
                 changed |= step("dead-locals", () -> perFunction((f, fn) -> DeadCode.removeUnreadLocals(fn, fx)));
                 if (o.level() >= 2) {
                     changed |= step("dead-stores", () -> perFunction((f, fn) ->
                             Liveness.eliminateDeadStores(fn, mt.source, fx)));
                 }
-                changed |= step("simplify", () -> perFunction((f, fn) -> new Simplify(fx, o, mt.source)
-                        .stmt(fn.body)));
+                changed |= step("simplify", this::simplify);
                 changed |= step("dead-functions", () -> DeadCode.markDeadFunctions(mt));
                 if (o.level() >= 2) {
                     changed |= step("cse", () -> perFunction((f, fn) -> {
@@ -204,6 +205,12 @@ public final class Optimizer implements OptimizerPass {
         Costs.Budget budgetFor(int f, FnTree fn) {
             int used = RegisterPressure.analyze(fn, f, mt.source, fx).registers();
             return new Costs.Budget(o.registerBudget() - used, o.level() >= 3);
+        }
+
+        /** Упрощение всех функций; быстрые правила - по маске {@code fp}, действующей в функции ({@link FpModes}). */
+        boolean simplify() {
+            int[] fp = FpModes.effective(mt);
+            return perFunction((f, fn) -> new Simplify(fx, fp[f], o, mt.source).stmt(fn.body));
         }
 
         interface FnBody {

@@ -88,8 +88,11 @@ public final class IrDump {
         if (m.fInline(f) != IrModule.INLINE_DEFAULT) {
             sb.append(" inline=").append(m.fInline(f) == IrModule.INLINE_ALWAYS ? "always" : "never");
         }
-        if (m.fOpt(f) != 0) {
+        if (m.fOpt(f) != IrModule.OPT_INHERIT) {
             sb.append(" opt=").append(m.fOpt(f));
+        }
+        if (m.fFp(f) != 0) {
+            sb.append(" fp=0x").append(Integer.toHexString(m.fFp(f)));
         }
         if (m.fRequiredCount(f) > 0) {
             sb.append(" required=[");

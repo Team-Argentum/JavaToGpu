@@ -1,4 +1,4 @@
-module format=1 builtins=1 nodes=217 functions=3
+module format=2 builtins=1 nodes=217 functions=3
 type t16 = array<global,f32>
 type t17 = array<global,i32>
 type t18 = f32x4
@@ -18,7 +18,7 @@ func f0 device ret=f32 features=- group_sync=no
 func f1 device ret=void features=- group_sync=no
   param p0 : ptr<private,f32>  access=READ_WRITE
   body = n11
-func f2 kernel ret=void reqd_wg=(64,1,1) inline=always required=[SIMD] features=- group_sync=yes
+func f2 kernel ret=void reqd_wg=(64,1,1) inline=always opt=0 required=[SIMD] features=- group_sync=yes
   param p0 : array<global,f32>  access=READ
   param p1 : array<global,i32>  access=READ_WRITE
   param p2 : array<global,struct#19>  access=WRITE

@@ -126,7 +126,7 @@ class DiskCacheContextTest {
             IrModule m = Fixtures.computeSine();
             ctx.compile(m, 0, EmitOptions.RELEASE);
             ctx.compile(m, 0, EmitOptions.DEBUG);
-            ctx.compile(m, 0, EmitOptions.RELEASE.withFastMath(true));
+            ctx.compile(m, 0, EmitOptions.DEBUG.withSourceName("Sine.java"));
         }
         assertEquals(3, files(dir));
     }

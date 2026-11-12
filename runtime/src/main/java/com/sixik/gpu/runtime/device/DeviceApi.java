@@ -51,6 +51,12 @@ public interface DeviceApi extends AutoCloseable {
     int DEVICE_VERSION = 0x102F;
     /** {@code CL_DEVICE_EXTENSIONS}. */
     int DEVICE_EXTENSIONS = 0x1030;
+    /** {@code CL_DEVICE_SINGLE_FP_CONFIG} ({@code cl_device_fp_config}, битовое поле 8 байт). */
+    int DEVICE_SINGLE_FP_CONFIG = 0x101B;
+    /** {@code CL_DEVICE_DOUBLE_FP_CONFIG} (OpenCL 1.2+; 0 - нет {@code double}). */
+    int DEVICE_DOUBLE_FP_CONFIG = 0x1032;
+    /** Бит {@code CL_FP_FMA} в {@code cl_device_fp_config}: слитное умножение-сложение реализовано аппаратно. */
+    long FP_FMA = 1L << 5;
 
     /** {@code CL_DEVICE_TYPE_CPU}. */
     long TYPE_CPU = 2;

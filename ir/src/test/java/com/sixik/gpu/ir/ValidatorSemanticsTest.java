@@ -367,6 +367,15 @@ class ValidatorSemanticsTest {
     }
 
     @Test
+    void f04_unknownFloatingPointBits() {
+        IrBuilder b = new IrBuilder();
+        b.beginFunction(IrModule.KERNEL, Types.VOID);
+        b.fpMode(IrModule.FP_ALL + 1);
+        b.endFunction(b.block());
+        expect(b.build(), "IR-F04");
+    }
+
+    @Test
     void f04_fallbackWithDifferentAbi() {
         IrBuilder b = new IrBuilder();
         b.beginFunction(IrModule.KERNEL, Types.VOID, Types.I32);

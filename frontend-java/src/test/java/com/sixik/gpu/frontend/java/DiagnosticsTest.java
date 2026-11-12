@@ -97,6 +97,22 @@ class DiagnosticsTest {
             new Case("GPU0018", """
                     @Reduction public static int r(int[] a) { int s = 0; for (int i = 0; i < a.length; i++) { if (a[i] < 0) break; s += a[i]; } return s; } // <-
                     """),
+            new Case("GPU0019", """
+                    @Kernel(compilationProperties = "fp contract") public static void k(@Global int[] a) { } // <-
+                    """),
+            new Case("GPU0020", """
+                    @Kernel(compilationProperties = "fastmath=on") public static void k(@Global int[] a) { } // <-
+                    """),
+            new Case("GPU0021", """
+                    @Kernel(compilationProperties = "fp=contrct") public static void k(@Global int[] a) { } // <-
+                    """),
+            new Case("GPU0022", """
+                    @Kernel(compilationProperties = "opt=1; opt=2") public static void k(@Global int[] a) { } // <-
+                    """),
+            new Case("GPU0023", """
+                    @SuppressWarnings("deprecation")
+                    @Kernel(optLevel = 2, compilationProperties = "opt=3") public static void k(@Global int[] a) { } // <-
+                    """),
             new Case("GPU0101", """
                     @Kernel public static void k(@Global int[] a) {
                         try { a[0] = 1; } catch (RuntimeException e) { a[0] = 2; } // <-

@@ -13,42 +13,38 @@ package com.sixik.gpu.ir.optimizer;
  *       (деление, трансцендентные функции, чтение памяти).</li>
  * </ul>
  *
+ * <p>Преобразования, меняющие вещественный результат ({@code fma}, {@code x/c -> x*(1/c)}, {@code x*0 -> 0}), здесь не
+ * настраиваются: их разрешает само ядро маской {@code fp} ({@code @Kernel(compilationProperties = "fp=...")},
+ * {@link FpModes}). Глобального переключателя нет, чтобы настройка контекста не могла ослабить точность чужого ядра.</p>
+ *
  * @param level            уровень оптимизации 0..3
- * @param fastMath         разрешить преобразования, меняющие результат вещественных вычислений в особых случаях
- *                         (NaN, inf, -0) либо округление: {@code x*0 -> 0}, {@code x-x -> 0}, {@code x/c -> x*(1/c)}
- *                         для произвольной {@code c}, слияние в {@code fma}; без согласия пользователя выключено
- * @param contractFma      при {@code fastMath} сливать {@code a*b+c} в {@code fma(a,b,c)}
  * @param registerBudget   целевой бюджет регистров на work-item (32-битных слов); CSE/LICM не заводят временные
  *                         значения, которые поднимут оценку давления выше бюджета
  * @param maxIterations    предел итераций пайплайна до неподвижной точки
  * @param validateEachPass проверять модуль валидатором после каждого прохода и откатывать проход, давший невалидный IR
+ * @param fmaF32           у целевого устройства аппаратный FMA для {@code float}; без него слияние в {@code fma} не
+ *                         делается (явный {@code fma()} эмулировался бы программно). Рантайм берёт значение из
+ *                         {@code CL_DEVICE_SINGLE_FP_CONFIG}
+ * @param fmaF64           то же для {@code double} ({@code CL_DEVICE_DOUBLE_FP_CONFIG})
  */
-public record OptimizeOptions(int level, boolean fastMath, boolean contractFma, int registerBudget,
-                              int maxIterations, boolean validateEachPass) {
+public record OptimizeOptions(int level, int registerBudget, int maxIterations,
+                              boolean validateEachPass, boolean fmaF32, boolean fmaF64) {
 
     /** Бюджет по умолчанию: 64 регистра - типичная граница высокой заполняемости на GPU. */
     public static final int DEFAULT_BUDGET = 64;
 
     /** Настройки по умолчанию: уровень 2, точные преобразования, бюджет {@value #DEFAULT_BUDGET}. */
-    public static final OptimizeOptions DEFAULT = new OptimizeOptions(2, false, true, DEFAULT_BUDGET, 8, true);
+    public static final OptimizeOptions DEFAULT = new OptimizeOptions(2, DEFAULT_BUDGET, 8, true, true, true);
 
     /** Оптимизатор выключен. */
-    public static final OptimizeOptions NONE = new OptimizeOptions(0, false, true, DEFAULT_BUDGET, 1, true);
+    public static final OptimizeOptions NONE = new OptimizeOptions(0, DEFAULT_BUDGET, 1, true, true, true);
 
     /**
      * @param l новый уровень
      * @return копия с другим уровнем
      */
     public OptimizeOptions withLevel(int l) {
-        return new OptimizeOptions(l, fastMath, contractFma, registerBudget, maxIterations, validateEachPass);
-    }
-
-    /**
-     * @param on разрешить ли быструю математику
-     * @return копия с другим флагом {@code fastMath}
-     */
-    public OptimizeOptions withFastMath(boolean on) {
-        return new OptimizeOptions(level, on, contractFma, registerBudget, maxIterations, validateEachPass);
+        return new OptimizeOptions(l, registerBudget, maxIterations, validateEachPass, fmaF32, fmaF64);
     }
 
     /**
@@ -56,7 +52,7 @@ public record OptimizeOptions(int level, boolean fastMath, boolean contractFma, 
      * @return копия с другим бюджетом
      */
     public OptimizeOptions withRegisterBudget(int budget) {
-        return new OptimizeOptions(level, fastMath, contractFma, budget, maxIterations, validateEachPass);
+        return new OptimizeOptions(level, budget, maxIterations, validateEachPass, fmaF32, fmaF64);
     }
 
     /**
@@ -64,6 +60,15 @@ public record OptimizeOptions(int level, boolean fastMath, boolean contractFma, 
      * @return копия с другим флагом проверки
      */
     public OptimizeOptions withValidation(boolean on) {
-        return new OptimizeOptions(level, fastMath, contractFma, registerBudget, maxIterations, on);
+        return new OptimizeOptions(level, registerBudget, maxIterations, on, fmaF32, fmaF64);
+    }
+
+    /**
+     * @param f32 аппаратный FMA для {@code float}
+     * @param f64 аппаратный FMA для {@code double}
+     * @return копия с другими возможностями устройства
+     */
+    public OptimizeOptions withHardwareFma(boolean f32, boolean f64) {
+        return new OptimizeOptions(level, registerBudget, maxIterations, validateEachPass, f32, f64);
     }
 }
