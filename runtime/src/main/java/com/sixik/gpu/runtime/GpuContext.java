@@ -1046,13 +1046,18 @@ public final class GpuContext implements AutoCloseable {
                     + "reduce the @Local arrays");
         }
         int[] access = Validator.validate(m).functions()[kernel].paramAccess();
+        if (!beginBuild()) {
+            return failure("RT-X02", "context is closed");
+        }
         long program = 0;
-        lock.lock();
+        long kernelHandle = 0;
+        boolean registered = false;
+        // сборка драйвером - без замка контекста: сборки разных программ потокобезопасны, и долгая сборка (десятки-сотни
+        // мс) не задерживает запуски других ядер (фоновый прогрев JavaToGpu.warmUp); закрытие ждёт идущие сборки
         try {
             String diskKey = disk == null ? null : diskKey(m, kernel, options, art);
             String[] driverLog = {""};
             long[] cached = diskKey == null ? null : loadFromDisk(diskKey, art, driverLog);
-            long kernelHandle;
             List<Diagnostic> log = List.of();
             if (cached != null) {
                 program = cached[0];
@@ -1065,6 +1070,7 @@ public final class GpuContext implements AutoCloseable {
                 log = BuildLog.parse(outcome.log(), kernel, !outcome.ok());
                 if (!outcome.ok()) {
                     api.release(DeviceApi.HandleKind.PROGRAM, program);
+                    program = 0;
                     return Result.failed(log);
                 }
                 kernelHandle = api.createKernel(program, art.entry());
@@ -1076,22 +1082,82 @@ public final class GpuContext implements AutoCloseable {
             DriverStats stats = isNvidia() ? DriverStats.parseNvidiaLog(driverLog[0], art.entry()) : DriverStats.UNKNOWN;
             stats = rememberDriverStats(diskKey, stats, cached == null)
                     .withPrivateBytes(api.kernelPrivateMemSize(kernelHandle, device.handle()));
-            CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(original), access, program, kernelHandle,
-                    maxWg, stats, estimateRegisters(m, kernel), fullyWritten(m, kernel));
-            compiled.add(ck);
-            reportPressure(ck);
-            attachSplit(ck, m, kernel, options);
-            for (Diagnostic d : log) {
-                emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, d.message());
+            lock.lock();
+            try {
+                if (closed) {
+                    return failure("RT-X02", "context is closed");
+                }
+                CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(original), access, program,
+                        kernelHandle, maxWg, stats, estimateRegisters(m, kernel), fullyWritten(m, kernel));
+                compiled.add(ck);
+                registered = true;
+                reportPressure(ck);
+                attachSplit(ck, m, kernel, options);
+                for (Diagnostic d : log) {
+                    emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, d.message());
+                }
+                return new Result<>(ck, log);
+            } finally {
+                lock.unlock();
             }
-            return new Result<>(ck, log);
         } catch (DeviceApiException e) {
-            if (program != 0) {
-                api.release(DeviceApi.HandleKind.PROGRAM, program);
-            }
             return failure("RT-X01", "driver error during compilation: " + e.getMessage());
         } finally {
-            lock.unlock();
+            if (!registered) {
+                if (kernelHandle != 0) {
+                    api.release(DeviceApi.HandleKind.KERNEL, kernelHandle);
+                }
+                if (program != 0) {
+                    api.release(DeviceApi.HandleKind.PROGRAM, program);
+                }
+            }
+            endBuild();
+        }
+    }
+
+    /** Монитор учёта идущих сборок драйвером (они идут без замка контекста). */
+    private final Object builds = new Object();
+    /** Сборок драйвером в работе. */
+    private int activeBuilds;
+    /** Контекст закрывается: новые сборки не начинаются. */
+    private boolean buildsStopped;
+
+    /** @return {@code false}, если контекст закрывается и сборку начинать нельзя */
+    private boolean beginBuild() {
+        synchronized (builds) {
+            if (buildsStopped || closed) {
+                return false;
+            }
+            activeBuilds++;
+            return true;
+        }
+    }
+
+    private void endBuild() {
+        synchronized (builds) {
+            activeBuilds--;
+            builds.notifyAll();
+        }
+    }
+
+    /**
+     * Перед освобождением драйвера: запретить новые сборки и дождаться идущих (они используют контекст драйвера без
+     * замка). Вызывается без замка контекста: сборке он нужен, чтобы зарегистрировать ядро.
+     */
+    private void stopBuilds() {
+        boolean interrupted = false;
+        synchronized (builds) {
+            buildsStopped = true;
+            while (activeBuilds > 0) {
+                try {
+                    builds.wait();
+                } catch (InterruptedException e) {
+                    interrupted = true; // сборку прервать нельзя: дождаться и восстановить флаг
+                }
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -2525,6 +2591,8 @@ public final class GpuContext implements AutoCloseable {
      */
     @Override
     public void close() {
+        // сборки драйвером идут без замка: сначала дождаться их, потом освобождать драйвер
+        stopBuilds();
         lock.lock();
         try {
             if (closed) {

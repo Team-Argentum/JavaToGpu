@@ -381,22 +381,11 @@ public final class JavaToGpu {
      * (строки {@code класс TAB метод TAB дескриптор TAB id}).
      */
     private static String kernelId(Class<?> owner, String method) {
-        ClassLoader loader = owner.getClassLoader() != null ? owner.getClassLoader() : ClassLoader.getSystemClassLoader();
         java.util.Set<String> ids = new java.util.TreeSet<>();
-        try {
-            java.util.Enumeration<java.net.URL> urls = loader.getResources("META-INF/gpu/kernels.idx");
-            while (urls.hasMoreElements()) {
-                try (InputStream in = urls.nextElement().openStream()) {
-                    for (String line : new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
-                        String[] row = line.strip().split("\t");
-                        if (row.length == 4 && row[0].equals(owner.getName()) && row[1].equals(method)) {
-                            ids.add(row[3]);
-                        }
-                    }
-                }
+        for (String[] row : indexRows(owner)) {
+            if (row[1].equals(method)) {
+                ids.add(row[3]);
             }
-        } catch (IOException e) {
-            throw fail("RT-F02", "kernel index is unreadable: " + e.getMessage());
         }
         if (ids.size() != 1) {
             throw fail("RT-F02", ids.isEmpty()
@@ -404,6 +393,131 @@ public final class JavaToGpu {
                     : "kernel " + owner.getName() + "." + method + " is ambiguous: " + ids);
         }
         return ids.iterator().next();
+    }
+
+    /**
+     * Строки индексов {@code META-INF/gpu/kernels.idx} загрузчика класса, относящиеся к нему.
+     *
+     * @param owner класс
+     * @return строки {@code класс, метод, дескриптор, id}
+     */
+    private static List<String[]> indexRows(Class<?> owner) {
+        ClassLoader loader = owner.getClassLoader() != null ? owner.getClassLoader() : ClassLoader.getSystemClassLoader();
+        List<String[]> out = new ArrayList<>();
+        try {
+            java.util.Enumeration<java.net.URL> urls = loader.getResources("META-INF/gpu/kernels.idx");
+            while (urls.hasMoreElements()) {
+                try (InputStream in = urls.nextElement().openStream()) {
+                    for (String line : new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
+                        String[] row = line.strip().split("\t");
+                        if (row.length == 4 && row[0].equals(owner.getName())) {
+                            out.add(row);
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw fail("RT-F02", "kernel index is unreadable: " + e.getMessage());
+        }
+        return out;
+    }
+
+    // =============================================================================================
+    // прогрев
+    // =============================================================================================
+
+    /**
+     * Итог прогрева.
+     *
+     * @param compiled ядер и свёрток собрано (или уже было в кэше)
+     * @param problems диагностики ядер, которые собрать не удалось (такие ядра при вызове уйдут на JVM-fallback или
+     *                 бросят исключение - как и без прогрева); пусто, если всё собрано
+     */
+    public record WarmUp(int compiled, List<Diagnostic> problems) {
+        public WarmUp {
+            problems = List.copyOf(problems);
+        }
+    }
+
+    /**
+     * Собирает заранее, в фоновом потоке, все {@code @Kernel}- и {@code @Reduction}-методы классов - чтобы первый
+     * вызов не ждал компиляции драйвером (десятки-сотни миллисекунд на ядро). Контекст - тот же, что у обычного вызова
+     * из этого потока: из {@link #use} либо по умолчанию. Если устройства нет, прогрев сразу завершается с пустым
+     * итогом и причиной в {@link WarmUp#problems()}.
+     *
+     * <p>Вызывать можно в любой момент: обычный вызов во время прогрева ждёт только сборку своего ядра (если она уже
+     * идёт), запуски других ядер не задерживаются - сборка драйвером идёт без замка контекста. Слушатель событий
+     * контекста получает события {@code COMPILE} из потока прогрева. Закрытие контекста дожидается текущей сборки,
+     * остальные ядра прогрева тогда завершаются с {@code RT-X02}.</p>
+     *
+     * <pre>{@code
+     * JavaToGpu.warmUp(TerrainNoise.class, Effects.class);   // при старте, не ждём
+     * ...
+     * TerrainNoise.generate(...);                            // ядро уже собрано
+     * }</pre>
+     *
+     * @param owners классы с ядрами
+     * @return итог прогрева (завершается, когда все ядра собраны или отвергнуты)
+     */
+    public static java.util.concurrent.CompletableFuture<WarmUp> warmUp(Class<?>... owners) {
+        GpuContext ctx = CONTEXTS.get().peek();
+        Optional<GpuContext> chosen = ctx != null ? Optional.of(ctx) : defaultContext();
+        if (chosen.isEmpty()) {
+            List<Diagnostic> reason;
+            synchronized (LOCK) {
+                reason = defaultFailure == null ? List.of() : defaultFailure;
+            }
+            return java.util.concurrent.CompletableFuture.completedFuture(new WarmUp(0, reason));
+        }
+        GpuContext c = chosen.get();
+        Class<?>[] classes = owners.clone();
+        java.util.concurrent.CompletableFuture<WarmUp> done = new java.util.concurrent.CompletableFuture<>();
+        Thread.ofPlatform().daemon().name("javatogpu-warmup").start(() -> {
+            try {
+                done.complete(warm(c, classes));
+            } catch (RuntimeException | Error e) {
+                done.completeExceptionally(e);
+            }
+        });
+        return done;
+    }
+
+    /** Собирает ядра классов в контексте по очереди (драйвер всё равно в основном сериализует сборки). */
+    private static WarmUp warm(GpuContext ctx, Class<?>[] owners) {
+        int compiled = 0;
+        List<Diagnostic> problems = new ArrayList<>();
+        for (Class<?> owner : owners) {
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            List<String[]> rows;
+            try {
+                rows = indexRows(owner);
+            } catch (GpuException e) {
+                problems.addAll(e.diagnostics());
+                continue;
+            }
+            for (String[] row : rows) {
+                if (!seen.add(row[3])) {
+                    continue;
+                }
+                Result<CompiledKernel> r;
+                try {
+                    IrModule m = module(owner, row[3]);
+                    boolean reduction = m.fKind(m.functionCount() - 1) != IrModule.KERNEL;
+                    r = reduction ? ctx.compileReduction(m) : ctx.compile(m);
+                } catch (GpuException e) {
+                    r = Result.failed(e.diagnostics());
+                }
+                if (r.isOk()) {
+                    compiled++;
+                } else {
+                    problems.addAll(r.diagnostics());
+                    if (ctx.isClosed()) {
+                        return new WarmUp(compiled, problems);
+                    }
+                }
+            }
+        }
+        return new WarmUp(compiled, problems);
     }
 
     // =============================================================================================

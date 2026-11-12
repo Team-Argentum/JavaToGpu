@@ -24,6 +24,27 @@ class FirstCallDeviceTest {
 
     private static final String[] KERNELS = {"generate", "generateResident", "countSolid"};
 
+    /** Прогрев класса в фоне: сколько он длится, и первый вызов после него - попадание в кэш. */
+    @Test
+    void warmUpMakesTheFirstCallCheap() throws Exception {
+        List<GpuEvent> events = java.util.Collections.synchronizedList(new ArrayList<>());
+        Result<GpuContext> rc = GpuContext.builder().ignoreEnvironment().noDiskCache().listener(events::add)
+                .fallback(GpuContext.Fallback.NEVER).fusion(false).tryBuild();
+        Assumptions.assumeTrue(rc.isOk(), "no OpenCL device");
+        try (GpuContext ctx = rc.value(); JavaToGpu.Scope s = JavaToGpu.use(ctx)) {
+            long t = System.nanoTime();
+            JavaToGpu.WarmUp w = JavaToGpu.warmUp(TerrainNoise.class).get();
+            long warm = System.nanoTime() - t;
+            org.junit.jupiter.api.Assertions.assertTrue(w.problems().isEmpty(), w.problems().toString());
+            IrModule m = JavaToGpu.loadModule(TerrainNoise.class, "generate");
+            t = System.nanoTime();
+            org.junit.jupiter.api.Assertions.assertTrue(ctx.compile(m).isOk());
+            long first = System.nanoTime() - t;
+            System.out.printf(Locale.ROOT, "warm-up of %d kernels %.0f ms, then the first generate compile %.2f ms%n",
+                    w.compiled(), warm / 1e6, first / 1e6);
+        }
+    }
+
     @Test
     void compileLatencyColdDiskAndMemory(@TempDir Path dir) {
         long[][] ms = new long[3][KERNELS.length];

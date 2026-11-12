@@ -166,6 +166,8 @@ public final class FakeDeviceApi implements DeviceApi {
     private Predicate<String> rejectWhen = s -> false;
     private String rejectLog = "";
     private String successLog = "";
+    /** Длительность каждой сборки ({@link #buildDelay}). */
+    private volatile long buildDelayMillis;
     /** Программы, созданные из готового образа ({@link #createProgramWithBinary}). */
     private final java.util.Set<Long> fromBinary = new java.util.HashSet<>();
     private long next = 0x1000;
@@ -377,7 +379,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public long[] platforms() {
+    public synchronized long[] platforms() {
         call("platforms");
         long[] out = new long[specs.size()];
         for (int i = 0; i < out.length; i++) {
@@ -387,7 +389,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public String platformInfo(long platform, int param) {
+    public synchronized String platformInfo(long platform, int param) {
         call("platformInfo");
         Spec s = specs.get((int) (platform - 0x100));
         return switch (param) {
@@ -398,7 +400,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public long[] devices(long platform) {
+    public synchronized long[] devices(long platform) {
         call("devices");
         return new long[]{0x200 + (platform - 0x100)};
     }
@@ -408,7 +410,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public String deviceString(long device, int param) {
+    public synchronized String deviceString(long device, int param) {
         call("deviceString");
         Spec s = spec(device);
         return switch (param) {
@@ -422,7 +424,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public long deviceLong(long device, int param) {
+    public synchronized long deviceLong(long device, int param) {
         call("deviceLong");
         Spec s = spec(device);
         return switch (param) {
@@ -439,14 +441,14 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public long createContext(long device) {
+    public synchronized long createContext(long device) {
         call("createContext");
         liveContexts++;
         return fresh();
     }
 
     @Override
-    public long createQueue(long context, long device) {
+    public synchronized long createQueue(long context, long device) {
         call("createQueue");
         liveQueues++;
         return fresh();
@@ -456,7 +458,7 @@ public final class FakeDeviceApi implements DeviceApi {
 
     /** Закреплённая память фейка - обычная нативная память; отличается только учётом выделений. */
     @Override
-    public Pinned createPinned(long context, long queue, long size) {
+    public synchronized Pinned createPinned(long context, long queue, long size) {
         call("createPinned");
         long h = fresh();
         java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared();
@@ -465,7 +467,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public void releasePinned(long queue, Pinned pinned) {
+    public synchronized void releasePinned(long queue, Pinned pinned) {
         call("releasePinned");
         java.lang.foreign.Arena arena = livePinned.remove(pinned.buffer());
         if (arena == null) {
@@ -475,7 +477,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public long createBuffer(long context, long size) {
+    public synchronized long createBuffer(long context, long size) {
         call("createBuffer");
         long h = fresh();
         bufferData.put(h, new byte[(int) size]);
@@ -483,21 +485,21 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public void writeBuffer(long queue, long buffer, long offset, long size, MemorySegment src) {
+    public synchronized void writeBuffer(long queue, long buffer, long offset, long size, MemorySegment src) {
         call("writeBuffer");
         writes++;
         MemorySegment.copy(src, ValueLayout.JAVA_BYTE, 0, bufferData.get(buffer), (int) offset, (int) size);
     }
 
     @Override
-    public void readBuffer(long queue, long buffer, long offset, long size, MemorySegment dst) {
+    public synchronized void readBuffer(long queue, long buffer, long offset, long size, MemorySegment dst) {
         call("readBuffer");
         reads++;
         MemorySegment.copy(bufferData.get(buffer), (int) offset, dst, ValueLayout.JAVA_BYTE, 0, (int) size);
     }
 
     @Override
-    public long createProgram(long context, String source) {
+    public synchronized long createProgram(long context, String source) {
         call("createProgram");
         long h = fresh();
         programs.put(h, source);
@@ -510,7 +512,7 @@ public final class FakeDeviceApi implements DeviceApi {
     private static final byte[] BINARY_MAGIC = "FAKEBIN\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
     @Override
-    public long createProgramWithBinary(long context, long device, byte[] binary) {
+    public synchronized long createProgramWithBinary(long context, long device, byte[] binary) {
         call("createProgramWithBinary");
         binaryLoads++;
         if (rejectBinaries || binary.length < BINARY_MAGIC.length
@@ -526,7 +528,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public byte[] programBinary(long program) {
+    public synchronized byte[] programBinary(long program) {
         call("programBinary");
         if (!binariesSupported) {
             return null;
@@ -539,18 +541,38 @@ public final class FakeDeviceApi implements DeviceApi {
 
     @Override
     public BuildOutcome build(long program, long device, String options) {
-        call("build");
-        builds++;
-        buildOptions.add(options);
-        if (rejectWhen.test(programs.get(program))) {
-            return new BuildOutcome(-11, rejectLog);
+        long delay = buildDelayMillis;
+        if (delay > 0) {
+            // как у драйвера: долгая сборка не держит остальной API (ожидание - вне монитора фейка)
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
-        // как у настоящего драйвера: программа из готового образа не компилируется заново, лог пуст
-        return new BuildOutcome(0, fromBinary.contains(program) ? "" : successLog);
+        synchronized (this) {
+            call("build");
+            builds++;
+            buildOptions.add(options);
+            if (rejectWhen.test(programs.get(program))) {
+                return new BuildOutcome(-11, rejectLog);
+            }
+            // как у настоящего драйвера: программа из готового образа не компилируется заново, лог пуст
+            return new BuildOutcome(0, fromBinary.contains(program) ? "" : successLog);
+        }
+    }
+
+    /**
+     * @param millis сколько длится каждая сборка программы
+     * @return этот фейк
+     */
+    public FakeDeviceApi buildDelay(long millis) {
+        this.buildDelayMillis = millis;
+        return this;
     }
 
     @Override
-    public long createKernel(long program, String name) {
+    public synchronized long createKernel(long program, String name) {
         call("createKernel");
         long h = fresh();
         kernels.put(h, new String[]{name});
@@ -560,25 +582,25 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public long kernelMaxWorkGroupSize(long kernel, long device) {
+    public synchronized long kernelMaxWorkGroupSize(long kernel, long device) {
         call("kernelMaxWorkGroupSize");
         return spec(device).maxGroup();
     }
 
     @Override
-    public void setArgBuffer(long kernel, int index, long buffer) {
+    public synchronized void setArgBuffer(long kernel, int index, long buffer) {
         call("setArgBuffer");
         kernelArgs.get(kernel)[index] = buffer;
     }
 
     @Override
-    public void setArgScalar(long kernel, int index, int size, long bits) {
+    public synchronized void setArgScalar(long kernel, int index, int size, long bits) {
         call("setArgScalar");
         kernelArgs.get(kernel)[index] = size == 4 ? (long) (int) bits : bits;
     }
 
     @Override
-    public void setArgBytes(long kernel, int index, MemorySegment value, long size) {
+    public synchronized void setArgBytes(long kernel, int index, MemorySegment value, long size) {
         call("setArgBytes");
         byte[] copy = new byte[(int) size];
         MemorySegment.copy(value, ValueLayout.JAVA_BYTE, 0, copy, 0, (int) size);
@@ -586,7 +608,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public void enqueue(long queue, long kernel, int dim, long[] global, long[] local) {
+    public synchronized void enqueue(long queue, long kernel, int dim, long[] global, long[] local) {
         call("enqueue");
         enqueues++;
         String name = kernels.get(kernel)[0];
@@ -599,7 +621,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public void finish(long queue) {
+    public synchronized void finish(long queue) {
         call("finish");
         finishes++;
     }
@@ -612,7 +634,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public void release(HandleKind kind, long handle) {
+    public synchronized void release(HandleKind kind, long handle) {
         journal.add("release:" + kind);
         switch (kind) {
             case CONTEXT -> liveContexts--;
@@ -631,7 +653,7 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         closed = true;
     }
 }
