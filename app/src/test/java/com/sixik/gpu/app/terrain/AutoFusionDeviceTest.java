@@ -57,6 +57,64 @@ class AutoFusionDeviceTest {
         }
     }
 
+    /**
+     * Цепочка из трёх вызовов: {@code generateResident} → {@code classify} (маска) → {@code count}. Со слиянием оба
+     * ядра откладываются, {@code classify} получает генерацию внутрь, свёртка - обе; ни плотности, ни маска не пишутся.
+     */
+    @Test
+    void aChainOfKernelsFusesIntoOneReduction() {
+        List<GpuEvent> events = new ArrayList<>();
+        try (GpuContext plain = open(false, new ArrayList<>()); GpuContext fused = open(true, events)) {
+            System.out.println("chain   chunks samples  | three kernels ms  fused ms");
+            for (TerrainBatch.Sampling g : TerrainBatch.Sampling.values()) {
+                for (int chunks : new int[]{8, 64}) {
+                    TerrainBatch batch = new TerrainBatch(chunks, g);
+                    IntSupplier off = chain(plain, batch);
+                    IntSupplier on = chain(fused, batch);
+                    int want = off.getAsInt();
+                    assertEquals(want, on.getAsInt());
+                    double[] ms = new double[2];
+                    IntSupplier[] all = {off, on};
+                    for (int v = 0; v < 2; v++) {
+                        long[] times = new long[PASSES];
+                        for (int r = 0; r < WARMUP + PASSES; r++) {
+                            long t = System.nanoTime();
+                            assertEquals(want, all[v].getAsInt());
+                            if (r >= WARMUP) {
+                                times[r - WARMUP] = System.nanoTime() - t;
+                            }
+                        }
+                        Arrays.sort(times);
+                        ms[v] = times[PASSES / 2] / 1e6;
+                    }
+                    System.out.printf(Locale.ROOT, "%-7s %6d %8d | %16.3f %9.3f%n", g, chunks, batch.output.length,
+                            ms[0], ms[1]);
+                }
+            }
+            assertTrue(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.KERNEL
+                    && e.detail().startsWith("fused into k")), "generation was fused into classify");
+        }
+    }
+
+    private static IntSupplier chain(GpuContext ctx, TerrainBatch batch) {
+        TerrainBatch.Sampling g = batch.sampling;
+        int n = batch.output.length;
+        GpuIntArray x = new GpuIntArray(batch.chunkX.length);
+        GpuIntArray z = new GpuIntArray(batch.chunkZ.length);
+        GpuFloatArray density = new GpuFloatArray(n);
+        GpuIntArray mask = new GpuIntArray(n);
+        return () -> {
+            try (JavaToGpu.Scope s = JavaToGpu.use(ctx)) {
+                x.copyFrom(batch.chunkX);
+                z.copyFrom(batch.chunkZ);
+                TerrainNoise.generateResident(density, x, z, g.horizontal, g.vertical, g.stepXZ, g.stepY, batch.seed,
+                        batch.octaves);
+                RangeReductions.classify(mask, density);
+                return RangeReductions.count(mask);
+            }
+        };
+    }
+
     private static void measure(GpuContext plain, GpuContext fused, TerrainBatch.Sampling g, int chunks) {
         TerrainBatch batch = new TerrainBatch(chunks, g);
         int n = batch.output.length;

@@ -1474,8 +1474,9 @@ public final class GpuContext implements AutoCloseable {
     }
 
     /**
-     * Вызов {@code @Kernel}-метода через фасад: ядро-производитель откладывается ({@link LazyProducers}), остальные
-     * исполняются как {@link #launchReusing}.
+     * Вызов {@code @Kernel}-метода через фасад: отложенные производители, чьи выходы ядро читает поэлементно,
+     * вставляются в него; ядро-производитель откладывается ({@link LazyProducers}), остальные исполняются как
+     * {@link #launchReusing}.
      *
      * @param kernel ядро этого контекста
      * @param config размеры запуска
@@ -1483,18 +1484,34 @@ public final class GpuContext implements AutoCloseable {
      * @return итог (у отложенного запуска - нулевая статистика) либо диагностики
      */
     Result<LaunchStats> launchOrDefer(CompiledKernel kernel, LaunchConfig config, Object[] args) {
+        CompiledKernel k = kernel;
+        Object[] a = args;
         lock.lock();
         try {
-            if (!closed && kernel.owner() == this && lazy.defer(kernel, config, args)) {
-                return Result.ok(new LaunchStats(0, 0, 0, 0, 0));
+            if (!closed && kernel.owner() == this) {
+                // отложенные производители, чьи выходы ядро читает поэлементно, вставляются в него (цепочкой)
+                for (int depth = 0; depth < MAX_FUSION_DEPTH; depth++) {
+                    LazyProducers.FusedLaunch f = lazy.fuseInto(k, a);
+                    if (f == null) {
+                        break;
+                    }
+                    k = f.kernel();
+                    a = f.args();
+                }
+                if (lazy.defer(k, config, a)) {
+                    return Result.ok(new LaunchStats(0, 0, 0, 0, 0));
+                }
             }
         } catch (GpuException e) {
             return Result.failed(e.diagnostics());
         } finally {
             lock.unlock();
         }
-        return launchReusing(kernel, config, args);
+        return launchReusing(k, config, a);
     }
+
+    /** Сколько отложенных производителей вставляется в одно ядро за вызов. */
+    static final int MAX_FUSION_DEPTH = 4;
 
     /**
      * Строит и компилирует ядро свёртки, не запуская его (чтобы решить, нужен ли JVM-fallback).

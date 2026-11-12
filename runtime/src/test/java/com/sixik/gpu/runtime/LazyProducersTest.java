@@ -48,6 +48,24 @@ class LazyProducersTest {
                     a.set(i, a.get(i) + 1);
                 }
 
+                @Kernel
+                public static void scale(GpuIntArray out, GpuIntArray in, int f) {
+                    int i = Gpu.getGlobalId(0);
+                    out.set(i, in.get(i) * f);
+                }
+
+                @Kernel
+                public static void accumulate(GpuIntArray acc, GpuIntArray v) {
+                    int i = Gpu.getGlobalId(0);
+                    acc.set(i, acc.get(i) + v.get(i));
+                }
+
+                @Kernel
+                public static void shift(GpuIntArray out, GpuIntArray in) {
+                    int i = Gpu.getGlobalId(0);
+                    out.set(i, in.get(i == 0 ? 0 : i - 1));
+                }
+
                 @Reduction
                 public static int total(GpuIntArray v) {
                     int s = 0;
@@ -72,7 +90,7 @@ class LazyProducersTest {
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
         Weaver.Report report = Weaver.weaveTree(dir);
-        assertEquals(3, report.kernels(), report.problems().toString());
+        assertEquals(6, report.kernels(), report.problems().toString());
         loader = new URLClassLoader(new URL[]{dir.toUri().toURL()}, LazyProducersTest.class.getClassLoader());
         lazy = loader.loadClass("demo.Lazy");
         open(true);
@@ -236,6 +254,55 @@ class LazyProducersTest {
         ctx.close();
         assertEquals(1, launches());
         assertEquals(expected(base.toArray(), 5, 64)[20], out.get(20), "the data is on the host after close");
+    }
+
+    @Test
+    void aChainOfProducersFusesIntoTheReduction() throws Exception {
+        GpuIntArray base = base(5);
+        GpuIntArray out1 = new GpuIntArray(500);
+        GpuIntArray out2 = new GpuIntArray(500);
+        int[] first = expected(base.toArray(), 7, 500);
+        call("produce", out1, base, 7);
+        call("scale", out2, out1, 3);
+        assertEquals(0, launches(), "both producers are deferred; scale got produce inserted");
+        assertEquals(2, ctx.lazy.pending());
+        assertEquals(3 * sum(first), call("total", out2));
+        assertEquals(1, launches(), "one kernel for produce + scale + total");
+        assertEquals(3 * first[42], out2.get(42), "scale runs with produce inside, without out1");
+        assertEquals(2, launches());
+        assertEquals(1, ctx.lazy.pending(), "out1 is still deferred");
+        assertEquals(first[42], out1.get(42));
+        assertEquals(3, launches());
+    }
+
+    @Test
+    void anElementWiseConsumerKernelRunsWithTheProducerInside() throws Exception {
+        GpuIntArray base = base(5);
+        GpuIntArray out = new GpuIntArray(200);
+        GpuIntArray acc = new GpuIntArray(200);
+        acc.fill(10);
+        int[] want = expected(base.toArray(), 1, 200);
+        call("produce", out, base, 1);
+        call("accumulate", acc, out); // читает и пишет acc - не производитель, исполняется сразу
+        assertEquals(1, launches(), "only the fused accumulate ran");
+        assertEquals(1, ctx.lazy.pending(), "the producer output is still deferred");
+        assertEquals(10 + want[77], acc.get(77));
+        assertEquals(want[77], out.get(77));
+        assertEquals(2, launches());
+    }
+
+    @Test
+    void aNeighbourReadIsNotFusedAndRunsTheProducerFirst() throws Exception {
+        GpuIntArray base = base(5);
+        GpuIntArray out1 = new GpuIntArray(100);
+        GpuIntArray out2 = new GpuIntArray(100);
+        int[] want = expected(base.toArray(), 2, 100);
+        call("produce", out1, base, 2);
+        call("shift", out2, out1); // читает соседа: не сливается, но сам откладывается и наблюдает out1
+        assertEquals(0, launches());
+        assertEquals(want[29], out2.get(30));
+        assertEquals(2, launches(), "produce, then shift");
+        assertEquals(want[0], out2.get(0));
     }
 
     @Test

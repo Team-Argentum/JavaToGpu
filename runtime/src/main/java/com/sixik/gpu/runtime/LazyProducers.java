@@ -90,6 +90,7 @@ final class LazyProducers {
     private final Map<GpuArray, List<Pending>> byInput = new IdentityHashMap<>();
     private final Map<CompiledKernel, Optional<Fusion.Producer>> producers = new IdentityHashMap<>();
     private final Map<FusedKey, Result<IrModule>> fused = new HashMap<>();
+    private final Map<FusedKey, Result<CompiledKernel>> fusedKernels = new HashMap<>();
     /** Свободные снимки по «класс массива, длина». */
     private final Map<String, ArrayDeque<GpuArray>> pool = new HashMap<>();
 
@@ -241,6 +242,7 @@ final class LazyProducers {
         }
         pool.clear();
         fused.clear();
+        fusedKernels.clear();
         producers.clear();
     }
 
@@ -289,6 +291,78 @@ final class LazyProducers {
             return ctx.reductions.run(k.value(), full, resultClass);
         }
         return null;
+    }
+
+    /**
+     * Ядро со вставленным производителем и его аргументы.
+     *
+     * @param kernel слитое ядро
+     * @param args   аргументы: аргументы ядра без выхода, затем аргументы производителя без {@code out}, затем длина
+     */
+    record FusedLaunch(CompiledKernel kernel, Object[] args) {
+    }
+
+    /**
+     * Ядро, которое фасад собирается запустить, читает выход отложенного запуска поэлементно: строит ядро со вставленным
+     * производителем ({@link Fusion#fuseKernel}). Отложенный запуск остаётся отложенным. Под замком.
+     *
+     * @param kernel ядро
+     * @param args   аргументы вызова
+     * @return слитое ядро и аргументы либо {@code null}, если сливать нечего или нельзя
+     */
+    FusedLaunch fuseInto(CompiledKernel kernel, Object[] args) {
+        if (byOut.isEmpty() || !ctx.fusion || kernel.split != null) {
+            return null;
+        }
+        for (int i = 0; i < args.length; i++) {
+            if (!(args[i] instanceof GpuArray a) || !byOut.containsKey(a)
+                    || (kernel.access(i) & Validator.ACCESS_WRITE) != 0) {
+                continue;
+            }
+            Pending p = byOut.get(a);
+            if (writesAnInputOf(kernel, args, p)) {
+                continue; // ядро меняет то, что читает производитель: сначала исполнить производителя
+            }
+            int r = i;
+            Result<CompiledKernel> fk = fusedKernels.computeIfAbsent(new FusedKey(p.kernel, kernel.module(), i), k -> {
+                Result<IrModule> fm = Fusion.fuseKernel(p.kernel.module(), kernel.module(), r);
+                return fm.isOk() ? ctx.compile(fm.value()) : Result.failed(fm.diagnostics());
+            });
+            if (!fk.isOk()) {
+                continue;
+            }
+            Object[] full = new Object[args.length - 1 + p.args.length - 1 + 1];
+            int j = 0;
+            for (int q = 0; q < args.length; q++) {
+                if (q != i) {
+                    full[j++] = args[q];
+                }
+            }
+            for (int q = 0; q < p.args.length; q++) {
+                if (q != p.outParam) {
+                    full[j++] = p.args[q];
+                }
+            }
+            full[j] = p.out.length();
+            ctx.emit(GpuEvent.Kind.KERNEL, p.kernel.artifact().entry(), 0, 0,
+                    "fused into " + kernel.artifact().entry());
+            return new FusedLaunch(fk.value(), full);
+        }
+        return null;
+    }
+
+    /** Ядро пишет массив, который отложенный запуск читает со своей копии на устройстве. */
+    private static boolean writesAnInputOf(CompiledKernel kernel, Object[] args, Pending p) {
+        for (int q = 0; q < args.length; q++) {
+            if (args[q] instanceof GpuArray w && (kernel.access(q) & Validator.ACCESS_WRITE) != 0) {
+                for (GpuArray in : p.watched) {
+                    if (in == w) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     // ---- внутреннее ---------------------------------------------------------------------------

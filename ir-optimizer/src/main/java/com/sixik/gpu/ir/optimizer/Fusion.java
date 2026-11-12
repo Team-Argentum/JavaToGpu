@@ -29,6 +29,9 @@ import java.util.Optional;
  * {@code arr.length} - новым параметром {@code outLen}. Функции производителя переносятся в модуль свёртки (типы
  * перерегистрируются, struct-типы не поддержаны). Параметры слитой свёртки: параметры исходной свёртки без
  * {@code arr}, затем параметры производителя без {@code out}, затем {@code outLen}.</p>
+ *
+ * <p>{@link #fuseKernel} делает то же для ядра-потребителя, читающего массив по своему {@code getGlobalId(0)}; слитый
+ * производитель остаётся производителем, поэтому цепочки сливаются дальше.</p>
  */
 public final class Fusion {
 
@@ -73,8 +76,28 @@ public final class Fusion {
      * @return модуль слитой свёртки (последняя функция) либо {@link #NOT_FUSABLE} с причиной
      */
     public static Result<IrModule> fuse(IrModule producer, IrModule reduction, int readParam) {
+        return fuse(producer, reduction, readParam, false);
+    }
+
+    /**
+     * Строит ядро-потребитель, в котором чтения массива {@code readParam} заменены вычислением производителя. Потребитель
+     * читает массив только поэлементно - по своему {@code getGlobalId(0)} (или локали с ним): иначе элемент вычислялся
+     * бы несколько раз (соседи трафарета), и слияние проигрывало бы записи массива. Сам потребитель может быть
+     * производителем - тогда цепочка сливается дальше.
+     *
+     * @param producer  модуль ядра-производителя (последняя функция)
+     * @param consumer  модуль ядра-потребителя (последняя функция)
+     * @param readParam параметр потребителя, которому передан выход производителя
+     * @return модуль слитого ядра (последняя функция; параметры - как у {@link #fuse(IrModule, IrModule, int)}) либо
+     *         {@link #NOT_FUSABLE} с причиной
+     */
+    public static Result<IrModule> fuseKernel(IrModule producer, IrModule consumer, int readParam) {
+        return fuse(producer, consumer, readParam, true);
+    }
+
+    private static Result<IrModule> fuse(IrModule producer, IrModule consumer, int readParam, boolean kernel) {
         try {
-            return Result.ok(build(producer, reduction, readParam));
+            return Result.ok(build(producer, consumer, readParam, kernel));
         } catch (NotFusable e) {
             return Result.failed(List.of(new Diagnostic(NOT_FUSABLE, Diagnostic.Severity.ERROR, -1, -1, e.getMessage())));
         } catch (UnsupportedOperationException e) {
@@ -295,17 +318,30 @@ public final class Fusion {
     // слияние
     // =============================================================================================
 
-    private static IrModule build(IrModule producer, IrModule reduction, int readParam) {
+    private static IrModule build(IrModule producer, IrModule consumer, int readParam, boolean kernel) {
         Codec.ModuleTree pt = Codec.lift(producer);
         Shape s = shape(pt, pt.fns.length - 1);
         if (s == null) {
             throw new NotFusable("the kernel is not an element-wise producer `out[gid] = value`");
         }
-        Codec.ModuleTree rt = Codec.lift(reduction);
+        Codec.ModuleTree rt = Codec.lift(consumer);
         int nr = rt.fns.length;
         FnTree red = rt.fns[nr - 1];
-        if (red.kind != IrModule.DEVICE || readParam < 0 || readParam >= red.params.length) {
-            throw new NotFusable("the reduction has no parameter " + readParam);
+        if (red.kind != (kernel ? IrModule.KERNEL : IrModule.DEVICE) || readParam < 0
+                || readParam >= red.params.length) {
+            throw new NotFusable("the " + (kernel ? "kernel" : "reduction") + " has no parameter " + readParam);
+        }
+        // потребитель-ядро: чтения только по своему gid, и сам массив он не пишет
+        boolean[] gidLocal = null;
+        if (kernel) {
+            int[] writes = new int[red.localCount];
+            countWrites(red.body, writes);
+            gidLocal = new boolean[red.localCount];
+            for (Tree t : red.body.kids) {
+                if (t.op == Op.LOCAL_DECL && t.n() == 1 && writes[t.imm] == 1 && isGid(t.kid(0), gidLocal)) {
+                    gidLocal[t.imm] = true;
+                }
+            }
         }
         int readType = red.params[readParam];
         FnTree pk = pt.fns[s.fn];
@@ -393,7 +429,7 @@ public final class Fusion {
         for (int j = 0; j < inputs.length; j++) {
             extra[j] = Tree.ofImm(Op.PARAM, newParams[keep + j], keep + j);
         }
-        r.body = mapReduction(r.body, readParam, produceIndex, elem, extra, outLen);
+        r.body = mapReduction(r.body, readParam, produceIndex, elem, extra, outLen, gidLocal);
         fns[reductionIndex] = r;
 
         IrModule fused = Codec.lower(new Codec.ModuleTree(rt.source, fns, rt.extraTypes));
@@ -418,11 +454,18 @@ public final class Fusion {
         return mapKids(t, c -> mapProducer(c, out));
     }
 
-    /** Тело свёртки: чтения выхода -> вызов {@code produce}, длина -> {@code outLen}, параметры сдвинуты. */
-    private static Tree mapReduction(Tree t, int read, int produce, int elem, Tree[] extra, int outLen) {
+    /**
+     * Тело потребителя: чтения выхода -> вызов {@code produce}, длина -> {@code outLen}, параметры сдвинуты. С
+     * {@code gidLocal} (потребитель-ядро) индекс чтения обязан быть его {@code getGlobalId(0)}.
+     */
+    private static Tree mapReduction(Tree t, int read, int produce, int elem, Tree[] extra, int outLen,
+                                     boolean[] gidLocal) {
         if (t.op == Op.LOAD && t.kid(0).op == Op.ELEM_PTR && t.kid(0).kid(0).op == Op.PARAM
                 && t.kid(0).kid(0).imm == read) {
-            Tree index = mapReduction(t.kid(0).kid(1), read, produce, elem, extra, outLen);
+            if (gidLocal != null && !isGid(t.kid(0).kid(1), gidLocal)) {
+                throw new NotFusable("the kernel reads the produced array at an index other than its global id");
+            }
+            Tree index = mapReduction(t.kid(0).kid(1), read, produce, elem, extra, outLen, gidLocal);
             Tree[] args = new Tree[extra.length + 1];
             args[0] = index;
             System.arraycopy(extra, 0, args, 1, extra.length);
@@ -437,7 +480,7 @@ public final class Fusion {
             }
             return t.withImm(t.imm < read ? t.imm : t.imm - 1);
         }
-        return mapKids(t, c -> mapReduction(c, read, produce, elem, extra, outLen));
+        return mapKids(t, c -> mapReduction(c, read, produce, elem, extra, outLen, gidLocal));
     }
 
     private static Tree mapKids(Tree t, java.util.function.UnaryOperator<Tree> f) {

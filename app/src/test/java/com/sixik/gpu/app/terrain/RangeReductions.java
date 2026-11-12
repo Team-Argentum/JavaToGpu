@@ -1,6 +1,7 @@
 package com.sixik.gpu.app.terrain;
 
 import com.sixik.gpu.api.Gpu;
+import com.sixik.gpu.api.annotations.Kernel;
 import com.sixik.gpu.api.annotations.Reduction;
 import com.sixik.gpu.api.annotations.Struct;
 import com.sixik.gpu.api.types.GpuFloatArray;
@@ -95,6 +96,23 @@ final class RangeReductions {
             hi = Gpu.max(hi, x);
         }
         return new MinMax(lo, hi);
+    }
+
+    /** Маска «порода»: 1, если плотность положительна (звено цепочки для автоматического слияния). */
+    @Kernel
+    public static void classify(GpuIntArray mask, GpuFloatArray density) {
+        int i = Gpu.getGlobalId(0);
+        mask.set(i, density.get(i) > 0f ? 1 : 0);
+    }
+
+    /** Сумма маски. */
+    @Reduction
+    public static int count(GpuIntArray mask) {
+        int s = 0;
+        for (int i = 0; i < mask.length(); i++) {
+            s += mask.get(i);
+        }
+        return s;
     }
 
     /** Число положительных значений - свёртка по массиву плотностей (для автоматического слияния). */

@@ -159,6 +159,81 @@ class FusionTest {
     }
 
     @Test
+    void elementWiseConsumerKernelsGetTheProducerInside() {
+        IrModule producer = module(PRODUCER);
+        IrModule consumer = module("""
+                @Kernel
+                public static void blend(GpuFloatArray dst, GpuFloatArray src, float k) {
+                    int i = Gpu.getGlobalId(0);
+                    dst.set(i, dst.get(i) * 0.5f + src.get(i) * k);
+                }
+                """);
+        Result<IrModule> fused = Fusion.fuseKernel(producer, consumer, 1);
+        assertTrue(fused.isOk(), String.valueOf(fused.diagnostics()));
+        int[] base = {2, -1, 3};
+        int n = 257;
+        float[] produced = new float[n];
+        assertTrue(Interpreter.run(producer, NdRange.of1D(n), new Object[]{produced, base, 99}).isOk());
+        float[] want = new float[n];
+        float[] got = new float[n];
+        for (int i = 0; i < n; i++) {
+            want[i] = i * 0.25f;
+            got[i] = i * 0.25f;
+        }
+        assertTrue(Interpreter.run(consumer, NdRange.of1D(n), new Object[]{want, produced, 1.5f}).isOk());
+        // параметры слитого ядра: dst, k, затем входы производителя (base, seed), затем длина
+        assertTrue(Interpreter.run(fused.value(), NdRange.of1D(n), new Object[]{got, 1.5f, base, 99, n}).isOk());
+        assertTrue(Arrays.equals(want, got), "the fused kernel writes the same values");
+        assertTrue(Fusion.producer(fused.value()).isEmpty(), "blend reads its own output: not a producer");
+
+        IrModule scale = module("""
+                @Kernel
+                public static void scale(GpuFloatArray dst, GpuFloatArray src, float k) {
+                    int i = Gpu.getGlobalId(0);
+                    dst.set(i, src.get(i) * k);
+                }
+                """);
+        Result<IrModule> chain = Fusion.fuseKernel(producer, scale, 1);
+        assertTrue(chain.isOk(), String.valueOf(chain.diagnostics()));
+        assertEquals(Optional.of(new Fusion.Producer(0)), Fusion.producer(chain.value()),
+                "a fused producer is still a producer, so chains fuse further");
+    }
+
+    @Test
+    void consumerKernelsReadingOtherIndicesOrWritingTheArrayAreRejected() {
+        IrModule producer = module(PRODUCER);
+        String[] consumers = {
+                """
+                @Kernel
+                public static void k(GpuFloatArray dst, GpuFloatArray src) {
+                    int i = Gpu.getGlobalId(0);
+                    dst.set(i, src.get(i + 1));
+                }
+                """,
+                """
+                @Kernel
+                public static void k(GpuFloatArray dst, GpuFloatArray src) {
+                    int i = Gpu.getGlobalId(0);
+                    for (int j = 0; j < 3; j++) {
+                        dst.set(i, src.get(j));
+                    }
+                }
+                """,
+                """
+                @Kernel
+                public static void k(GpuFloatArray dst, GpuFloatArray src) {
+                    int i = Gpu.getGlobalId(0);
+                    src.set(i, 0f);
+                    dst.set(i, 1f);
+                }
+                """};
+        for (String c : consumers) {
+            assertFalse(Fusion.fuseKernel(producer, module(c), 1).isOk(), c);
+        }
+        assertFalse(Fusion.fuseKernel(producer, module(POSITIVES), 1).isOk(), "a reduction is not a kernel");
+    }
+
+    @Test
     void reductionsThatPassTheArrayOnAreRejected() {
         IrModule producer = module(PRODUCER);
         IrModule passes = module("""
