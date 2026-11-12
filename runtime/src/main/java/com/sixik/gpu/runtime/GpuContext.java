@@ -952,7 +952,6 @@ public final class GpuContext implements AutoCloseable {
         if (options.debug() || optimizeOptions.level() <= 0) {
             return null;
         }
-        long t0 = System.nanoTime();
         OptimizeResult r;
         try {
             r = Optimizer.optimize(m, optimizeOptions);
@@ -967,13 +966,61 @@ public final class GpuContext implements AutoCloseable {
         for (String failure : r.failures()) {
             emit(GpuEvent.Kind.WARNING, "f" + kernel, 0, 0, "IR optimizer pass rejected: " + failure);
         }
-        if (r.overBudget().contains(nk)) {
-            int regs = r.pressureAfter().functions()[nk].registers();
-            emit(GpuEvent.Kind.WARNING, "f" + kernel, System.nanoTime() - t0, 0, "estimated register pressure " + regs
+        // превышение бюджета сообщается после сборки (reportPressure): по данным драйвера, если они есть
+        return r;
+    }
+
+    /** Ключ записи дискового кэша с ресурсами ядра по данным драйвера. */
+    private static final String STATS_SUFFIX = "#driver-stats";
+
+    /**
+     * Ресурсы ядра по данным драйвера переживают перезапуск: драйвер печатает их только при настоящей сборке, а программа
+     * из дискового кэша (и из собственного кэша драйвера) собирается без лога. После сборки с данными они кладутся в
+     * дисковый кэш рядом с образом; если данных нет - берутся оттуда. Под замком.
+     *
+     * @param diskKey ключ программы в дисковом кэше либо {@code null}
+     * @param stats   данные из лога этой сборки
+     * @param fresh   программа собрана из исходника (не из образа)
+     * @return данные драйвера, известные для этой программы
+     */
+    private DriverStats rememberDriverStats(String diskKey, DriverStats stats, boolean fresh) {
+        if (diskKey == null) {
+            return stats;
+        }
+        if (stats.known()) {
+            if (fresh) {
+                disk.put(diskKey + STATS_SUFFIX, stats.encode());
+            }
+            return stats;
+        }
+        DriverStats saved = DriverStats.decode(disk.get(diskKey + STATS_SUFFIX));
+        return saved != null ? saved : stats;
+    }
+
+    /**
+     * Предупреждение о давлении на регистры после сборки. Если драйвер сообщил ресурсы - по ним: проливание в память
+     * (значения не уместились в регистры). Иначе - по оценке {@code RegisterPressure}, если она выше бюджета. Под
+     * замком.
+     *
+     * @param ck собранное ядро
+     */
+    private void reportPressure(CompiledKernel ck) {
+        DriverStats s = ck.driverStats();
+        String entry = ck.artifact().entry();
+        if (s.known()) {
+            if (s.spills()) {
+                emit(GpuEvent.Kind.WARNING, entry, 0, 0, "the driver spills " + s.spillStoreBytes() + " bytes stored / "
+                        + s.spillLoadBytes() + " bytes loaded per work-item (" + s.registers() + " registers);"
+                        + " KernelSplitter can split it into stages (javatogpu.split=auto)");
+            }
+            return;
+        }
+        int estimate = ck.estimatedRegisters();
+        if (estimate > optimizeOptions.registerBudget()) {
+            emit(GpuEvent.Kind.WARNING, entry, 0, 0, "estimated register pressure " + estimate
                     + " exceeds the budget " + optimizeOptions.registerBudget()
                     + "; the kernel may spill (KernelSplitter can split it into stages)");
         }
-        return r;
     }
 
     private Result<CompiledKernel> build(IrModule original, int originalKernel, EmitOptions options, String[] how) {
@@ -1026,11 +1073,13 @@ public final class GpuContext implements AutoCloseable {
                 }
             }
             long maxWg = api.kernelMaxWorkGroupSize(kernelHandle, device.handle());
-            DriverStats stats = (isNvidia() ? DriverStats.parseNvidiaLog(driverLog[0], art.entry()) : DriverStats.UNKNOWN)
+            DriverStats stats = isNvidia() ? DriverStats.parseNvidiaLog(driverLog[0], art.entry()) : DriverStats.UNKNOWN;
+            stats = rememberDriverStats(diskKey, stats, cached == null)
                     .withPrivateBytes(api.kernelPrivateMemSize(kernelHandle, device.handle()));
             CompiledKernel ck = new CompiledKernel(this, m, kernel, art, kernelIdOf(original), access, program, kernelHandle,
                     maxWg, stats, estimateRegisters(m, kernel), fullyWritten(m, kernel));
             compiled.add(ck);
+            reportPressure(ck);
             attachSplit(ck, m, kernel, options);
             for (Diagnostic d : log) {
                 emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, d.message());

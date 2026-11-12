@@ -166,6 +166,8 @@ public final class FakeDeviceApi implements DeviceApi {
     private Predicate<String> rejectWhen = s -> false;
     private String rejectLog = "";
     private String successLog = "";
+    /** Программы, созданные из готового образа ({@link #createProgramWithBinary}). */
+    private final java.util.Set<Long> fromBinary = new java.util.HashSet<>();
     private long next = 0x1000;
     private int liveContexts;
     private int liveQueues;
@@ -516,6 +518,7 @@ public final class FakeDeviceApi implements DeviceApi {
             throw new DeviceApiException(-42, "clCreateProgramWithBinary", "image not accepted");
         }
         long h = fresh();
+        fromBinary.add(h);
         programs.put(h, new String(binary, BINARY_MAGIC.length, binary.length - BINARY_MAGIC.length,
                 java.nio.charset.StandardCharsets.UTF_8));
         livePrograms++;
@@ -542,7 +545,8 @@ public final class FakeDeviceApi implements DeviceApi {
         if (rejectWhen.test(programs.get(program))) {
             return new BuildOutcome(-11, rejectLog);
         }
-        return new BuildOutcome(0, successLog);
+        // как у настоящего драйвера: программа из готового образа не компилируется заново, лог пуст
+        return new BuildOutcome(0, fromBinary.contains(program) ? "" : successLog);
     }
 
     @Override

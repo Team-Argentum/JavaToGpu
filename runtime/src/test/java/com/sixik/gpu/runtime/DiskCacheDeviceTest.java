@@ -40,8 +40,10 @@ class DiskCacheDeviceTest {
         if (!Files.isDirectory(dir)) {
             return List.of();
         }
+        // крупнейшие - образы драйвера; маленькие записи рядом - ресурсы ядра по данным драйвера
         try (Stream<Path> s = Files.list(dir)) {
-            return s.filter(p -> p.toString().endsWith(".gbc")).toList();
+            return s.filter(p -> p.toString().endsWith(".gbc"))
+                    .sorted(java.util.Comparator.comparingLong((Path p) -> p.toFile().length()).reversed()).toList();
         }
     }
 
@@ -64,11 +66,13 @@ class DiskCacheDeviceTest {
     @Test
     void imageFromTheRealDriverIsReusedByTheNextContext(@TempDir Path dir) throws IOException {
         List<GpuEvent> first = new ArrayList<>();
+        DriverStats built;
         try (GpuContext ctx = open(dir, first)) {
             Result<CompiledKernel> k = ctx.compile(Fixtures.computeSine());
             assertTrue(k.isOk(), k.diagnostics().toString());
             assertEquals("built", detail(first));
             checkSine(ctx, k.value());
+            built = k.value().driverStats();
         }
         Assumptions.assumeTrue(!images(dir).isEmpty(), "the driver does not provide program binaries");
 
@@ -79,6 +83,11 @@ class DiskCacheDeviceTest {
             assertEquals("disk-hit", detail(second), "the kernel was built from the image, not from source");
             assertEquals(1, ctx.cacheStats().diskHits());
             checkSine(ctx, k.value());
+            if (built.known()) {
+                // лог сборки образа пуст: регистры - из записи, сохранённой при первой сборке
+                assertEquals(built.registers(), k.value().driverStats().registers());
+                assertTrue(k.value().registersMeasured());
+            }
         }
     }
 

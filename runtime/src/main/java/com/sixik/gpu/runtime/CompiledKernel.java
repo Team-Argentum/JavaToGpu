@@ -162,8 +162,8 @@ public final class CompiledKernel {
 
     /**
      * Ресурсы, которые реально выделил драйвер. Число регистров известно для NVIDIA (опция {@code -cl-nv-verbose}
-     * добавляется автоматически); при загрузке образа с диска оно берётся из лога повторной сборки, если драйвер его
-     * печатает.
+     * добавляется автоматически) после настоящей сборки; при загрузке образа из дискового кэша - из записи, сохранённой
+     * при той сборке (лог сборки образа пуст).
      *
      * @return статистика драйвера (неизвестные поля - {@code -1})
      */
@@ -177,6 +177,29 @@ public final class CompiledKernel {
     public int estimatedRegisters() {
         return estimatedRegisters;
     }
+
+    /**
+     * Регистры ядра для решений рантайма: число от драйвера, если оно известно, иначе оценка по IR, пересчитанная по
+     * калибровке {@code драйвер ≈ 1.05 · оценка + 0.3} (RTX 5070, 56 ядер, REWORK_ARCHITECTURE.md 7.1).
+     *
+     * @return 32-битных регистров на work-item либо {@code -1}, если неизвестно ни то, ни другое
+     */
+    public int registers() {
+        if (driverStats.known()) {
+            return driverStats.registers();
+        }
+        return estimatedRegisters < 0 ? -1 : (int) Math.ceil(CALIBRATION_SLOPE * estimatedRegisters + CALIBRATION_OFFSET);
+    }
+
+    /** @return {@code true}, если {@link #registers()} - число от драйвера, а не оценка */
+    public boolean registersMeasured() {
+        return driverStats.known();
+    }
+
+    /** Наклон калибровки оценки регистров по данным драйвера. */
+    static final double CALIBRATION_SLOPE = 1.05;
+    /** Сдвиг калибровки оценки регистров по данным драйвера. */
+    static final double CALIBRATION_OFFSET = 0.3;
 
     /**
      * Перезаписывает ли ядро каждый элемент массива-параметра при подходящем запуске ({@code ir-optimizer},

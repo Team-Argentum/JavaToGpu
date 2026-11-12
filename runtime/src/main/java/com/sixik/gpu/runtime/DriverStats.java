@@ -41,6 +41,43 @@ public record DriverStats(int registers, int spillStoreBytes, int spillLoadBytes
         return spillStoreBytes > 0 || spillLoadBytes > 0;
     }
 
+    /** @return {@code true}, если драйвер сообщил число регистров */
+    public boolean known() {
+        return registers >= 0;
+    }
+
+    /**
+     * Запись для дискового кэша: драйвер печатает ресурсы только при настоящей сборке, а программа из кэша (нашего или
+     * собственного кэша драйвера) собирается из образа без лога.
+     *
+     * @return {@code "registers,spillStores,spillLoads,stack"} в UTF-8
+     */
+    byte[] encode() {
+        return (registers + "," + spillStoreBytes + "," + spillLoadBytes + "," + stackBytes)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /**
+     * @param data запись {@link #encode()} либо {@code null}
+     * @return статистика (без {@code privateBytes}) либо {@code null}, если записи нет или она повреждена
+     */
+    static DriverStats decode(byte[] data) {
+        if (data == null) {
+            return null;
+        }
+        String[] p = new String(data, java.nio.charset.StandardCharsets.UTF_8).split(",");
+        if (p.length != 4) {
+            return null;
+        }
+        try {
+            DriverStats s = new DriverStats(Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2]),
+                    Integer.parseInt(p[3]), -1);
+            return s.known() ? s : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     /**
      * @param privateBytes значение {@code CL_KERNEL_PRIVATE_MEM_SIZE}
      * @return копия с заданным объёмом private-памяти
