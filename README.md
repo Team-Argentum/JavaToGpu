@@ -7,7 +7,8 @@
 Прежняя реализация (`JavaToGpu 0.1.0-alpha.5`) сохранена в git-теге `legacy-alpha5`.
 Архитектура, принятые решения и план — в [`REWORK_ARCHITECTURE.md`](REWORK_ARCHITECTURE.md). Исходный концепт языка — в [`OldCodeConcept`](OldCodeConcept).
 
-[Руководство пользователя](docs/USER_GUIDE.md) · [Самостоятельный пример подключения](examples/standalone/README.md).
+[Руководство пользователя](docs/USER_GUIDE.md) · [Тур по возможностям в примерах](examples/tour/README.md) ·
+[Самостоятельный пример подключения](examples/standalone/README.md).
 [Результаты проверки подготовки alpha](reports/alpha-readiness-2026-11-09.md).
 
 ## Модули

@@ -1,0 +1,39 @@
+plugins {
+    id 'application'
+    id 'io.github.deussixik.javatogpu' version '0.2.0-SNAPSHOT'
+}
+
+repositories {
+    maven { url = providers.gradleProperty('gpuRepository').getOrElse('../../build/local-maven') }
+    mavenCentral()
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+application {
+    // tour.Tour - список уроков; урок выбирается аргументом: run --args=hello (или all)
+    mainClass = 'tour.Tour'
+    applicationDefaultJvmArgs = ['--enable-native-access=ALL-UNNAMED']
+}
+
+dependencies {
+    testImplementation 'io.github.deussixik:test-support:0.2.0-SNAPSHOT'
+    testImplementation platform('org.junit:junit-bom:6.1.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// Запуск всех уроков подряд: ./gradlew -p examples/tour runAll
+tasks.register('runAll', JavaExec) {
+    group = 'application'
+    description = 'Runs every lesson of the tour in order.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = application.mainClass
+    args 'all'
+}
