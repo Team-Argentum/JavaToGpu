@@ -57,6 +57,11 @@ public interface DeviceApi extends AutoCloseable {
     int DEVICE_DOUBLE_FP_CONFIG = 0x1032;
     /** Бит {@code CL_FP_FMA} в {@code cl_device_fp_config}: слитное умножение-сложение реализовано аппаратно. */
     long FP_FMA = 1L << 5;
+    /**
+     * Бит {@code CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT}: устройство умеет корректно округлённые деление и {@code sqrt}
+     * при опции {@code -cl-fp32-correctly-rounded-divide-sqrt} (только в {@code SINGLE_FP_CONFIG}).
+     */
+    long FP_CORRECTLY_ROUNDED_DIVIDE_SQRT = 1L << 7;
 
     /** {@code CL_DEVICE_TYPE_CPU}. */
     long TYPE_CPU = 2;

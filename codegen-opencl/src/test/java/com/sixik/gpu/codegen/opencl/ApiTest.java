@@ -32,6 +32,20 @@ class ApiTest {
     }
 
     @Test
+    void nativeMathChangesTheId() {
+        Target t = new Target("opencl", "nvidia", "gpu", 1, 32, 48);
+        assertEquals("opencl-nvidia-gpu-n5", t.withNativeMath(Target.NATIVE_SIN | Target.NATIVE_SQRT).id());
+        assertEquals(t, t.withNativeMath(0));
+        assertEquals("opencl-generic-n7", Target.GENERIC.withNativeMath(-1).id(), "unknown bits are masked off");
+        assertThrows(IllegalArgumentException.class, () -> new Target("opencl", "a", "gpu", 0, 0, 0, 8));
+        assertEquals(Target.NATIVE_COS, Target.nativeBit("cos"));
+        assertEquals(0, Target.nativeBit("fma"));
+        assertEquals("opencl-nvidia-gpu-n5-cr",
+                t.withNativeMath(5).withExactDivideSqrt(true).id());
+        assertEquals("opencl-nvidia-gpu-cr", t.withExactDivideSqrt(true).id());
+    }
+
+    @Test
     void targetRejectsNulls() {
         assertThrows(IllegalArgumentException.class, () -> new Target(null, "a", "b", 0, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> new Target("a", null, "b", 0, 0, 0));

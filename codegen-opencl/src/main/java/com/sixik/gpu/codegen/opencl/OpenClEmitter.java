@@ -102,6 +102,8 @@ public final class OpenClEmitter {
             }
         }
 
+        // native_* - только для ядер с fp=native и только там, где их точность проверена на устройстве
+        int nativeMath = (m.fFp(kernel) & IrModule.FP_NATIVE) != 0 ? target.nativeMath() : 0;
         Helpers helpers = new Helpers();
         Layouts layouts = new Layouts(m, Support.usedTypes(m, reach), options.debug(), global);
         StringBuilder bodies = new StringBuilder();
@@ -110,7 +112,8 @@ public final class OpenClEmitter {
             if (!reach[f]) {
                 continue;
             }
-            FunctionEmitter fe = new FunctionEmitter(m, f, options, helpers, layouts, funcNames, global);
+            FunctionEmitter fe = new FunctionEmitter(m, f, options, helpers, layouts, funcNames, global, nativeMath,
+                    m.fFp(kernel));
             if (f == kernel) {
                 kernelArgs(m, f, fe, args);
             }
@@ -145,8 +148,12 @@ public final class OpenClEmitter {
         }
         src.append(bodies);
 
+        // точное деление и sqrt - опция ужесточает математику и только для ядер, не разрешивших приближения
+        boolean approximate = (m.fFp(kernel) & (IrModule.FP_RECIPROCAL | IrModule.FP_NATIVE)) != 0;
+        String buildOptions = target.exactDivideSqrt() && !approximate && Support.usesFloatDivideOrSqrt(m, reach)
+                ? Target.EXACT_DIVIDE_SQRT_OPTION : "";
         Artifact artifact = new Artifact(src.toString(), funcNames[kernel], args, features,
-                "", target, options);
+                buildOptions, target, options);
         return new Result<>(artifact, report.diagnostics());
     }
 

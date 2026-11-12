@@ -114,6 +114,50 @@ final class Support {
     }
 
     /**
+     * Есть ли в достижимых функциях {@code float}-деление (скаляр или вектор) либо {@code sqrt(float)} - операции, чью
+     * точность меняет {@link Target#EXACT_DIVIDE_SQRT_OPTION}.
+     *
+     * @param m     модуль
+     * @param reach достижимые функции
+     * @return {@code true}, если такие операции есть
+     */
+    static boolean usesFloatDivideOrSqrt(IrModule m, boolean[] reach) {
+        int sqrt = com.sixik.gpu.ir.Builtins.idOf("sqrt");
+        boolean[] seen = new boolean[Math.max(1, m.nodeCount())];
+        int[] stack = new int[Math.max(1, m.nodeCount())];
+        for (int f = 0; f < m.functionCount(); f++) {
+            if (!reach[f] || m.fBodyKind(f) != IrModule.BODY_IR) {
+                continue;
+            }
+            int top = 0;
+            int root = m.fBody(f);
+            if (!seen[root]) {
+                seen[root] = true;
+                stack[top++] = root;
+            }
+            while (top > 0) {
+                int n = stack[--top];
+                int op = m.op(n);
+                if (op == Op.DIV || op == Op.INTRINSIC && m.a(n) == sqrt) {
+                    int t = m.type(n);
+                    int scalar = m.typeKind(t) == Types.KIND_VEC ? m.typeA(t) : t;
+                    if (scalar == Types.F32) {
+                        return true;
+                    }
+                }
+                for (int k = 0; k < Operands.count(m, n); k++) {
+                    int c = Operands.get(m, n, k);
+                    if (!seen[c]) {
+                        seen[c] = true;
+                        stack[top++] = c;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Типы, которые встречаются в достижимых функциях (параметры, локали, результаты и узлы), вместе с типами,
      * из которых они составлены: поля struct, элементы массивов и указателей.
      *

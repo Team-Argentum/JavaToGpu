@@ -95,6 +95,16 @@ public record DeviceInfo(int index, long platform, long handle, String platformN
     }
 
     /**
+     * Умеет ли устройство корректно округлённые {@code float}-деление и {@code sqrt}. Без опции сборки OpenCL C
+     * допускает ошибку деления 2.5 ULP и {@code sqrt} 3 ULP, тогда как JVM округляет точно.
+     *
+     * @return {@code true}, если драйвер сообщает {@code CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT}
+     */
+    public boolean exactDivideSqrt() {
+        return (singleFpConfig & DeviceApi.FP_CORRECTLY_ROUNDED_DIVIDE_SQRT) != 0;
+    }
+
+    /**
      * Переводит строку расширений в маску {@link Features}.
      *
      * @param extensions расширения через пробел

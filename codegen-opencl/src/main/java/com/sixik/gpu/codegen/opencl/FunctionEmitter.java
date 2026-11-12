@@ -65,6 +65,15 @@ final class FunctionEmitter {
     private final IrModule m;
     private final int f;
     private final EmitOptions opts;
+    /** Встроенные функции, которые печатаются как {@code native_*} (биты {@link Target#NATIVE_SIN} и т.д.). */
+    private final int nativeMath;
+    /**
+     * Вещественные {@code max}/{@code min} печатаются аппаратными {@code fmax}/{@code fmin}: у ядра {@code fp=finite,nsz}
+     * (NaN нет, знак нуля не важен), и семантика Java ({@code Math.max} с NaN и {@code -0.0}) не нужна.
+     */
+    private final boolean hardwareMinMax;
+    /** {@code 1/sqrt(x)} печатается как {@code rsqrt(x)}: у ядра {@code fp=reciprocal} (приближённое обратное). */
+    private final boolean reciprocalSqrt;
     private final Helpers helpers;
     private final Layouts lay;
     private final String[] funcNames;
@@ -91,10 +100,19 @@ final class FunctionEmitter {
      * @param layouts   имена векторных и struct-типов
      * @param funcNames имена функций по индексу
      * @param global    имена, уже занятые на уровне модуля (имена функций); копируется
+     * @param nativeMath биты {@link Target#NATIVE_SIN} и т.д.: какие float-функции печатать как {@code native_*};
+     *                  0 - только точные функции
+     * @param fp        маска {@code fp} ядра (одно ядро - один артефакт, поэтому она действует на все его функции):
+     *                  {@code finite} и {@code nsz} вместе - {@code fmax}/{@code fmin}, {@code reciprocal} -
+     *                  {@code rsqrt}
      */
     FunctionEmitter(IrModule m, int f, EmitOptions opts, Helpers helpers, Layouts layouts, String[] funcNames,
-                    Names global) {
+                    Names global, int nativeMath, int fp) {
         this.m = m;
+        this.nativeMath = nativeMath;
+        int minMax = IrModule.FP_FINITE | IrModule.FP_NO_SIGNED_ZERO;
+        this.hardwareMinMax = (fp & minMax) == minMax;
+        this.reciprocalSqrt = (fp & IrModule.FP_RECIPROCAL) != 0;
         this.f = f;
         this.opts = opts;
         this.helpers = helpers;
@@ -890,6 +908,10 @@ final class FunctionEmitter {
             if (op == Op.REM) {
                 return new Ex("fmod(" + expr(an).s() + ", " + expr(bn).s() + ")", P_ATOM);
             }
+            if (op == Op.DIV && reciprocalSqrt && isOne(an) && m.op(bn) == Op.INTRINSIC
+                    && Builtins.name(m.a(bn)).equals("sqrt")) {
+                return new Ex("rsqrt(" + expr(Operands.get(m, bn, 0)).s() + ")", P_ATOM);
+            }
             return arithText(op, expr(an), expr(bn));
         }
         if (!Types.isSigned(t)) {
@@ -903,6 +925,16 @@ final class FunctionEmitter {
             return new Ex(fn + "(" + expr(an).s() + ", " + expr(bn).s() + ")", P_ATOM);
         }
         return signedFromUnsigned(n);
+    }
+
+    /** @return узел - скалярная вещественная константа 1 */
+    private boolean isOne(int n) {
+        if (m.op(n) != Op.CONST_FLOAT) {
+            return false;
+        }
+        int t = m.type(n);
+        return t == Types.F32 ? Float.intBitsToFloat(m.a(n)) == 1f
+                : t == Types.F64 && Double.longBitsToDouble(m.constant(m.a(n))) == 1d;
     }
 
     private Ex signedFromUnsigned(int n) {
@@ -1130,6 +1162,22 @@ final class FunctionEmitter {
         return new Ex(sb.append(')').toString(), P_ATOM);
     }
 
+    /**
+     * Имя встроенной функции с учётом разрешённых {@code native_*}: только для {@code float} (скаляр или вектор) и
+     * только для функций, чьи биты есть в {@link #nativeMath}.
+     *
+     * @param name имя встроенной функции
+     * @param t    тип результата
+     * @return {@code "native_" + name} либо {@code name}
+     */
+    private String nativeName(String name, int t) {
+        if (nativeMath == 0 || lay.elem(t) != Types.F32) {
+            return name;
+        }
+        int bit = Target.nativeBit(name);
+        return (nativeMath & bit) != 0 ? "native_" + name : name;
+    }
+
     private Ex intrinsic(int n) {
         int id = m.a(n);
         String name = Builtins.name(id);
@@ -1151,7 +1199,7 @@ final class FunctionEmitter {
             case "getWorkDim":
                 return new Ex("(int)get_work_dim()", P_UNARY);
             case "sin", "cos", "sqrt", "fma": {
-                StringBuilder sb = new StringBuilder(name).append('(');
+                StringBuilder sb = new StringBuilder(nativeName(name, t)).append('(');
                 for (int k = 0; k < cnt; k++) {
                     sb.append(k > 0 ? ", " : "").append(expr(Operands.get(m, n, k)).s());
                 }
@@ -1160,6 +1208,9 @@ final class FunctionEmitter {
             case "max", "min": {
                 String a = expr(Operands.get(m, n, 0)).s();
                 String b = expr(Operands.get(m, n, 1)).s();
+                if (Types.isFloat(lay.elem(t)) && hardwareMinMax) {
+                    return new Ex("f" + name + "(" + a + ", " + b + ")", P_ATOM);
+                }
                 if (Types.isFloat(lay.elem(t))) {
                     boolean max = name.equals("max");
                     int e = lay.elem(t);

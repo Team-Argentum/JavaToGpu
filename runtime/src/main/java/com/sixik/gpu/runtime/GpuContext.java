@@ -221,7 +221,7 @@ public final class GpuContext implements AutoCloseable {
         this.fallback = fallback;
         this.target = new Target("opencl", device.vendor().toLowerCase(java.util.Locale.ROOT).replaceAll("\\W+", "-"),
                 device.isGpu() ? "gpu" : device.isCpu() ? "cpu" : "accelerator", device.features(), 0,
-                device.computeUnits());
+                device.computeUnits()).withExactDivideSqrt(device.exactDivideSqrt());
     }
 
     // =============================================================================================
@@ -655,6 +655,67 @@ public final class GpuContext implements AutoCloseable {
         return device;
     }
 
+    /** Результат калибровки {@code native_*}; {@code null} - ещё не выполнялась. */
+    private volatile NativeMath nativeMath;
+
+    /**
+     * Точность {@code native_sin}/{@code native_cos}/{@code native_sqrt} на этом устройстве и то, какие из них
+     * получают ядра с {@code fp=native} ({@link NativeMath}). Калибровка выполняется при первом обращении (обычно -
+     * при первой сборке ядра с {@code fp=native}), результат хранится в дисковом кэше по устройству и драйверу. Ошибка
+     * драйвера при калибровке сообщается предупреждением и даёт {@link NativeMath#NONE}: ядра остаются точными.
+     *
+     * @return результат калибровки
+     */
+    public NativeMath nativeMath() {
+        NativeMath r = nativeMath;
+        if (r != null) {
+            return r;
+        }
+        lock.lock();
+        try {
+            if (nativeMath == null) {
+                nativeMath = calibrateNativeMath();
+            }
+            return nativeMath;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Под замком. */
+    private NativeMath calibrateNativeMath() {
+        String key = "native-math|" + NativeMath.VERSION + "|" + device.name() + "|" + device.driverVersion();
+        NativeMath saved = disk == null ? null : NativeMath.decode(disk.get(key));
+        if (saved != null) {
+            return saved;
+        }
+        long t0 = System.nanoTime();
+        NativeMath r;
+        try {
+            r = NativeMath.calibrate(api, contextHandle, queue, device.handle());
+        } catch (RuntimeException e) {
+            emit(GpuEvent.Kind.WARNING, NativeMath.KERNEL, 0, 0,
+                    "native math calibration failed, fp=native kernels use the exact functions: " + e.getMessage());
+            return NativeMath.NONE;
+        }
+        emit(GpuEvent.Kind.COMPILE, NativeMath.KERNEL, System.nanoTime() - t0, 0, "calibrated: " + r.describe());
+        if (disk != null) {
+            disk.put(key, r.encode());
+        }
+        return r;
+    }
+
+    /**
+     * Цель генерации для ядра: ядру с {@code fp=native} - с проверенными на устройстве {@code native_*}, остальным -
+     * без них (и без калибровки).
+     */
+    private Target targetFor(IrModule m, int kernel) {
+        if (kernel < 0 || kernel >= m.functionCount() || (m.fFp(kernel) & IrModule.FP_NATIVE) == 0) {
+            return target;
+        }
+        return target.withNativeMath(nativeMath().mask());
+    }
+
     /** @return {@code true} после {@link #close()} */
     public boolean isClosed() {
         return closed;
@@ -810,7 +871,7 @@ public final class GpuContext implements AutoCloseable {
 
     private String cacheKey(IrModule m, int kernel, EmitOptions o) {
         return kernelIdOf(m) + "#" + kernel + "|" + o.debug() + "," + o.sourceName() + "|" + optimizeKey() + "|"
-                + target.id() + "|"
+                + targetFor(m, kernel).id() + "|"
                 + device.name() + "|" + device.driverVersion();
     }
 
@@ -1031,7 +1092,7 @@ public final class GpuContext implements AutoCloseable {
         OptimizeResult optimized = optimizeForEmit(original, originalKernel, options);
         IrModule m = optimized == null ? original : optimized.module();
         int kernel = optimized == null ? originalKernel : optimized.newIndexOf(originalKernel);
-        Result<Artifact> emitted = OpenClEmitter.emit(m, kernel, target, options);
+        Result<Artifact> emitted = OpenClEmitter.emit(m, kernel, targetFor(m, kernel), options);
         if (!emitted.isOk()) {
             return Result.failed(emitted.diagnostics());
         }
@@ -1263,7 +1324,7 @@ public final class GpuContext implements AutoCloseable {
      * @return стадия либо {@code null}, если генератор или драйвер её отверг (сообщается предупреждением)
      */
     private CompiledKernel buildStage(IrModule sm, int fn, EmitOptions options, String id) {
-        Result<Artifact> emitted = OpenClEmitter.emit(sm, fn, target, options);
+        Result<Artifact> emitted = OpenClEmitter.emit(sm, fn, targetFor(sm, fn), options);
         if (!emitted.isOk()) {
             emit(GpuEvent.Kind.WARNING, id, 0, 0, "kernel stage was not generated, the kernel runs whole: "
                     + emitted.diagnostics());

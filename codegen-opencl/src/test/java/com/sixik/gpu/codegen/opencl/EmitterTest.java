@@ -129,6 +129,122 @@ class EmitterTest {
         }
     }
 
+    /** Ядро {@code f[0] = sin(f[0]) + cos(f[1]) + sqrt(f[2]); d[0] = sin(d[0])} с маской {@code fp}. */
+    private static IrModule mathKernel(int fp) {
+        IrBuilder b = new IrBuilder();
+        int fa = b.array(AddressSpace.GLOBAL, Types.F32);
+        int da = b.array(AddressSpace.GLOBAL, Types.F64);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, fa, da);
+        b.fpMode(fp);
+        int[] x = new int[3];
+        for (int k = 0; k < 3; k++) {
+            x[k] = b.load(b.elemPtr(b.param(0), b.constI32(k)));
+        }
+        int f = b.binary(Op.ADD, b.binary(Op.ADD, b.intrinsic(com.sixik.gpu.ir.Builtins.idOf("sin"), x[0]),
+                b.intrinsic(com.sixik.gpu.ir.Builtins.idOf("cos"), x[1])),
+                b.intrinsic(com.sixik.gpu.ir.Builtins.idOf("sqrt"), x[2]));
+        int d = b.intrinsic(com.sixik.gpu.ir.Builtins.idOf("sin"), b.load(b.elemPtr(b.param(1), b.constI32(0))));
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), f),
+                b.store(b.elemPtr(b.param(1), b.constI32(0)), d)));
+        return b.build();
+    }
+
+    private static String emitMath(int fp, int nativeMath) {
+        IrModule m = mathKernel(fp);
+        return OpenClEmitter.emit(m, m.functionCount() - 1, Target.GENERIC.withNativeMath(nativeMath),
+                EmitOptions.RELEASE).value().source();
+    }
+
+    @Test
+    void nativeFunctionsNeedTheKernelFlagAndTheTarget() {
+        String all = emitMath(IrModule.FP_NATIVE, Target.NATIVE_ALL);
+        assertTrue(all.contains("native_sin(") && all.contains("native_cos(") && all.contains("native_sqrt("), all);
+        assertTrue(all.contains("= sin("), "double keeps the exact sin: " + all);
+
+        String partial = emitMath(IrModule.FP_NATIVE, Target.NATIVE_COS);
+        assertTrue(partial.contains("native_cos("), partial);
+        assertFalse(partial.contains("native_sin(") || partial.contains("native_sqrt("), partial);
+
+        assertFalse(emitMath(IrModule.FP_ALL & ~IrModule.FP_NATIVE, Target.NATIVE_ALL).contains("native_"),
+                "a kernel without fp=native stays exact");
+        assertFalse(emitMath(IrModule.FP_NATIVE, 0).contains("native_"), "nothing calibrated on the target");
+    }
+
+    /** Ядро {@code a[0] = a[0] / a[1]} над элементами {@code elem} с маской {@code fp}. */
+    private static IrModule divKernel(int elem, int fp) {
+        IrBuilder b = new IrBuilder();
+        int arr = b.array(AddressSpace.GLOBAL, elem);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        b.fpMode(fp);
+        int x = b.load(b.elemPtr(b.param(0), b.constI32(0)));
+        int y = b.load(b.elemPtr(b.param(0), b.constI32(1)));
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), b.binary(Op.DIV, x, y))));
+        return b.build();
+    }
+
+    private static String options(IrModule m, boolean exact) {
+        return OpenClEmitter.emit(m, m.functionCount() - 1, Target.GENERIC.withExactDivideSqrt(exact),
+                EmitOptions.RELEASE).value().buildOptions();
+    }
+
+    @Test
+    void strictFloatDivisionIsCorrectlyRoundedWhereTheDeviceCan() {
+        assertEquals(Target.EXACT_DIVIDE_SQRT_OPTION, options(divKernel(Types.F32, 0), true));
+        assertEquals(Target.EXACT_DIVIDE_SQRT_OPTION, options(divKernel(Types.F32, IrModule.FP_CONTRACT), true),
+                "contract does not allow an approximate division");
+        assertEquals(Target.EXACT_DIVIDE_SQRT_OPTION, options(mathKernel(0), true), "sqrt(float)");
+        assertEquals("", options(divKernel(Types.F32, 0), false), "the device cannot");
+        assertEquals("", options(divKernel(Types.F32, IrModule.FP_RECIPROCAL), true), "fp=reciprocal");
+        assertEquals("", options(divKernel(Types.F32, IrModule.FP_NATIVE), true), "fp=native");
+        assertEquals("", options(divKernel(Types.I32, 0), true), "integer division");
+        assertEquals("", options(divKernel(Types.F64, 0), true), "double division is always correctly rounded");
+        assertEquals("", options(Fixtures.computeSine(), true), "no division or sqrt");
+    }
+
+    /** Ядро {@code a[0] = max(a[0], a[1]) + min(a[0], a[1]) + 1/sqrt(a[2])} с маской {@code fp}. */
+    private static String fastKernel(int elem, int fp) {
+        IrBuilder b = new IrBuilder();
+        int arr = b.array(AddressSpace.GLOBAL, elem);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        b.fpMode(fp);
+        int[] l = new int[5];
+        for (int k = 0; k < l.length; k++) {
+            l[k] = b.load(b.elemPtr(b.param(0), b.constI32(k)));
+        }
+        int one = elem == Types.F32 ? b.constF32(1f) : b.constF64(1d);
+        int v = b.binary(Op.ADD, b.binary(Op.ADD, b.intrinsic(Builtins.idOf("max"), l[0], l[1]),
+                b.intrinsic(Builtins.idOf("min"), l[2], l[3])),
+                b.binary(Op.DIV, one, b.intrinsic(Builtins.idOf("sqrt"), l[4])));
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), v)));
+        IrModule m = b.build();
+        Result<Artifact> r = OpenClEmitter.emit(m, Target.GENERIC);
+        assertTrue(r.isOk(), r.diagnostics().toString());
+        return r.value().source();
+    }
+
+    @Test
+    void finiteAndNszUseHardwareMinMax() {
+        int both = IrModule.FP_FINITE | IrModule.FP_NO_SIGNED_ZERO;
+        for (int elem : new int[]{Types.F32, Types.F64}) {
+            String fast = fastKernel(elem, both);
+            assertTrue(fast.contains("fmax(") && fast.contains("fmin("), fast);
+            assertFalse(fast.contains("gpu_max_") || fast.contains("gpu_min_"), fast);
+            for (int fp : new int[]{0, IrModule.FP_FINITE, IrModule.FP_NO_SIGNED_ZERO}) {
+                String strict = fastKernel(elem, fp);
+                assertTrue(strict.contains("gpu_max_") && !strict.contains("fmax("),
+                        "NaN or -0.0 still matter with fp=" + fp + ": " + strict);
+            }
+        }
+    }
+
+    @Test
+    void reciprocalUsesRsqrt() {
+        for (int elem : new int[]{Types.F32, Types.F64}) {
+            assertTrue(fastKernel(elem, IrModule.FP_RECIPROCAL).contains("rsqrt("));
+            assertFalse(fastKernel(elem, IrModule.FP_ALL & ~IrModule.FP_RECIPROCAL).contains("rsqrt("));
+        }
+    }
+
     // ---- возможности устройства ---------------------------------------------------------------
 
     @Test

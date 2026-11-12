@@ -45,6 +45,12 @@ public final class FakeDeviceApi implements DeviceApi {
             this(platform, name, vendor, type, memory, extensions, maxGroup, maxConstant, FP_CONFIG_GPU);
         }
 
+        /** @return копия с корректно округлёнными делением и sqrt ({@code CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT}) */
+        public Spec withExactDivideSqrt() {
+            return new Spec(platform, name, vendor, type, memory, extensions, maxGroup, maxConstant,
+                    fpConfig | DeviceApi.FP_CORRECTLY_ROUNDED_DIVIDE_SQRT);
+        }
+
         /** @return копия без аппаратного FMA ({@code CL_FP_FMA} снят) */
         public Spec withoutFma() {
             return new Spec(platform, name, vendor, type, memory, extensions, maxGroup, maxConstant,

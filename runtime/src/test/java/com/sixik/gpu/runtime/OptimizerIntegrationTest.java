@@ -130,6 +130,37 @@ class OptimizerIntegrationTest {
         }
     }
 
+    /** Строгое ядро {@code a[0] = a[0] / a[1]}. */
+    private static IrModule divideKernel(int fp) {
+        IrBuilder b = new IrBuilder();
+        int arr = b.array(AddressSpace.GLOBAL, Types.F32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        b.fpMode(fp);
+        int x = b.load(b.elemPtr(b.param(0), b.constI32(0)));
+        int y = b.load(b.elemPtr(b.param(0), b.constI32(1)));
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)), b.binary(Op.DIV, x, y))));
+        return b.build();
+    }
+
+    @Test
+    void exactDivisionFollowsTheDevice() {
+        FakeDeviceApi exact = new FakeDeviceApi(FakeDeviceApi.Spec.gpu().withExactDivideSqrt());
+        try (GpuContext ctx = GpuContext.builder().api(exact).ignoreEnvironment().build()) {
+            assertTrue(ctx.device().exactDivideSqrt());
+            assertTrue(ctx.compile(divideKernel(0)).isOk());
+            assertTrue(exact.buildOptions().get(0).contains("-cl-fp32-correctly-rounded-divide-sqrt"),
+                    exact.buildOptions().toString());
+            assertTrue(ctx.compile(divideKernel(IrModule.FP_RECIPROCAL)).isOk());
+            assertFalse(exact.buildOptions().get(1).contains("correctly-rounded"), "fp=reciprocal allows 2.5 ULP");
+        }
+        FakeDeviceApi plain = FakeDeviceApi.withGpu();
+        try (GpuContext ctx = GpuContext.builder().api(plain).ignoreEnvironment().build()) {
+            assertFalse(ctx.device().exactDivideSqrt());
+            assertTrue(ctx.compile(divideKernel(0)).isOk());
+            assertFalse(plain.buildOptions().get(0).contains("correctly-rounded"), "the device does not support it");
+        }
+    }
+
     @Test
     void debugEmitKeepsTheSourceUnoptimized() {
         try (GpuContext ctx = GpuContext.builder().api(FakeDeviceApi.withGpu()).ignoreEnvironment()

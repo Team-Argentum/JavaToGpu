@@ -111,4 +111,29 @@ class AutoUlpsTest {
         assertFalse(Compare.sameFloat(exact - 1f, approximate - 1f, 4),
                 "a per-operation budget cannot bound cancellation in output ULPs");
     }
+
+    @Test
+    void exactDivideSqrtBuildMakesFloatDivisionAndSqrtExact() {
+        IrBuilder b = new IrBuilder();
+        int f = kernel(b, Types.F32, "sqrt");
+        IrModule m = b.build();
+        assertEquals(Builtins.ulp(Builtins.idOf("sqrt")), GpuAssert.autoUlps(m, f, false));
+        assertEquals(0, GpuAssert.autoUlps(m, f, true));
+
+        IrBuilder d = new IrBuilder();
+        int arr = d.array(AddressSpace.GLOBAL, Types.F32);
+        int k = d.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        int x = d.load(d.elemPtr(d.param(0), d.constI32(0)));
+        int y = d.load(d.elemPtr(d.param(0), d.constI32(1)));
+        d.endFunction(d.block(d.store(d.elemPtr(d.param(0), d.constI32(0)),
+                d.binary(com.sixik.gpu.ir.Op.DIV, x, y))));
+        IrModule div = d.build();
+        assertEquals(GpuAssert.DEVICE_DIVISION_ULPS, GpuAssert.autoUlps(div, k, false));
+        assertEquals(0, GpuAssert.autoUlps(div, k, true));
+
+        IrBuilder s = new IrBuilder();
+        int sin = kernel(s, Types.F32, "sin");
+        assertEquals(Builtins.ulp(Builtins.idOf("sin")), GpuAssert.autoUlps(s.build(), sin, true),
+                "the option does not touch other builtins");
+    }
 }

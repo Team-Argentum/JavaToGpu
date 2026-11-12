@@ -25,6 +25,20 @@ final class Compare {
      * @return описание первого расхождения либо {@code null}, если значения совпали (или это скаляр)
      */
     static String difference(Object expected, Object actual, int ulps) {
+        return difference(expected, actual, ulps, 0);
+    }
+
+    /**
+     * Сравнивает значение аргумента после запуска; вещественное совпадает, если укладывается в {@code ulps} <b>или</b>
+     * оба значения конечны и {@code |expected - actual| <= absolute}.
+     *
+     * @param expected значение эталонной ветви
+     * @param actual   значение сравниваемой ветви
+     * @param ulps     допустимое расстояние вещественных
+     * @param absolute допустимая абсолютная разность вещественных; 0 - только ULP
+     * @return описание первого расхождения либо {@code null}, если значения совпали (или это скаляр)
+     */
+    static String difference(Object expected, Object actual, int ulps, double absolute) {
         if (expected == null || actual == null) {
             return expected == actual ? null : "null versus a value";
         }
@@ -63,10 +77,10 @@ final class Compare {
                     return lengths(e.length, a.length);
                 }
                 for (int i = 0; i < e.length; i++) {
-                    if (!sameFloat(e[i], a[i], ulps)) {
+                    if (!sameFloat(e[i], a[i], ulps, absolute)) {
                         return at(i, e[i] + " (0x" + Integer.toHexString(Float.floatToRawIntBits(e[i])) + ")",
                                 a[i] + " (0x" + Integer.toHexString(Float.floatToRawIntBits(a[i])) + ")")
-                                + ", distance " + floatDistance(e[i], a[i]) + " ULP, tolerance " + ulps;
+                                + ", distance " + floatDistance(e[i], a[i]) + " ULP, tolerance " + tolerance(ulps, absolute);
                     }
                 }
             }
@@ -76,10 +90,10 @@ final class Compare {
                     return lengths(e.length, a.length);
                 }
                 for (int i = 0; i < e.length; i++) {
-                    if (!sameDouble(e[i], a[i], ulps)) {
+                    if (!sameDouble(e[i], a[i], ulps, absolute)) {
                         return at(i, e[i] + " (0x" + Long.toHexString(Double.doubleToRawLongBits(e[i])) + ")",
                                 a[i] + " (0x" + Long.toHexString(Double.doubleToRawLongBits(a[i])) + ")")
-                                + ", distance " + doubleDistance(e[i], a[i]) + " ULP, tolerance " + ulps;
+                                + ", distance " + doubleDistance(e[i], a[i]) + " ULP, tolerance " + tolerance(ulps, absolute);
                     }
                 }
             }
@@ -133,7 +147,7 @@ final class Compare {
                     return lengths(e.length, a.length);
                 }
                 for (int i = 0; i < e.length; i++) {
-                    String why = objectDifference(e[i], a[i], ulps);
+                    String why = objectDifference(e[i], a[i], ulps, absolute);
                     if (why != null) {
                         return "[" + i + "]: " + why + " (expected " + describe(e[i]) + ", got " + describe(a[i]) + ")";
                     }
@@ -142,6 +156,10 @@ final class Compare {
             default -> throw new IllegalArgumentException("unsupported array " + expected.getClass());
         }
         return null;
+    }
+
+    private static String tolerance(int ulps, double absolute) {
+        return absolute > 0 ? ulps + " ULP or absolute " + absolute : String.valueOf(ulps);
     }
 
     private static String lengths(int e, int a) {
@@ -153,7 +171,7 @@ final class Compare {
     }
 
     /** Объекты хоста (векторы и struct): открытые поля в порядке объявления; вещественные - в ULP, остальное точно. */
-    private static String objectDifference(Object e, Object a, int ulps) {
+    private static String objectDifference(Object e, Object a, int ulps, double absolute) {
         if (e == null || a == null) {
             return e == a ? null : "null versus a value";
         }
@@ -169,13 +187,13 @@ final class Compare {
                 Object y = f.get(a);
                 String why;
                 if (x instanceof Float fx) {
-                    why = sameFloat(fx, (Float) y, ulps) ? null : "field " + f.getName();
+                    why = sameFloat(fx, (Float) y, ulps, absolute) ? null : "field " + f.getName();
                 } else if (x instanceof Double dx) {
-                    why = sameDouble(dx, (Double) y, ulps) ? null : "field " + f.getName();
+                    why = sameDouble(dx, (Double) y, ulps, absolute) ? null : "field " + f.getName();
                 } else if (x == null || x instanceof Number || x instanceof Boolean || x instanceof Character) {
                     why = java.util.Objects.equals(x, y) ? null : "field " + f.getName();
                 } else {
-                    String inner = objectDifference(x, y, ulps);
+                    String inner = objectDifference(x, y, ulps, absolute);
                     why = inner == null ? null : "field " + f.getName() + ": " + inner;
                 }
                 if (why != null) {
@@ -215,6 +233,14 @@ final class Compare {
      * дают одно и то же {@code ord}. Допуск 0 требует побитового равенства.
      */
     static boolean sameFloat(float e, float a, int ulps) {
+        return sameFloat(e, a, ulps, 0);
+    }
+
+    /** {@link #sameFloat(float, float, int)} либо, для конечных значений, {@code |e - a| <= absolute}. */
+    static boolean sameFloat(float e, float a, int ulps, double absolute) {
+        if (absolute > 0 && Float.isFinite(e) && Float.isFinite(a) && Math.abs((double) e - a) <= absolute) {
+            return true;
+        }
         if (Float.isNaN(e) || Float.isNaN(a)) {
             return Float.isNaN(e) && Float.isNaN(a);
         }
@@ -226,6 +252,14 @@ final class Compare {
 
     /** То же для {@code double}: {@code ord(bits) = bits} либо {@code Long.MIN_VALUE - bits}. */
     static boolean sameDouble(double e, double a, int ulps) {
+        return sameDouble(e, a, ulps, 0);
+    }
+
+    /** {@link #sameDouble(double, double, int)} либо, для конечных значений, {@code |e - a| <= absolute}. */
+    static boolean sameDouble(double e, double a, int ulps, double absolute) {
+        if (absolute > 0 && Double.isFinite(e) && Double.isFinite(a) && Math.abs(e - a) <= absolute) {
+            return true;
+        }
         if (Double.isNaN(e) || Double.isNaN(a)) {
             return Double.isNaN(e) && Double.isNaN(a);
         }

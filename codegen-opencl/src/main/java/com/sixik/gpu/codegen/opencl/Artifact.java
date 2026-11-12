@@ -10,7 +10,8 @@ import java.util.List;
  * @param entry            имя {@code __kernel}-функции в {@code source}
  * @param args             раскрытая сигнатура ядра в порядке аргументов OpenCL
  * @param requiredFeatures маска {@link com.sixik.gpu.ir.Features}; рантайм сверяет её с устройством до компиляции
- * @param buildOptions     опции {@code clBuildProgram} (генератор сейчас всегда оставляет пустой строкой: математику драйверу не ослабляем)
+ * @param buildOptions     опции {@code clBuildProgram}: пусто либо {@link Target#EXACT_DIVIDE_SQRT_OPTION} (только
+ *                         ужесточение; ослабляющие математику опции драйверу не передаются)
  * @param target           цель, для которой сгенерирован текст
  * @param options          параметры, с которыми сгенерирован текст
  */

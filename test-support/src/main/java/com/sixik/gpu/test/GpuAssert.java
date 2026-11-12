@@ -2,6 +2,7 @@ package com.sixik.gpu.test;
 
 import com.sixik.gpu.api.WorkItem;
 import com.sixik.gpu.api.WorkItemContext;
+import com.sixik.gpu.codegen.opencl.Target;
 import com.sixik.gpu.ir.Builtins;
 import com.sixik.gpu.ir.Diagnostic;
 import com.sixik.gpu.ir.IrModule;
@@ -16,6 +17,7 @@ import com.sixik.gpu.runtime.GpuContext;
 import com.sixik.gpu.runtime.GpuException;
 import com.sixik.gpu.runtime.JavaToGpu;
 import com.sixik.gpu.runtime.LaunchStats;
+import com.sixik.gpu.runtime.NativeMath;
 import com.sixik.gpu.test.KernelSample.Leg;
 import org.opentest4j.AssertionFailedError;
 
@@ -53,13 +55,28 @@ import java.util.Map;
  * ULP-допуск достижимых builtins для фактического типа результата (таблица 8.3) и 3 ULP, если есть вещественное деление
  * или остаток. Это допуск отдельных операций, а не доказанная граница ошибки всего ядра: накопление ошибки и вычитание
  * близких значений могут увеличить расстояние результата. Для таких образцов задавайте обоснованный
- * {@link KernelSample.Builder#ulps(int) явный допуск}. Исключение JVM (выход за границы, деление на ноль) означает, что интерпретатор <b>обязан</b> отказать;
+ * {@link KernelSample.Builder#ulps(int) явный допуск}.</p>
+ *
+ * <p>Ядро с флагами {@code fp} в {@code compilationProperties} (кроме одного {@code native}) на устройстве считает
+ * <b>не</b> то же, что JVM: {@code a*b+c} становится {@code fma}, {@code x/c} - {@code x*(1/c)} и т.д. Эти
+ * преобразования оптимизатор делает явным кодом в IR, поэтому эталоном для устройства служит интерпретатор по
+ * <b>скомпилированному</b> модулю (ветвь сравнения {@code COMPILED}): допуск тот же - ULP builtins этого модуля, а
+ * отклонение «быстрого» ядра от JVM не проверяется (его величину задаёт сам пользователь флагами). Для
+ * {@code native_*}, разрешённых калибровкой ({@code GpuContext.nativeMath()}): {@code native_sin}/{@code native_cos}
+ * добавляют абсолютный допуск {@link NativeMath#TRIG_MAX_ABS}, {@code native_sqrt} - {@link #NATIVE_SQRT_ULPS} ULP;
+ * абсолютный допуск действует и при явном {@code ulps} образца.</p>
+ *
+ * <p>Исключение JVM (выход за границы, деление на ноль) означает, что интерпретатор <b>обязан</b> отказать;
  * устройство тогда не запускается - поведение не определено.</p>
  */
 public final class GpuAssert {
 
     /** Допуск вещественного деления и остатка на устройстве, ULP (для OpenCL C деление без {@code -cl-fp32-correctly-rounded-divide-sqrt}). */
     static final int DEVICE_DIVISION_ULPS = 3;
+    /** Допуск {@code native_sqrt}, ULP: порог калибровки {@code 2^-20} относительной ошибки - не больше 8 ULP float. */
+    static final int NATIVE_SQRT_ULPS = 8;
+    /** Биты {@code fp}, меняющие результат относительно JVM ({@code native} учитывается допуском, а не эталоном). */
+    private static final int REWRITING_FP = IrModule.FP_ALL & ~IrModule.FP_NATIVE;
     /** Бюджет шагов интерпретатора: зациклившееся ядро должно падать с {@code IN-R03}, а не вешать тест. */
     private static final Interpreter.Options BUDGET = new Interpreter.Options(200_000_000L);
 
@@ -75,8 +92,13 @@ public final class GpuAssert {
      * @param jvmThrew JVM бросила исключение, а интерпретатор отказал, как и обязан
      * @param device   имя устройства, если ветвь DEVICE выполнялась, иначе {@code null}
      * @param ulps     допуск вещественных между устройством и эталоном
+     * @param absolute абсолютный допуск вещественных между устройством и эталоном ({@code native_sin}/{@code native_cos});
+     *                 0 - только ULP
+     * @param compiledReference устройство сверялось с интерпретацией скомпилированного модуля, а не с JVM: у ядра
+     *                 флаги {@code fp}, меняющие результат
      */
-    public record Report(String kernel, List<Leg> ran, Map<Leg, String> skipped, boolean jvmThrew, String device, int ulps) {
+    public record Report(String kernel, List<Leg> ran, Map<Leg, String> skipped, boolean jvmThrew, String device, int ulps,
+                         double absolute, boolean compiledReference) {
 
         /** @return {@code true}, если ветвь выполнялась */
         public boolean ranOn(Leg leg) {
@@ -174,7 +196,8 @@ public final class GpuAssert {
                 }
                 skipped.put(Leg.DEVICE, "the JVM threw an exception, device behavior is undefined");
                 ran.add(Leg.INTERPRETER);
-                return new Report(owner.getSimpleName() + "." + kernel, List.copyOf(ran), skipped, true, null, deviceUlps);
+                return new Report(owner.getSimpleName() + "." + kernel, List.copyOf(ran), skipped, true, null, deviceUlps, 0,
+                        false);
             }
             if (!r.isOk()) {
                 throw new AssertionFailedError(title + ": interpreter refused: " + diagnostics(r.diagnostics()));
@@ -189,6 +212,8 @@ public final class GpuAssert {
 
         // ---- устройство -------------------------------------------------------------------------
         String deviceName = null;
+        double deviceAbsolute = 0;
+        Object[] compiledRef = null;
         if (!sample.legs().contains(Leg.DEVICE)) {
             skipped.put(Leg.DEVICE, "excluded by the sample");
         } else if (device == null) {
@@ -203,8 +228,26 @@ public final class GpuAssert {
                             + diagnostics(compiled.diagnostics()));
                 }
             } else {
+                CompiledKernel ck = compiled.value();
                 if (sample.ulps() < 0) {
-                    deviceUlps = autoUlps(module, compiled.value().function());
+                    deviceUlps = autoUlps(ck.module(), ck.function(),
+                            ck.artifact().buildOptions().contains(Target.EXACT_DIVIDE_SQRT_OPTION));
+                }
+                String src = ck.artifact().source();
+                if (src.contains("native_sin(") || src.contains("native_cos(")) {
+                    deviceAbsolute = NativeMath.TRIG_MAX_ABS;
+                }
+                if (src.contains("native_sqrt(") && sample.ulps() < 0) {
+                    deviceUlps = Math.max(deviceUlps, NATIVE_SQRT_ULPS);
+                }
+                if ((ck.module().fFp(ck.function()) & REWRITING_FP) != 0) {
+                    compiledRef = sample.args();
+                    Result<Interpreter.Execution> ir = Interpreter.run(ck.module(), ck.function(), range.toNdRange(),
+                            BUDGET, compiledRef);
+                    if (!ir.isOk()) {
+                        throw new AssertionFailedError(title + ": interpreter refused the compiled kernel: "
+                                + diagnostics(ir.diagnostics()));
+                    }
                 }
                 Object[] args = sample.args();
                 Result<LaunchStats> r = device.launch(compiled.value(), range.toLaunchConfig(), args);
@@ -227,9 +270,16 @@ public final class GpuAssert {
             compare(title, reference.name(), "INTERPRETER", ref, results.get(Leg.INTERPRETER), interpreterUlps, sample, false);
         }
         if (results.containsKey(Leg.DEVICE)) {
-            compare(title, reference.name(), "DEVICE", ref, results.get(Leg.DEVICE), deviceUlps, sample, false);
+            if (compiledRef != null) {
+                compare(title, "COMPILED", "DEVICE", compiledRef, results.get(Leg.DEVICE), deviceUlps, deviceAbsolute,
+                        sample, false);
+            } else {
+                compare(title, reference.name(), "DEVICE", ref, results.get(Leg.DEVICE), deviceUlps, deviceAbsolute,
+                        sample, false);
+            }
         }
-        return new Report(owner.getSimpleName() + "." + kernel, List.copyOf(ran), skipped, false, deviceName, deviceUlps);
+        return new Report(owner.getSimpleName() + "." + kernel, List.copyOf(ran), skipped, false, deviceName, deviceUlps,
+                deviceAbsolute, compiledRef != null);
     }
 
     // =============================================================================================
@@ -238,14 +288,20 @@ public final class GpuAssert {
 
     private static void compare(String title, String expectedName, String actualName, Object[] expected, Object[] actual,
                                 int ulps, KernelSample sample, boolean skipNullExpected) {
+        compare(title, expectedName, actualName, expected, actual, ulps, 0, sample, skipNullExpected);
+    }
+
+    private static void compare(String title, String expectedName, String actualName, Object[] expected, Object[] actual,
+                                int ulps, double absolute, KernelSample sample, boolean skipNullExpected) {
         for (int i = 0; i < Math.min(expected.length, actual.length); i++) {
             if (sample.ignored().contains(i) || (skipNullExpected && expected[i] == null)) {
                 continue;
             }
-            String why = Compare.difference(expected[i], actual[i], ulps);
+            String why = Compare.difference(expected[i], actual[i], ulps, absolute);
             if (why != null) {
                 throw new AssertionFailedError(title + ": argument " + i + " " + why + " [" + expectedName + " versus "
-                        + actualName + ", tolerance " + ulps + " ULP]");
+                        + actualName + ", tolerance " + ulps + " ULP" + (absolute > 0 ? " or absolute " + absolute : "")
+                        + "]");
             }
         }
     }
@@ -328,6 +384,20 @@ public final class GpuAssert {
      * @return максимум применимых допусков операций, не меньше 0; не является границей ошибки результата
      */
     static int autoUlps(IrModule m, int function) {
+        return autoUlps(m, function, false);
+    }
+
+    /**
+     * То же для ядра, собранного с {@link Target#EXACT_DIVIDE_SQRT_OPTION} или без неё: с опцией {@code float}-деление
+     * и {@code sqrt(float)} корректно округлены, их допуск 0.
+     *
+     * @param m          модуль с валидным IR
+     * @param function   индекс выбранного ядра
+     * @param exactDivideSqrt ядро собрано с опцией точного деления
+     * @return максимум применимых допусков операций, не меньше 0
+     */
+    static int autoUlps(IrModule m, int function, boolean exactDivideSqrt) {
+        int sqrt = Builtins.idOf("sqrt");
         boolean[] seen = new boolean[m.nodeCount()];
         int[] stack = new int[m.nodeCount()];
         int top = 0;
@@ -340,9 +410,12 @@ public final class GpuAssert {
             int op = m.op(n);
             int type = m.type(n);
             int scalar = m.typeKind(type) == Types.KIND_VEC ? m.typeA(type) : type;
+            boolean exact = exactDivideSqrt && scalar == Types.F32;
             if (op == Op.INTRINSIC && Types.isFloat(scalar) && Builtins.isValid(m.a(n))) {
                 int ulps = scalar == Types.F64 ? Builtins.ulp64(m.a(n)) : Builtins.ulp(m.a(n));
-                max = Math.max(max, ulps);
+                max = Math.max(max, exact && m.a(n) == sqrt ? 0 : ulps);
+            } else if (op == Op.DIV && exact) {
+                // корректно округлено, как на JVM
             } else if ((op == Op.DIV || op == Op.REM) && Types.isFloat(scalar)) {
                 max = Math.max(max, DEVICE_DIVISION_ULPS);
             }
