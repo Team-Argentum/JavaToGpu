@@ -1,5 +1,6 @@
 package com.sixik.gpu.frontend.java;
 
+import com.sixik.gpu.frontend.common.KernelResources;
 import com.sixik.gpu.ir.IrBinary;
 import com.sixik.gpu.ir.IrModule;
 import org.junit.jupiter.api.Test;

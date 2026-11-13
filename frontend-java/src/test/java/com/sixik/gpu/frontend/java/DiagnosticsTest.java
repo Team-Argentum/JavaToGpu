@@ -1,5 +1,6 @@
 package com.sixik.gpu.frontend.java;
 
+import com.sixik.gpu.frontend.common.Diag;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -335,11 +336,14 @@ class DiagnosticsTest {
     void everyCodeUsedInSourcesIsInTheTable() throws IOException {
         Pattern p = Pattern.compile("\"(GPU\\d{4})\"");
         Set<String> used = new TreeSet<>();
-        try (Stream<Path> files = Files.walk(Path.of(System.getProperty("frontend.src")))) {
-            for (Path f : files.filter(x -> x.toString().endsWith(".java")).toList()) {
-                Matcher m = p.matcher(Files.readString(f, StandardCharsets.UTF_8));
-                while (m.find()) {
-                    used.add(m.group(1));
+        // исходники frontend-java и frontend-common: общие атрибуты ядра выдают свои коды из frontend-common
+        for (String dir : System.getProperty("frontend.src").split(java.io.File.pathSeparator)) {
+            try (Stream<Path> files = Files.walk(Path.of(dir))) {
+                for (Path f : files.filter(x -> x.toString().endsWith(".java")).toList()) {
+                    Matcher m = p.matcher(Files.readString(f, StandardCharsets.UTF_8));
+                    while (m.find()) {
+                        used.add(m.group(1));
+                    }
                 }
             }
         }

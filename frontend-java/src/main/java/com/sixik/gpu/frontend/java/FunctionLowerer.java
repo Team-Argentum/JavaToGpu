@@ -2,6 +2,7 @@ package com.sixik.gpu.frontend.java;
 
 import com.sixik.gpu.api.Gpu;
 import com.sixik.gpu.api.annotations.Local;
+import com.sixik.gpu.frontend.common.KernelAttributes;
 import com.sixik.gpu.ir.AddressSpace;
 import com.sixik.gpu.ir.Builtins;
 import com.sixik.gpu.ir.IrBuilder;
@@ -29,8 +30,8 @@ import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
-import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.NewArrayTree;
+import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
@@ -140,7 +141,7 @@ final class FunctionLowerer {
     private final Map<ExecutableElement, FnInfo> fns;
     private final TreePath methodPath;
     private final ExecutableElement method;
-    private final KernelAttrs attrs;
+    private final KernelAttributes attrs;
     private final int fallbackIndex;
     private final SourcePositions positions;
     private final CompilationUnitTree unit;
@@ -151,7 +152,7 @@ final class FunctionLowerer {
     private FnSig sig;
 
     private FunctionLowerer(Trees trees, Reporter rep, IrBuilder b, Aggregates aggs, Map<ExecutableElement, FnInfo> fns,
-                            TreePath methodPath, ExecutableElement method, KernelAttrs attrs, int fallbackIndex) {
+                            TreePath methodPath, ExecutableElement method, KernelAttributes attrs, int fallbackIndex) {
         this.trees = trees;
         this.rep = rep;
         this.b = b;
@@ -181,7 +182,7 @@ final class FunctionLowerer {
      * @return сведения о построенной функции
      */
     static FnInfo lower(Trees trees, Reporter rep, IrBuilder b, Aggregates aggs, Map<ExecutableElement, FnInfo> fns,
-                        TreePath methodPath, ExecutableElement method, KernelAttrs attrs, int fallbackIndex) {
+                        TreePath methodPath, ExecutableElement method, KernelAttributes attrs, int fallbackIndex) {
         return new FunctionLowerer(trees, rep, b, aggs, fns, methodPath, method, attrs, fallbackIndex).run();
     }
 

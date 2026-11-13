@@ -1,6 +1,8 @@
 package com.sixik.gpu.frontend.java;
 
 import com.sixik.gpu.api.annotations.Kernel;
+import com.sixik.gpu.api.annotations.WorkGroup;
+import com.sixik.gpu.frontend.common.KernelAttributes;
 import com.sixik.gpu.frontend.java.FunctionLowerer.FnInfo;
 import com.sixik.gpu.ir.Diagnostic;
 import com.sixik.gpu.ir.IrBinary;
@@ -48,7 +50,7 @@ final class ModuleCompiler {
     record Compiled(IrModule module, String kernelId, byte[] bytes) {
     }
 
-    private record Checked(boolean valid, TreePath path, List<SubsetChecker.CallSite> calls, KernelAttrs attrs) {
+    private record Checked(boolean valid, TreePath path, List<SubsetChecker.CallSite> calls, KernelAttributes attrs) {
     }
 
     private final Trees trees;
@@ -92,9 +94,12 @@ final class ModuleCompiler {
             } else {
                 boolean ok = checker.check(path, e);
                 List<SubsetChecker.CallSite> calls = checker.callSites();
-                KernelAttrs attrs = null;
-                if (e.getAnnotation(Kernel.class) != null) {
-                    attrs = KernelAttrs.parse(e, path, rep);
+                KernelAttributes attrs = null;
+                Map<String, Object> kernel = Ann.explicitValues(e, Kernel.class.getCanonicalName());
+                if (kernel != null) {
+                    attrs = KernelAttributes.parse(e.getSimpleName().toString(), kernel,
+                            Ann.explicitValues(e, WorkGroup.class.getCanonicalName()),
+                            (code, args) -> rep.report(path, code, args));
                     ok &= attrs != null;
                 }
                 c = new Checked(ok, path, calls, attrs);

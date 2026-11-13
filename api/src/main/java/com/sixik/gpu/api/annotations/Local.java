@@ -23,11 +23,16 @@ import java.lang.annotation.Target;
  *
  * <p>Ядро с локальной памятью использует синхронизацию группы ({@code uses_group_sync}) и не выполняется как
  * JVM-fallback: оно требует устройства (REWORK_ARCHITECTURE.md, 3.5); для проверки без железа служит
- * IR-интерпретатор. Аннотация на локальной переменной читается фронтендом из исходника - javac не записывает такие
- * аннотации в class-файл.</p>
+ * IR-интерпретатор.</p>
+ *
+ * <p>Цель {@link ElementType#TYPE_USE} нужна фронтенду байткода (REWORK_ARCHITECTURE.md, 17.4): аннотацию объявления
+ * локальной переменной javac в class-файл не пишет, а аннотацию типа пишет
+ * ({@code RuntimeInvisibleTypeAnnotations}, {@code LOCAL_VARIABLE} с диапазоном и слотом). Писать аннотацию
+ * по-прежнему нужно перед типом объявления: {@code @Local float[] tile}; {@code frontend-java} читает её из
+ * исходника.</p>
  */
 @Documented
 @Retention(RetentionPolicy.CLASS)
-@Target({ElementType.LOCAL_VARIABLE, ElementType.PARAMETER})
+@Target({ElementType.LOCAL_VARIABLE, ElementType.PARAMETER, ElementType.TYPE_USE})
 public @interface Local {
 }

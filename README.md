@@ -21,6 +21,7 @@
 | `ir-optimizer` | оптимизатор IR: мёртвый код, математика, CSE/LICM под бюджетом регистров, оценка давления, разбиение ядер |
 | `codegen-opencl` | IR → OpenCL C |
 | `runtime` | `GpuContext`, устройства (FFM), `GpuBuffer`, кэш, запуск, JVM-fallback |
+| `frontend-common` | общий код фронтендов: `compilationProperties`, атрибуты ядра, таблица диагностик, формат ресурсов |
 | `frontend-java` | annotation processor (javac Tree API) → IR |
 | `weaver` | подмена тела `@Kernel`-метода (ASM) |
 | `gradle-plugin` | Gradle-обёртка над `weaver` |

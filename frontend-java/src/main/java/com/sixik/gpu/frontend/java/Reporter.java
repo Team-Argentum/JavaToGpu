@@ -1,5 +1,6 @@
 package com.sixik.gpu.frontend.java;
 
+import com.sixik.gpu.frontend.common.Diag;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;

@@ -1,4 +1,4 @@
-package com.sixik.gpu.frontend.java;
+package com.sixik.gpu.frontend.common;
 
 import com.sixik.gpu.ir.IrModule;
 import org.junit.jupiter.api.Test;

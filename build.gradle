@@ -62,7 +62,9 @@ def allowedProjectDeps = [
         'codegen-opencl': ['ir'],
         'runtime'       : ['api', 'ir', 'ir-optimizer', 'codegen-opencl'],
         // ir-optimizer: шаблон @Reduction проверяется при компиляции тем же кодом, которым рантайм строит ядро
-        'frontend-java' : ['api', 'ir', 'ir-optimizer'],
+        // общий код фронтендов (REWORK_ARCHITECTURE.md, 17.2): не знает ни javac, ни ASM, ни api
+        'frontend-common': ['ir'],
+        'frontend-java' : ['api', 'ir', 'ir-optimizer', 'frontend-common'],
         'weaver'        : [],
         'gradle-plugin' : ['weaver'],
         'test-support'  : ['api', 'ir', 'ir-interpreter', 'runtime'],
@@ -78,7 +80,7 @@ def allowedExternalGroups = [
 
 // Модули «чистого ядра»: данные и чистые функции, без файлового ввода-вывода и нативов.
 def pureCore = ['ir', 'ir-optimizer', 'codegen-opencl']
-def coreModules = ['api', 'ir', 'ir-optimizer', 'ir-interpreter', 'codegen-opencl']
+def coreModules = ['api', 'ir', 'ir-optimizer', 'ir-interpreter', 'codegen-opencl', 'frontend-common']
 
 def forbiddenInCore = [
         'java.lang.foreign', 'javax.annotation.processing', 'javax.lang.model', 'javax.tools',

@@ -1,4 +1,4 @@
-package com.sixik.gpu.frontend.java;
+package com.sixik.gpu.frontend.common;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,7 +17,7 @@ import java.util.Set;
  * ошибка программиста ({@link IllegalArgumentException}); тесты проверяют, что все коды из исходников есть в таблице,
  * а для каждого кода таблицы существует негативный тест.</p>
  */
-final class Diag {
+public final class Diag {
 
     /**
      * Запись таблицы.
@@ -27,7 +27,7 @@ final class Diag {
      * @param message сообщение с местами подстановки {@code {0}}, {@code {1}}...
      * @param hint    подсказка «что делать» либо пустая строка
      */
-    record Entry(String code, boolean error, String message, String hint) {
+    public record Entry(String code, boolean error, String message, String hint) {
     }
 
     private static final Map<String, Entry> TABLE = load();
@@ -39,7 +39,7 @@ final class Diag {
         Map<String, Entry> table = new LinkedHashMap<>();
         try (InputStream in = Diag.class.getResourceAsStream("diagnostics.def")) {
             if (in == null) {
-                throw new IllegalStateException("diagnostics.def not found in the frontend-java module resources");
+                throw new IllegalStateException("diagnostics.def not found in the frontend-common module resources");
             }
             String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             int no = 0;
@@ -70,7 +70,7 @@ final class Diag {
     /**
      * @return все коды таблицы в порядке файла
      */
-    static Set<String> codes() {
+    public static Set<String> codes() {
         return TABLE.keySet();
     }
 
@@ -79,7 +79,7 @@ final class Diag {
      * @return запись таблицы
      * @throws IllegalArgumentException если кода нет в таблице
      */
-    static Entry entry(String code) {
+    public static Entry entry(String code) {
         Entry e = TABLE.get(code);
         if (e == null) {
             throw new IllegalArgumentException("diagnostic code " + code + " is missing from diagnostics.def");
@@ -94,7 +94,7 @@ final class Diag {
      * @param args значения для подстановки вместо {@code {0}}, {@code {1}}...
      * @return итоговая строка
      */
-    static String format(String code, Object... args) {
+    public static String format(String code, Object... args) {
         Entry e = entry(code);
         StringBuilder sb = new StringBuilder(code).append(": ").append(substitute(e.message(), args));
         if (!e.hint().isEmpty()) {

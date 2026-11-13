@@ -1,0 +1,19 @@
+description = 'Code shared by the frontends: compilationProperties, kernel attributes, the diagnostics table, resource format.'
+
+dependencies {
+    // атрибуты ядра пишутся в IrBuilder; константы fp/opt/inline - из IrModule
+    implementation project(':ir')
+}
+
+// Таблица диагностик GPU#### лежит в корне репозитория (diagnostics/diagnostics.def) и упаковывается как ресурс модуля:
+// это данные, общие для всех фронтендов (REWORK_ARCHITECTURE.md, 3.3 и 17.2).
+processResources {
+    from(rootProject.file('diagnostics')) {
+        include 'diagnostics.def'
+        into 'com/sixik/gpu/frontend/common'
+    }
+}
+
+tasks.named('test') {
+    inputs.dir(rootProject.file('diagnostics')).withPropertyName('diagnostics')
+}

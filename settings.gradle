@@ -8,6 +8,7 @@ include 'ir-optimizer'     // оптимизатор IR: DCE, математик
 include 'ir-interpreter'   // эталонный CPU-интерпретатор IR (для тестов и конформанса).
 include 'codegen-opencl'   // IR -> OpenCL C. Чистая функция.
 include 'runtime'          // GpuContext, устройства, буферы, кэш, запуск, JVM-fallback. FFM (Panama).
+include 'frontend-common'  // общий код фронтендов: атрибуты ядра, таблица диагностик, формат ресурсов.
 include 'frontend-java'    // javac Tree API + annotation processor -> пишет IR.
 include 'weaver'           // подмена тела @Kernel-метода (ASM, post-compile).
 include 'gradle-plugin'    // тонкая обёртка над weaver для Gradle.

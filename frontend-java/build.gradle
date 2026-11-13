@@ -3,6 +3,8 @@ description = 'Java frontend: an annotation processor on the javac Tree API, wri
 dependencies {
     implementation project(':api')
     implementation project(':ir')
+    // общий код фронтендов: compilationProperties, атрибуты ядра, таблица диагностик, формат ресурсов (17.2)
+    implementation project(':frontend-common')
     // распознавание шаблона @Reduction - тот же код, которым рантайм строит параллельное ядро
     implementation project(':ir-optimizer')
 
@@ -14,19 +16,12 @@ dependencies {
     testImplementation project(':ir-interpreter')
 }
 
-// Таблица диагностик GPU#### лежит в корне репозитория (diagnostics/diagnostics.def) и упаковывается как ресурс модуля:
-// это данные, общие для будущих фронтендов (REWORK_ARCHITECTURE.md, 3.3).
-processResources {
-    from(rootProject.file('diagnostics')) {
-        include 'diagnostics.def'
-        into 'com/sixik/gpu/frontend/java'
-    }
-}
-
 tasks.named('test') {
     inputs.dir(rootProject.file('diagnostics')).withPropertyName('diagnostics')
     // Тесты компилируют образцы javac in-process: classpath задаём явно, а не полагаемся на java.class.path воркера.
     systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
-    // Исходники фронтенда: тест сверяет коды GPU#### в коде с таблицей диагностик.
-    systemProperty 'frontend.src', file('src/main/java').absolutePath
+    // Исходники фронтенда и общего кода: тест сверяет коды GPU#### в коде с таблицей диагностик.
+    inputs.dir(project(':frontend-common').file('src/main/java')).withPropertyName('commonSources')
+    systemProperty 'frontend.src', [file('src/main/java'), project(':frontend-common').file('src/main/java')]
+            .collect { it.absolutePath }.join(File.pathSeparator)
 }

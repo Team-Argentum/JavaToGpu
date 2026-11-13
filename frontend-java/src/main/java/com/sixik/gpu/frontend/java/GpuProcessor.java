@@ -4,6 +4,8 @@ import com.sixik.gpu.api.annotations.Constant;
 import com.sixik.gpu.api.annotations.DeviceFunction;
 import com.sixik.gpu.api.annotations.Kernel;
 import com.sixik.gpu.api.annotations.Reduction;
+import com.sixik.gpu.frontend.common.Diag;
+import com.sixik.gpu.frontend.common.KernelResources;
 import com.sixik.gpu.ir.optimizer.Reductions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
@@ -196,7 +198,7 @@ public class GpuProcessor extends AbstractProcessor {
         }
         TypeElement owner = (TypeElement) kernel.getEnclosingElement();
         index.add(new KernelResources.IndexEntry(processingEnv.getElementUtils().getBinaryName(owner).toString(),
-                kernel.getSimpleName().toString(), KernelResources.descriptor(kernel), c.kernelId()));
+                kernel.getSimpleName().toString(), Descriptors.descriptor(kernel), c.kernelId()));
     }
 
     private void writeIndex() {

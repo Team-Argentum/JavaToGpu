@@ -42,7 +42,7 @@ class AnnotationsTest {
         assertArrayEquals(new ElementType[]{ElementType.TYPE}, Struct.class.getAnnotation(Target.class).value());
         assertArrayEquals(new ElementType[]{ElementType.PARAMETER}, Global.class.getAnnotation(Target.class).value());
         assertArrayEquals(new ElementType[]{ElementType.FIELD}, Constant.class.getAnnotation(Target.class).value());
-        assertEquals(java.util.Set.of(ElementType.LOCAL_VARIABLE, ElementType.PARAMETER),
+        assertEquals(java.util.Set.of(ElementType.LOCAL_VARIABLE, ElementType.PARAMETER, ElementType.TYPE_USE),
                 java.util.Set.of(Local.class.getAnnotation(Target.class).value()));
     }
 

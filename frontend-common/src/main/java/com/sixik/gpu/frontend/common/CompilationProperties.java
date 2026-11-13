@@ -1,4 +1,4 @@
-package com.sixik.gpu.frontend.java;
+package com.sixik.gpu.frontend.common;
 
 import com.sixik.gpu.ir.IrModule;
 
@@ -16,10 +16,10 @@ import java.util.Map;
  * аргументами сообщения (кроме имени ядра - его подставляет вызывающий). Ключи и значения регистрозависимы и пишутся
  * строчными буквами.</p>
  */
-final class CompilationProperties {
+public final class CompilationProperties {
 
     /** Известные ключи в порядке, в котором они перечисляются в подсказках. */
-    static final List<String> KEYS = List.of("fp", "opt", "inline");
+    public static final List<String> KEYS = List.of("fp", "opt", "inline");
 
     /** Значения {@code fp} и их биты {@code IrModule.FP_*}. */
     private static final Map<String, Integer> FP = new LinkedHashMap<>();
@@ -45,17 +45,17 @@ final class CompilationProperties {
      * @param code код диагностики
      * @param args аргументы сообщения после имени ядра ({@code {1}}, {@code {2}}...)
      */
-    record Problem(String code, Object... args) {
+    public record Problem(String code, Object... args) {
     }
 
     /** Маска {@code fp} (0 - строгий float). */
-    final int fp;
+    public final int fp;
     /** Уровень оптимизации либо {@link IrModule#OPT_INHERIT}. */
-    final int opt;
+    public final int opt;
     /** Политика inline либо {@code -1}, если ключ не задан. */
-    final int inline;
+    public final int inline;
     /** Ошибки разбора; при непустом списке значения полей не используются. */
-    final List<Problem> problems;
+    public final List<Problem> problems;
 
     private CompilationProperties(int fp, int opt, int inline, List<Problem> problems) {
         this.fp = fp;
@@ -67,14 +67,14 @@ final class CompilationProperties {
     /**
      * @return задан ли ключ {@code opt}
      */
-    boolean hasOpt() {
+    public boolean hasOpt() {
         return opt != IrModule.OPT_INHERIT;
     }
 
     /**
      * @return задан ли ключ {@code inline}
      */
-    boolean hasInline() {
+    public boolean hasInline() {
         return inline >= 0;
     }
 
@@ -84,7 +84,7 @@ final class CompilationProperties {
      * @param text значение элемента аннотации
      * @return результат; ошибки - в {@link #problems}
      */
-    static CompilationProperties parse(String text) {
+    public static CompilationProperties parse(String text) {
         List<Problem> problems = new ArrayList<>();
         int fp = 0;
         int opt = IrModule.OPT_INHERIT;
