@@ -282,8 +282,8 @@ final class Structurer {
                 continue;
             }
             Ex d = x.diamond(cond, a, b);
-            Var tmp = MethodLowerer.temp(d.kind);
-            x.emitRaw(new St(St.DECL, tmp, MethodLowerer.zero(d.kind), null, null, 0, false, x.line(), x.group()));
+            Var tmp = MethodLowerer.temp(d);
+            x.emitRaw(new St(St.DECL, tmp, MethodLowerer.zeroOf(tmp), null, null, 0, false, x.line(), x.group()));
             th.add(new St(St.SET, tmp, d.kids[1], null, null, 0, false, x.line(), x.group()));
             el.add(new St(St.SET, tmp, d.kids[2], null, null, 0, false, x.line(), x.group()));
             St s = St.withCond(St.IF, cond, x.line(), x.group());

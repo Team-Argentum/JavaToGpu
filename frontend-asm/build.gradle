@@ -18,9 +18,14 @@ dependencies {
     // A4 (17.15): образцы с device-функциями компилируются javac в памяти вместе с процессором frontend-java - один
     // проход даёт и class-файлы (вход frontend-asm), и IR_java для сравнения
     testImplementation project(':frontend-java')
+    // A5: примеры (examples/) - часть корпуса 17.14-1; их исходники обращаются к рантайму (JavaToGpu, GpuContext)
+    testImplementation project(':runtime')
 }
 
 tasks.named('test') {
     // classpath образцов задаётся явно, а не берётся из java.class.path воркера (как в frontend-java)
     systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
+    systemProperty 'gpu.examples.dir', rootProject.file('examples').absolutePath
+    inputs.dir(rootProject.file('examples/tour/src/main/java'))
+    inputs.dir(rootProject.file('examples/standalone/src/main/java'))
 }

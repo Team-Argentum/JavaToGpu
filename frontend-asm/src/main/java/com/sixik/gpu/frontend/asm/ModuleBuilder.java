@@ -6,6 +6,7 @@ import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Types;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -99,6 +100,8 @@ final class ModuleBuilder {
     private final ClassSource source;
     private final List<AsmDiagnostic> diags;
     private final Map<String, ClassNode> classes = new HashMap<>();
+    /** Агрегаты и указатели API по class-файлам (шаг A5). */
+    private final Aggs aggs = new Aggs(this::classNode);
     private final Set<String> missing = new HashSet<>();
     private final Map<String, Unit> units = new HashMap<>();
     private final Set<String> reportedCycles = new HashSet<>();
@@ -130,7 +133,7 @@ final class ModuleBuilder {
         Map<Unit, MethodLowerer> lowerers = new HashMap<>();
         int before = errorCount();
         for (Unit u : closure(k)) {
-            MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), u.lowered ? new ArrayList<>() : diags);
+            MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), u.lowered ? new ArrayList<>() : diags, aggs);
             ml.callees = mi -> callee(u, mi);
             bodies.put(u, ml.execute());
             lowerers.put(u, ml);
@@ -143,17 +146,16 @@ final class ModuleBuilder {
         order(k, bodies, order);
 
         IrBuilder b = new IrBuilder();
+        Aggs.IrTypes types = aggs.new IrTypes(b);
         Map<String, Integer> fns = new HashMap<>();
         for (Unit u : order) {
             MethodLowerer ml = lowerers.get(u);
             int n = ml.paramKinds.length;
             int[] ptypes = new int[n];
             for (int i = 0; i < n; i++) {
-                ptypes[i] = ml.paramKinds[i] == Kinds.K_ARRAY
-                        ? b.array(ml.paramSpaces[i], Kinds.storageType(ml.paramElems[i]))
-                        : Kinds.irType(ml.paramKinds[i]);
+                ptypes[i] = types.value(ml.paramKinds[i], ml.paramElems[i], ml.paramSpaces[i], ml.paramCls[i]);
             }
-            int ret = ml.retKind == Kinds.K_VOID ? Types.VOID : Kinds.irType(ml.retKind);
+            int ret = types.value(ml.retKind, -1, -1, ml.retCls);
             boolean kernelFn = u.kernel;
             int f = b.beginFunction(kernelFn ? IrModule.KERNEL : IrModule.DEVICE, ret, ptypes);
             if (u.attrs != null) {
@@ -161,7 +163,7 @@ final class ModuleBuilder {
             }
             b.nameFunction(u.name());
             b.nameParams(ml.paramNames);
-            List<Integer> top = new Emitter(b, fns).body(ml.paramVars, ptypes, bodies.get(u));
+            List<Integer> top = new Emitter(b, fns, types, aggs).body(ml.paramVars, ptypes, bodies.get(u));
             int[] root = new int[top.size()];
             for (int i = 0; i < root.length; i++) {
                 root[i] = top.get(i);
@@ -188,6 +190,98 @@ final class ModuleBuilder {
         return u;
     }
 
+    /**
+     * Типы сигнатуры (как {@code SubsetChecker.checkParam} в frontend-java): параметры ({@code GPU0003/0004/0005},
+     * указатель у ядра - {@code GPU0197}), возврат device-функции ({@code GPU0006}) и объявления struct, которые
+     * встречаются в сигнатуре, локалях и {@code new} ({@code GPU0191}).
+     */
+    private void signature(Unit u, MethodLowerer ml) {
+        MethodNode mn = u.decl;
+        Type[] args = Type.getArgumentTypes(mn.desc);
+        for (int i = 0; i < args.length; i++) {
+            String pname = ml.paramNames[i];
+            String shown = args[i].getClassName();
+            switch (ml.paramKinds[i]) {
+                case Kinds.K_INT, Kinds.K_LONG, Kinds.K_FLOAT, Kinds.K_DOUBLE -> {
+                }
+                case Kinds.K_AGG -> checkStruct(u, ml.paramCls[i], u.line);
+                case Kinds.K_PTR -> {
+                    if (u.kernel) {
+                        report(u, "GPU0197", u.line, mn.name, shown);
+                    }
+                }
+                case Kinds.K_BOOLEAN -> report(u, "GPU0004", u.line, pname);
+                case Kinds.K_ARRAY -> {
+                    if (args[i].getSort() != Type.ARRAY) {
+                        break; // GpuFloatArray и др.: элемент - всегда допустимый скаляр
+                    }
+                    int ek = ml.paramElems[i];
+                    if (ek == Kinds.K_ARRAY) {
+                        report(u, "GPU0005", u.line, pname);
+                    } else if (ek == Kinds.K_AGG) {
+                        checkStruct(u, ml.paramCls[i], u.line);
+                    } else if (ek < Kinds.K_BOOLEAN || ek > Kinds.K_DOUBLE) {
+                        report(u, "GPU0003", u.line, args[i].getElementType().getClassName(), pname);
+                    }
+                }
+                default -> report(u, "GPU0003", u.line, shown, pname);
+            }
+        }
+        if (!u.kernel && !u.reduction) {
+            int r = ml.retKind;
+            if (r == Kinds.K_AGG) {
+                checkStruct(u, ml.retCls, u.line);
+            } else if (!(r == Kinds.K_VOID || r == Kinds.K_BOOLEAN || r == Kinds.K_INT || r == Kinds.K_LONG
+                    || r == Kinds.K_FLOAT || r == Kinds.K_DOUBLE)) {
+                report(u, "GPU0006", u.line, Type.getReturnType(mn.desc).getClassName(), mn.name);
+            }
+        } else if (u.reduction && ml.retKind == Kinds.K_AGG) {
+            checkStruct(u, ml.retCls, u.line);
+        }
+        MethodNode body = u.body;
+        if (body.localVariables != null) {
+            for (org.objectweb.asm.tree.LocalVariableNode lv : body.localVariables) {
+                Aggs.Shape sh = aggs.shape(lv.desc);
+                if (sh.kind() == Kinds.K_AGG || sh.kind() == Kinds.K_ARRAY && sh.elemKind() == Kinds.K_AGG) {
+                    checkStruct(u, sh.cls(), u.line);
+                } else if (sh.kind() == Kinds.K_OTHER && !lv.name.equals("this")) {
+                    // локаль неподдерживаемого типа (String, Object, ...): GPU0119, как в frontend-java
+                    report(u, "GPU0119", u.line, Type.getType(lv.desc).getClassName());
+                }
+            }
+        }
+        int ln = u.line;
+        for (org.objectweb.asm.tree.AbstractInsnNode in = body.instructions.getFirst(); in != null; in = in.getNext()) {
+            if (in instanceof org.objectweb.asm.tree.LineNumberNode l) {
+                ln = l.line;
+            } else if (in.getOpcode() == Opcodes.NEW || in.getOpcode() == Opcodes.ANEWARRAY) {
+                String c = ((org.objectweb.asm.tree.TypeInsnNode) in).desc;
+                if (aggs.isAggregate(c)) {
+                    checkStruct(u, c, ln);
+                }
+            }
+        }
+    }
+
+    /** Классы struct, чьё объявление уже проверено (один раз на класс, вместе с вложенными). */
+    private final Set<String> checkedStructs = new HashSet<>();
+
+    private void checkStruct(Unit u, String cls, int line) {
+        if (cls == null || !aggs.isStruct(cls) || !checkedStructs.add(cls)) {
+            return;
+        }
+        String simple = simpleName(cls);
+        for (String problem : aggs.problems(cls)) {
+            report(u, "GPU0191", line, simple, problem);
+        }
+        for (org.objectweb.asm.tree.FieldNode f : aggs.fields(cls)) {
+            Aggs.Shape sh = aggs.shape(f.desc);
+            if (sh.kind() == Kinds.K_AGG) {
+                checkStruct(u, sh.cls(), line);
+            }
+        }
+    }
+
     /** Тело ядра: у сплетённого класса - {@code <имя>$jvm} с тем же дескриптором, иначе сам метод. */
     private static MethodNode bodyOf(ClassNode cn, MethodNode mn) {
         for (MethodNode other : cn.methods) {
@@ -207,7 +301,7 @@ final class ModuleBuilder {
             return;
         }
         u.checked = true;
-        MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), diags);
+        MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), diags, aggs);
         u.ml = ml;
         u.line = ml.firstLine();
         int before = errorCount();
@@ -227,9 +321,11 @@ final class ModuleBuilder {
         if (u.kernel && ml.retKind != Kinds.K_VOID) {
             report(u, "GPU0002", u.line, mn.name);
         }
-        if (u.reduction && (ml.retKind < Kinds.K_INT || ml.retKind > Kinds.K_DOUBLE)) {
+        // вектор или @Struct: компоненты - аккумуляторы, их типы проверяет Reductions.analyze (GPU0018)
+        if (u.reduction && ml.retKind != Kinds.K_AGG && (ml.retKind < Kinds.K_INT || ml.retKind > Kinds.K_DOUBLE)) {
             report(u, "GPU0016", u.line, mn.name);
         }
+        signature(u, ml);
         if (u.kernel) {
             AnnotationNode k = Annotations.find(mn.invisibleAnnotations, Annotations.KERNEL);
             AnnotationNode wg = Annotations.find(mn.invisibleAnnotations, Annotations.WORK_GROUP);
@@ -406,7 +502,7 @@ final class ModuleBuilder {
 
     private boolean sameSpaces(Unit a, Unit b) {
         int[] x = a.ml.paramSpaces;
-        int[] y = new MethodLowerer(b.cls, b.body, b.name(), new ArrayList<>()).paramSpaces;
+        int[] y = new MethodLowerer(b.cls, b.body, b.name(), new ArrayList<>(), aggs).paramSpaces;
         return java.util.Arrays.equals(x, y);
     }
 
@@ -433,7 +529,7 @@ final class ModuleBuilder {
             return null;
         }
         MethodLowerer ml = u.ml;
-        return new MethodLowerer.Callee(u.key, ml.paramKinds, ml.paramSpaces, ml.paramNames, ml.retKind, u.effects);
+        return new MethodLowerer.Callee(u.key, ml.paramKinds, ml.paramSpaces, ml.paramNames, ml.retKind, ml.retCls, u.effects);
     }
 
     // =============================================================================================

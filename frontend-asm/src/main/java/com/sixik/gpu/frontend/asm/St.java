@@ -42,6 +42,13 @@ final class St {
      * {@code body} - стейтменты второго операнда.
      */
     static final int SHORT = 14;
+    /**
+     * Запись через указатель: {@code a} - указатель, {@code b} - значение; {@code aux = 0} - значение раньше адреса
+     * ({@code p.value = v}), {@code 1} - операнды по порядку ({@code p.set(i, v)}).
+     */
+    static final int PSTORE = 15;
+    /** Запись поля struct: {@code a} - корень (локаль или элемент массива), {@code b} - значение, {@link #values} - путь полей. */
+    static final int FSTORE = 16;
 
     final int kind;
     Var var;

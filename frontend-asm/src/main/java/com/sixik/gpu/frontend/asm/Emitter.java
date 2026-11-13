@@ -39,9 +39,14 @@ final class Emitter {
      * @param b         builder модуля
      * @param functions уже построенные функции модуля: ключ ({@code MethodLowerer.key}) → индекс
      */
-    Emitter(IrBuilder b, java.util.Map<String, Integer> functions) {
+    private final Aggs.IrTypes types;
+    private final Aggs aggs;
+
+    Emitter(IrBuilder b, java.util.Map<String, Integer> functions, Aggs.IrTypes types, Aggs aggs) {
         this.b = b;
         this.functions = functions;
+        this.types = types;
+        this.aggs = aggs;
     }
 
     /**
@@ -69,6 +74,8 @@ final class Emitter {
     /** Узлы стейтментов списка по порядку. */
     private int[] list(List<St> stmts) {
         List<Integer> out = new ArrayList<>();
+        List<Pending> outer = pending;
+        pending = new ArrayList<>();
         int group = Integer.MIN_VALUE;
         for (int i = 0; i < stmts.size(); i++) {
             St s = stmts.get(i);
@@ -77,6 +84,7 @@ final class Emitter {
                 // переменные, объявляемые этим исходным стейтментом, - раньше его временных локалей
                 declareGroup(stmts, i, group);
             }
+            flushPending(out, false);
             materialize(s);
             int spills = 0;
             while (i + spills < stmts.size() - 1 && isSpill(stmts.get(i + spills))) {
@@ -108,20 +116,220 @@ final class Emitter {
                 materialize(ts);
                 emit(ts, tr);
             }
-            for (int j = 0; j < spills; j++) {
-                Var v = stmts.get(i + j).var();
-                declare(v, v.irType);
-                out.add(spanned(stmts.get(i + j), b.localDecl(v.irLocal, values[j])));
-                eager.put(v, b.localGet(v.irLocal));
+            // вложенные операнды: operandsFrom внутреннего уровня сохраняет свои значения раньше внешнего, а внешний -
+            // после того, как вычислил следующие за ними операнды (возможно, с новыми стейтментами); в списке внешние
+            // объявления стоят раньше
+            int insertAt = out.size();
+            List<Integer> now = new ArrayList<>();
+            for (List<Integer> g : spillGroups(stmts, i, spills, tEnd)) {
+                Pending pg = new Pending(stmts, i, g, values, tEnd, insertAt);
+                List<Integer> dl = new ArrayList<>();
+                if (finish(pg, dl, false)) {
+                    now.addAll(0, dl); // внешний уровень - раньше в списке
+                } else {
+                    pending.add(pg);
+                }
             }
+            out.addAll(insertAt, now);
+            shiftPending(insertAt, now.size(), null);
             out.addAll(tr);
             i = tEnd - 1;
         }
+        flushPending(out, true);
+        pending = outer;
         int[] r = new int[out.size()];
         for (int i = 0; i < r.length; i++) {
             r[i] = out.get(i);
         }
         return r;
+    }
+
+    /** Группа спиллов, ждущая вычисления операндов потребителя, которые идут после неё. */
+    private static final class Pending {
+        final List<St> stmts;
+        final int i;
+        final List<Integer> g;
+        final int[] values;
+        final int from;
+        int insertAt;
+
+        Pending(List<St> stmts, int i, List<Integer> g, int[] values, int from, int insertAt) {
+            this.stmts = stmts;
+            this.i = i;
+            this.g = g;
+            this.values = values;
+            this.from = from;
+            this.insertAt = insertAt;
+        }
+    }
+
+    /** Группы спиллов, ждущие стейтментов своих операндов. */
+    private List<Pending> pending = new ArrayList<>();
+
+    /**
+     * Объявляет временные локали группы, если операнды потребителя после них уже можно вычислить (их стейтменты
+     * выданы): сначала узлы этих операндов, затем объявления и чтения.
+     *
+     * @param dest  куда добавить узлы объявлений
+     * @param force объявить в любом случае (конец списка)
+     * @return группа объявлена
+     */
+    private boolean finish(Pending pg, List<Integer> dest, boolean force) {
+        List<Ex> later = laterOperands(pg.stmts, pg.i, pg.g, pg.from);
+        if (!force && later != null) {
+            for (Ex e : later) {
+                if (!declared(e)) {
+                    return false;
+                }
+            }
+        }
+        if (later != null) {
+            for (Ex sib : later) {
+                if (!ready.containsKey(sib) && declared(sib)) {
+                    int n = full(sib);
+                    ready.put(sib, n);
+                }
+            }
+        }
+        for (int j : pg.g) {
+            Var v = pg.stmts.get(pg.i + j).var();
+            declare(v, v.irType);
+            dest.add(spanned(pg.stmts.get(pg.i + j), b.localDecl(v.irLocal, pg.values[j])));
+            eager.put(v, b.localGet(v.irLocal));
+        }
+        return true;
+    }
+
+    /** Объявляет отложенные группы, чьи операнды готовы; объявления встают на своё место в списке. */
+    private void flushPending(List<Integer> out, boolean force) {
+        boolean progress = true;
+        while (progress && !pending.isEmpty()) {
+            progress = false;
+            for (int k = 0; k < pending.size(); k++) {
+                Pending pg = pending.get(k);
+                List<Integer> made = new ArrayList<>();
+                if (finish(pg, made, force)) {
+                    pending.remove(k);
+                    out.addAll(pg.insertAt, made);
+                    shiftPending(pg.insertAt, made.size(), pg);
+                    progress = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    private void shiftPending(int at, int count, Pending except) {
+        for (Pending p : pending) {
+            if (p != except && p.insertAt > at) {
+                p.insertAt += count;
+            }
+        }
+    }
+
+    /** Все временные локали, которые читает {@code e}, уже объявлены. */
+    private static boolean declared(Ex e) {
+        if (e.op == Ex.LOCAL_GET && e.var.irLocal < 0 && e.var.temp()) {
+            return false;
+        }
+        for (Ex k : e.kids) {
+            if (!declared(k)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Потребитель временной локали спилла: выражение (или стейтмент), в списке операндов которого стоит её чтение.
+     *
+     * @param owner    выражение или стейтмент
+     * @param operands операнды одного вызова {@code operandsFrom} в порядке вычисления
+     * @param pos      место чтения временной локали среди них
+     */
+    private record Consumer(Object owner, List<Ex> operands, int pos) {
+    }
+
+    /** Спиллы {@code [i, i + spills)}, сгруппированные по потребителю: сначала самый внутренний уровень. */
+    private List<List<Integer>> spillGroups(List<St> stmts, int i, int spills, int from) {
+        java.util.Map<Object, List<Integer>> byOwner = new java.util.IdentityHashMap<>();
+        List<Object> owners = new ArrayList<>();
+        Consumer[] cs = new Consumer[spills];
+        for (int j = 0; j < spills; j++) {
+            cs[j] = consumer(stmts, from, stmts.get(i + j).var());
+            Object key = cs[j] == null ? Integer.valueOf(j) : cs[j].owner();
+            if (!byOwner.containsKey(key)) {
+                byOwner.put(key, new ArrayList<>());
+                owners.add(key);
+            }
+            byOwner.get(key).add(j);
+        }
+        List<List<Integer>> groups = new ArrayList<>();
+        for (Object o : owners) {
+            groups.add(byOwner.get(o));
+        }
+        // верх стека - самый внутренний операнд
+        groups.sort((x, y) -> Integer.compare(y.get(y.size() - 1), x.get(x.size() - 1)));
+        return groups;
+    }
+
+    /** Операнды потребителя, которые frontend-java вычисляет до сохранения значений группы {@code g}. */
+    private List<Ex> laterOperands(List<St> stmts, int i, List<Integer> g, int from) {
+        Consumer c = null;
+        int pos = -1;
+        for (int j : g) {
+            Consumer cj = consumer(stmts, from, stmts.get(i + j).var());
+            if (cj == null) {
+                return null;
+            }
+            c = cj;
+            pos = Math.max(pos, cj.pos());
+        }
+        return c.operands().subList(pos + 1, c.operands().size());
+    }
+
+    private Consumer consumer(List<St> stmts, int from, Var v) {
+        for (int k = from; k < stmts.size(); k++) {
+            St s = stmts.get(k);
+            List<Ex> ops = switch (s.kind()) {
+                case St.STORE -> s.ordered() ? List.of(s.b(), s.c()) : List.of();
+                case St.PSTORE -> s.aux() == 1 ? List.of(s.a().kids[0], s.a().kids[1], s.b()) : List.of();
+                default -> List.of();
+            };
+            for (int p = 0; p < ops.size(); p++) {
+                if (readsTemp(ops.get(p), v)) {
+                    return new Consumer(s, ops, p);
+                }
+            }
+            for (Ex root : new Ex[]{s.a(), s.b(), s.c()}) {
+                Consumer c = root == null ? null : consumer(root, v);
+                if (c != null) {
+                    return c;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Consumer consumer(Ex e, Var v) {
+        for (int p = 0; p < e.kids.length; p++) {
+            if (readsTemp(e.kids[p], v)) {
+                return new Consumer(e, java.util.Arrays.asList(e.kids), p);
+            }
+        }
+        for (Ex k : e.kids) {
+            Consumer c = consumer(k, v);
+            if (c != null) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    /** Операнд - чтение временной локали {@code v} (возможно, под неявным приведением). */
+    private static boolean readsTemp(Ex e, Var v) {
+        Ex x = e.op == Ex.CONVERT && e.implicit ? e.kids[0] : e;
+        return x.op == Ex.LOCAL_GET && x.var == v;
     }
 
     private void emit(St s, List<Integer> out) {
@@ -143,7 +351,8 @@ final class Emitter {
             return;
         }
         for (Ex e : s.ready) {
-            if (!ready.containsKey(e)) {
+            // чтение отложенной временной локали создаётся при её объявлении
+            if (!ready.containsKey(e) && declared(e)) {
                 ready.put(e, full(e));
             }
         }
@@ -241,7 +450,7 @@ final class Emitter {
 
     private void declare(Var v, int irType) {
         if (v.irLocal < 0) {
-            v.irLocal = b.declareLocal(irType);
+            v.irLocal = b.declareLocal(irType >= 0 ? irType : types.value(v.kind, v.elemKind, v.space, v.cls));
             if (v.name != null) {
                 b.nameLocal(v.irLocal, v.name);
             }
@@ -251,6 +460,10 @@ final class Emitter {
     private int stmt(St s) {
         switch (s.kind()) {
             case St.DECL -> {
+                if (s.var().owned) {
+                    // localPointer в frontend-java: тип ссылки создаётся раньше значения ячейки
+                    b.ptr(AddressSpace.PRIVATE, Kinds.storageType(s.var().elemKind));
+                }
                 declare(s.var(), s.var().irType);
                 int d = b.localDecl(s.var().irLocal, full(s.a()));
                 if (s.aux() == 2) {
@@ -290,6 +503,46 @@ final class Emitter {
                     val = b.convert(Types.U8, val);
                 }
                 return b.store(ptr, val);
+            }
+            case St.PSTORE -> {
+                int st;
+                if (s.aux() == 1) {
+                    // p.set(i, v): указатель, индекс и значение по порядку, затем адрес и запись
+                    Ex ptr = s.a();
+                    if (ptr.aux == 1) {
+                        b.ptr(ptr.space, Kinds.storageType(ptr.elemKind));
+                    }
+                    int base = full(ptr.kids[0]);
+                    int idxCore = core(ptr.kids[1]);
+                    int valCore = core(s.b());
+                    int addr = b.elemPtr(base, finish(ptr.kids[1], idxCore));
+                    st = b.store(addr, finish(s.b(), valCore));
+                } else {
+                    int val = full(s.b());
+                    st = b.store(full(s.a()), val);
+                }
+                afterWrite();
+                return st;
+            }
+            case St.FSTORE -> {
+                int node = full(s.b());
+                int[] path = s.values;
+                for (int k = path.length - 1; k >= 0; k--) {
+                    int base = rootRead(s.a());
+                    for (int i = 0; i < k; i++) {
+                        base = b.fieldGet(base, path[i]);
+                    }
+                    node = b.fieldSet(base, path[k], node);
+                }
+                int st;
+                if (s.a().op == Ex.LOCAL_GET) {
+                    st = b.localSet(s.a().var.irLocal, node);
+                } else {
+                    int[] k = kids(s.a());
+                    st = b.store(b.elemPtr(k[0], k[1]), node);
+                }
+                afterWrite();
+                return st;
             }
             case St.EXPR -> {
                 return b.exprStmt(full(s.a()));
@@ -335,6 +588,23 @@ final class Emitter {
         }
     }
 
+    /** Чтение корня записи поля заново ({@code rootRead} в frontend-java). */
+    private int rootRead(Ex root) {
+        if (root.op == Ex.LOCAL_GET) {
+            return b.localGet(root.var.irLocal);
+        }
+        int[] k = kids(root);
+        return b.load(b.elemPtr(k[0], k[1]));
+    }
+
+    /** {@code p.value++} в выражении: значение - local_get старого значения сразу за записью (MODE_OLD). */
+    private void afterWrite() {
+        if (oldValue != null) {
+            eager.put(oldValue, b.localGet(oldValue.irLocal));
+            oldValue = null;
+        }
+    }
+
     /** Узел выражения целиком (с собственным неявным приведением). */
     private int full(Ex e) {
         Integer pre = ready.remove(e);
@@ -342,6 +612,22 @@ final class Emitter {
             return pre;
         }
         return finish(e, core(e));
+    }
+
+    /** Нулевой агрегат ({@code zeroAgg} в frontend-java). */
+    private int zeroAgg(String cls) {
+        int t = types.of(cls);
+        Aggs.Vec v = Aggs.vector(cls);
+        if (v != null) {
+            return b.splat(t, node(MethodLowerer.zero(v.scalarKind())));
+        }
+        List<org.objectweb.asm.tree.FieldNode> fs = aggs.fields(cls);
+        int[] f = new int[fs.size()];
+        for (int i = 0; i < f.length; i++) {
+            Aggs.Shape sh = aggs.shape(fs.get(i).desc);
+            f[i] = sh.kind() == Kinds.K_AGG ? zeroAgg(sh.cls()) : node(MethodLowerer.zero(sh.kind()));
+        }
+        return b.structBuild(t, f);
     }
 
     /** Узел выражения без собственного неявного приведения: его создаёт родитель после соседних операндов. */
@@ -391,14 +677,63 @@ final class Emitter {
                 return pre != null ? pre : b.localGet(e.var.irLocal);
             }
             case Ex.BINARY -> {
+                if (e.kind == Kinds.K_AGG) {
+                    types.of(e.cls);
+                }
                 int[] k = kids(e);
                 return b.binary(e.aux, k[0], k[1]);
             }
             case Ex.NEG -> {
+                if (e.kind == Kinds.K_AGG) {
+                    types.of(e.cls);
+                }
                 return b.neg(kids(e)[0]);
             }
             case Ex.NOT -> {
+                if (e.kind == Kinds.K_AGG) {
+                    types.of(e.cls);
+                }
                 return b.not(kids(e)[0]);
+            }
+            case Ex.FIELD_GET -> {
+                return b.fieldGet(kids(e)[0], e.aux);
+            }
+            case Ex.EXTRACT -> {
+                return b.extract(kids(e)[0], e.aux);
+            }
+            case Ex.BUILD -> {
+                int t = types.of(e.cls);
+                int[] k = kids(e);
+                return Aggs.vector(e.cls) != null ? b.build(t, k) : b.structBuild(t, k);
+            }
+            case Ex.SPLAT -> {
+                int t = types.of(e.cls);
+                return b.splat(t, kids(e)[0]);
+            }
+            case Ex.INSERT -> {
+                types.of(e.cls);
+                int[] k = kids(e);
+                return b.insert(k[0], e.aux, k[1]);
+            }
+            case Ex.SHUFFLE -> {
+                types.of(e.kids[0].cls);
+                return b.shuffle(full(e.kids[0]), e.lanes);
+            }
+            case Ex.LOAD_PTR -> {
+                return b.load(full(e.kids[0]));
+            }
+            case Ex.ELEM_PTR -> {
+                if (e.aux == 1) {
+                    b.ptr(e.space, Kinds.storageType(e.elemKind));
+                }
+                int[] k = kids(e);
+                return b.elemPtr(k[0], k[1]);
+            }
+            case Ex.LOCAL_ADDR -> {
+                return b.localAddr(e.var.irLocal);
+            }
+            case Ex.ZERO_AGG -> {
+                return zeroAgg(e.cls);
             }
             case Ex.CONVERT -> {
                 return b.convert(Kinds.irType(e.kind), full(e.kids[0]));

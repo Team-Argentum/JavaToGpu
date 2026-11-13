@@ -16,13 +16,11 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.invoke.MethodType;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -45,7 +43,13 @@ class CorpusTest {
             "IndexKernels.ids", "IntKernels.ops", "LocalKernels.scan", "LongKernels.ops", "MemoryKernels.prefixSum",
             "SmallTypeKernels.storage",
             "ControlKernels.effects", "LocalKernels.reduceSum", "MemoryKernels.helpers", "MemoryKernels.manyCalls",
-            "MemoryKernels.privateArrays");
+            "MemoryKernels.privateArrays",
+            "LocalKernels.counters", "LocalKernels.histogram", "LocalKernels.wide",
+            "PointerKernels.longs", "PointerKernels.order", "PointerKernels.refs", "PointerKernels.spaces",
+            "PointerKernels.walk",
+            "StructKernels.bodies", "StructKernels.locals", "StructKernels.step", "StructKernels.withParameter",
+            "VectorKernels.byValue", "VectorKernels.floatOps", "VectorKernels.fromScalars", "VectorKernels.intOps",
+            "VectorKernels.wide");
 
     /**
      * Пункт (д) закрытого списка 17.14-3: IR отличается только константами, которые свернул javac ({@code c /= 3} -
@@ -56,7 +60,8 @@ class CorpusTest {
      * {@code convert(select(c, k1, k2))}) IR совпадает.
      */
     private static final Set<String> JAVAC_FOLDED = Set.of("ControlKernels.parameters", "SmallTypeKernels.compound",
-            "LongKernels.ops", "MemoryKernels.privateArrays");
+            "LongKernels.ops", "MemoryKernels.privateArrays", "StructKernels.locals", "VectorKernels.floatOps",
+            "VectorKernels.fromScalars");
 
     /**
      * Пункт (г) закрытого списка 17.14-3: локаль без инициализатора ({@code int c1;}) в байткоде не видна до первой
@@ -77,7 +82,8 @@ class CorpusTest {
             "SmallTypeKernels.compound", NdRange.of1D(1),
             "ControlKernels.parameters", NdRange.of1D(1),
             "MemoryKernels.manyCalls", NdRange.of1D(2),
-            "LocalKernels.reduceSum", NdRange.of1D(128, 64));
+            "LocalKernels.reduceSum", NdRange.of1D(128, 64),
+            "LocalKernels.histogram", NdRange.of1D(64, 32));
 
     private record Pair(SampleKernels.Kernel java, AsmFrontend.Kernel asm, List<AsmDiagnostic> diags) {
     }
@@ -153,18 +159,12 @@ class CorpusTest {
         return Optimizer.canonical(r.module());
     }
 
+    /** Шаг A5 завершает корпус 17.14-1: строится каждое ядро {@code SampleKernels}, и каждое перечислено в {@code BUILT}. */
     @Test
-    void everyCorpusKernelIsBuiltOrNotSupportedYet() {
+    void everyCorpusKernelIsBuilt() {
         for (Pair p : corpus()) {
-            if (p.asm() != null) {
-                continue;
-            }
-            assertFalse(p.diags().isEmpty(), p.java().label());
-            for (AsmDiagnostic d : p.diags()) {
-                // корпус - допустимые ядра: единственная причина отказа - конструкция следующего шага 17.15
-                assertEquals("GPU0902", d.code(), p.java().label() + ": " + d);
-                assertTrue(d.message().contains("is not supported by frontend-asm yet"), p.java().label() + ": " + d);
-            }
+            assertTrue(p.asm() != null, p.java().label() + ": " + p.diags());
+            assertTrue(BUILT.contains(p.java().label()), p.java().label() + ": add the kernel to BUILT");
         }
     }
 
@@ -186,7 +186,7 @@ class CorpusTest {
                 if (BUILT.contains(p.java().label())) {
                     assertEquals("ok", rj, p.java().label() + ": the comparison must run the kernel, not two failures");
                 }
-                assertTrue(Arrays.deepEquals(j, a), p.java().label() + ": arguments after the run differ (seed " + seed + ")");
+                assertTrue(same(j, a), p.java().label() + ": arguments after the run differ (seed " + seed + ")");
             }
             checked++;
         }
@@ -194,8 +194,52 @@ class CorpusTest {
     }
 
     /**
+     * Побитовое сравнение аргументов: массивы - поэлементно, объекты struct и векторы - по полям (у них нет
+     * {@code equals}), числа - через {@code equals} обёрток (побитово для float/double).
+     */
+    private static boolean same(Object x, Object y) {
+        if (x == null || y == null) {
+            return x == y;
+        }
+        if (x.getClass() != y.getClass()) {
+            return false;
+        }
+        if (x.getClass().isArray()) {
+            int n = java.lang.reflect.Array.getLength(x);
+            if (n != java.lang.reflect.Array.getLength(y)) {
+                return false;
+            }
+            for (int i = 0; i < n; i++) {
+                if (!same(java.lang.reflect.Array.get(x, i), java.lang.reflect.Array.get(y, i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (x instanceof Number || x instanceof Boolean || x instanceof Character) {
+            return x.equals(y);
+        }
+        for (Class<?> c = x.getClass(); c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                    continue;
+                }
+                f.setAccessible(true);
+                try {
+                    if (!same(f.get(x), f.get(y))) {
+                        return false;
+                    }
+                } catch (IllegalAccessException e) {
+                    throw new AssertionError(e);
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
      * Случайные аргументы; у {@code transpose} ширина и высота должны совпадать с запуском, у {@code reduceSum} вход -
-     * по элементу на work-item двух групп по 64.
+     * по элементу на work-item двух групп по 64, у {@code histogram} - двух групп по 32 и 16 корзин.
      */
     private static Object[] args(SampleKernels.Kernel k, long seed) {
         Object[] a = SampleArgs.random(k, seed).get();
@@ -211,6 +255,15 @@ class CorpusTest {
             }
             a[0] = in;
             a[1] = new int[2];
+        }
+        if (k.label().equals("LocalKernels.histogram")) {
+            java.util.Random rnd = new java.util.Random(seed);
+            int[] data = new int[64];
+            for (int i = 0; i < data.length; i++) {
+                data[i] = rnd.nextInt();
+            }
+            a[0] = data;
+            a[1] = new int[16];
         }
         return a;
     }

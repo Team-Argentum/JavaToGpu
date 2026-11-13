@@ -33,8 +33,8 @@ final class Conds {
      */
     static int relation(int opcode) {
         return switch (opcode) {
-            case Opcodes.IFEQ, Opcodes.IF_ICMPEQ -> Op.EQ;
-            case Opcodes.IFNE, Opcodes.IF_ICMPNE -> Op.NE;
+            case Opcodes.IFEQ, Opcodes.IF_ICMPEQ, Opcodes.IF_ACMPEQ -> Op.EQ;
+            case Opcodes.IFNE, Opcodes.IF_ICMPNE, Opcodes.IF_ACMPNE -> Op.NE;
             case Opcodes.IFLT, Opcodes.IF_ICMPLT -> Op.LT;
             case Opcodes.IFGE, Opcodes.IF_ICMPGE -> Op.GE;
             case Opcodes.IFGT, Opcodes.IF_ICMPGT -> Op.GT;

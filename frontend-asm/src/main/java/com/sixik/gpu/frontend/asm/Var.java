@@ -21,6 +21,10 @@ final class Var {
     final int paramIndex;
     /** Номер локали IR либо -1, пока не объявлена. */
     int irLocal = -1;
+    /** Внутреннее имя агрегата (у массива - элемента), иначе {@code null}. */
+    String cls;
+    /** Локаль-ссылка {@code FloatPtr}: хранит значение ячейки, чтение даёт её адрес. */
+    boolean owned;
 
     Var(String name, int kind, int elemKind, int space, int irType, int paramIndex) {
         this.name = name;

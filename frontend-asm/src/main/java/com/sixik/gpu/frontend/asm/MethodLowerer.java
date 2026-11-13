@@ -16,6 +16,7 @@ import org.objectweb.asm.tree.LocalVariableAnnotationNode;
 import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.MultiANewArrayInsnNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
@@ -82,7 +83,8 @@ final class MethodLowerer {
      * @param retKind     вид результата
      * @param effects     функция или её вызываемые пишут память, используют барьер или эффектный builtin
      */
-    record Callee(String key, int[] paramKinds, int[] paramSpaces, String[] paramNames, int retKind, boolean effects) {
+    record Callee(String key, int[] paramKinds, int[] paramSpaces, String[] paramNames, int retKind, String retCls,
+                  boolean effects) {
     }
 
     /** Вызов device-функции в теле: инструкция и строка (для диагностик сборщика модуля). */
@@ -109,11 +111,17 @@ final class MethodLowerer {
     final int[] paramKinds;
     final int[] paramElems;
     final int[] paramSpaces;
+    /** Внутреннее имя агрегата параметра (у массива - элемента), иначе {@code null}. */
+    final String[] paramCls;
+    /** Параметр-указатель - ссылка {@code FloatPtr}. */
+    final boolean[] paramRef;
     final String[] paramNames;
     private final int[] paramSlots;
     /** Изменяемый параметр - локаль с начальным значением {@code param(i)}; иначе {@code null}. */
     final Var[] paramVars;
     final int retKind;
+    final String retCls;
+    final Aggs aggs;
 
     /** Паутины переменных: запись LVT → представитель; представитель → переменная. */
     private final Map<LocalVariableNode, LocalVariableNode> webParent = new IdentityHashMap<>();
@@ -140,7 +148,8 @@ final class MethodLowerer {
      * @param name      имя функции (исходное имя метода)
      * @param diags     приёмник диагностик
      */
-    MethodLowerer(String className, MethodNode m, String name, List<AsmDiagnostic> diags) {
+    MethodLowerer(String className, MethodNode m, String name, List<AsmDiagnostic> diags, Aggs aggs) {
+        this.aggs = aggs;
         this.className = className;
         this.m = m;
         this.name = name;
@@ -154,17 +163,24 @@ final class MethodLowerer {
         paramSlots = new int[n];
         paramNames = new String[n];
         paramVars = new Var[n];
+        paramCls = new String[n];
+        paramRef = new boolean[n];
         int slot = (m.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
         for (int i = 0; i < n; i++) {
             String d = args[i].getDescriptor();
-            paramKinds[i] = Kinds.ofDescriptor(d);
-            paramElems[i] = paramKinds[i] == Kinds.K_ARRAY ? Kinds.ofDescriptor(d.substring(1)) : -1;
-            paramSpaces[i] = paramKinds[i] == Kinds.K_ARRAY ? paramSpace(i) : -1;
+            Aggs.Shape sh = aggs.shape(d);
+            paramKinds[i] = sh.kind();
+            paramElems[i] = sh.elemKind();
+            paramCls[i] = sh.cls();
+            paramRef[i] = sh.ref();
+            paramSpaces[i] = paramKinds[i] == Kinds.K_ARRAY ? paramSpace(i) : sh.space();
             paramSlots[i] = slot;
             paramNames[i] = paramName(i, slot);
             slot += args[i].getSize();
         }
-        retKind = Kinds.ofDescriptor(Type.getReturnType(m.desc).getDescriptor());
+        Aggs.Shape rs = aggs.shape(Type.getReturnType(m.desc).getDescriptor());
+        retKind = rs.kind();
+        retCls = rs.cls();
     }
 
     // =============================================================================================
@@ -185,13 +201,6 @@ final class MethodLowerer {
         }
         if ((m.access & Opcodes.ACC_SYNCHRONIZED) != 0) {
             report("GPU0102", firstLine());
-        }
-        for (int i = 0; i < paramKinds.length; i++) {
-            if (paramKinds[i] == Kinds.K_OTHER) {
-                notYet = "parameter of type " + Type.getArgumentTypes(m.desc)[i].getClassName() + " (step A5)";
-            } else if (paramKinds[i] == Kinds.K_ARRAY && (paramElems[i] == Kinds.K_ARRAY || paramElems[i] == Kinds.K_OTHER)) {
-                notYet = "array parameter of non-primitive elements (step A5)";
-            }
         }
         boolean needLvt = m.maxLocals > paramSlotCount();
         if (needLvt && (m.localVariables == null || m.localVariables.isEmpty())) {
@@ -229,22 +238,43 @@ final class MethodLowerer {
                         report("GPU0115", ln, f.owner.replace('/', '.') + "." + f.name);
                     }
                 }
-                case Opcodes.GETFIELD, Opcodes.PUTFIELD, Opcodes.NEW, Opcodes.INVOKEVIRTUAL, Opcodes.INVOKESPECIAL,
-                     Opcodes.AALOAD, Opcodes.AASTORE, Opcodes.ARETURN ->
-                        notYet = notYet != null ? notYet : "objects: vectors, @Struct, pointers and resident arrays (step A5)";
+                case Opcodes.GETFIELD, Opcodes.PUTFIELD -> {
+                    String owner = ((FieldInsnNode) in).owner;
+                    if (!api(owner)) {
+                        notYet = notYet != null ? notYet : "field of class " + owner.replace('/', '.');
+                    }
+                }
+                case Opcodes.NEW -> {
+                    String owner = ((TypeInsnNode) in).desc;
+                    Aggs.Ptr ptr = Aggs.pointer(owner);
+                    if (!aggs.isAggregate(owner) && ptr == null) {
+                        report("GPU0192", ln, Type.getObjectType(owner).getClassName(),
+                                "only vectors, @Struct and pointer references are created in a kernel");
+                    } else if (ptr != null && ptr.ref() && !storedAfterInit(in, owner)) {
+                        report("GPU0198", ln, Type.getObjectType(owner).getClassName(),
+                                "a reference is created only in a local variable declaration");
+                    }
+                }
+                case Opcodes.INVOKEVIRTUAL, Opcodes.INVOKESPECIAL -> {
+                    String owner = ((MethodInsnNode) in).owner;
+                    String mname = ((MethodInsnNode) in).name;
+                    // методы Object у типов API (toString, equals, ...) отвергаются сразу; прочие имена - при понижении
+                    if (!api(owner) && Aggs.resident(owner) < 0 || OBJECT_METHODS.contains(mname)) {
+                        report("GPU0112", ln, owner.replace('/', '.') + "." + mname);
+                    }
+                }
+                case Opcodes.AALOAD, Opcodes.AASTORE, Opcodes.ARETURN -> {
+                    // массивы агрегатов и возврат агрегата: тип проверен по дескрипторам
+                }
                 case Opcodes.INVOKEINTERFACE, Opcodes.INVOKEDYNAMIC -> report("GPU0108", ln);
                 case Opcodes.INVOKESTATIC -> {
                     MethodInsnNode mi = (MethodInsnNode) in;
                     if (mi.owner.equals(GPU)) {
                         if (Builtins.idOf(mi.name) < 0) {
                             report("GPU0112", ln, "Gpu." + mi.name);
-                        } else {
-                            for (Type t : Type.getArgumentTypes(mi.desc)) {
-                                if (t.getSort() == Type.OBJECT) {
-                                    notYet = notYet != null ? notYet : "builtins over pointers: atomics (step A5)";
-                                }
-                            }
                         }
+                    } else if (Aggs.vector(mi.owner) != null || Aggs.pointer(mi.owner) != null) {
+                        // splat, of: API типов
                     } else if (mi.owner.startsWith("java/") || mi.owner.startsWith("javax/")) {
                         report("GPU0112", ln, mi.owner.replace('/', '.') + "." + mi.name);
                     } else {
@@ -255,7 +285,18 @@ final class MethodLowerer {
                         report("GPU0109", ln, Type.getObjectType(((TypeInsnNode) in).desc).getClassName());
                 case Opcodes.ATHROW -> report("GPU0101", ln, "throw");
                 case Opcodes.MONITORENTER, Opcodes.MONITOREXIT -> report("GPU0102", ln);
-                case Opcodes.ANEWARRAY, Opcodes.MULTIANEWARRAY -> report("GPU0117", ln, "an array of arrays or of objects");
+                case Opcodes.MULTIANEWARRAY -> report("GPU0005", ln, Type.getType(((MultiANewArrayInsnNode) in).desc).getClassName());
+                case Opcodes.ANEWARRAY -> {
+                    String comp = ((TypeInsnNode) in).desc;
+                    if (comp.startsWith("[")) {
+                        report("GPU0005", ln, Type.getType(comp).getClassName() + "[]");
+                    } else if (aggs.isAggregate(comp)) {
+                        report("GPU0117", ln, "local array of objects " + Type.getObjectType(comp).getClassName()
+                                + ": on the JVM its elements are null, and on the GPU zeros");
+                    } else {
+                        report("GPU0119", ln, Type.getObjectType(comp).getClassName() + "[]");
+                    }
+                }
                 case Opcodes.JSR, Opcodes.RET -> report("GPU0302", ln, Insns.name(op), name);
                 case Opcodes.GOTO, Opcodes.IFEQ, Opcodes.IFNE, Opcodes.IFLT, Opcodes.IFGE, Opcodes.IFGT, Opcodes.IFLE,
                      Opcodes.IF_ICMPEQ, Opcodes.IF_ICMPNE, Opcodes.IF_ICMPLT, Opcodes.IF_ICMPGE, Opcodes.IF_ICMPGT,
@@ -263,7 +304,9 @@ final class MethodLowerer {
                      Opcodes.FCMPG, Opcodes.DCMPL, Opcodes.DCMPG -> {
                     // управление потоком: структуризатор (17.9)
                 }
-                case Opcodes.IF_ACMPEQ, Opcodes.IF_ACMPNE -> report("GPU0196", ln, "by reference");
+                case Opcodes.IF_ACMPEQ, Opcodes.IF_ACMPNE -> {
+                    // GPU0196 (агрегаты) или GPU0198 (указатели) - по типам операндов при понижении
+                }
                 case Opcodes.IFNULL, Opcodes.IFNONNULL -> report("GPU0107", ln, "null");
                 default -> {
                     if (!Insns.supported(op)) {
@@ -280,6 +323,25 @@ final class MethodLowerer {
         }
         return true;
     }
+
+    /**
+     * Ссылка {@code new FloatPtr(...)} сразу сохраняется в локаль ({@code astore} после {@code <init>}): иначе это не
+     * инициализатор объявления. Аргументы конструктора - скаляры, вложенных {@code new} того же класса нет.
+     */
+    private static boolean storedAfterInit(AbstractInsnNode neu, String owner) {
+        for (AbstractInsnNode in = neu.getNext(); in != null; in = in.getNext()) {
+            if (in instanceof MethodInsnNode mi && mi.getOpcode() == Opcodes.INVOKESPECIAL && mi.owner.equals(owner)
+                    && mi.name.equals("<init>")) {
+                AbstractInsnNode next = nextOpcode(in);
+                return next != null && next.getOpcode() == Opcodes.ASTORE;
+            }
+        }
+        return false;
+    }
+
+    /** Методы {@code Object}: у векторов, struct и указателей на GPU их нет ({@code GPU0112}). */
+    private static final java.util.Set<String> OBJECT_METHODS = java.util.Set.of("toString", "hashCode", "equals",
+            "getClass", "clone", "finalize", "notify", "notifyAll", "wait");
 
     private int errors() {
         int n = 0;
@@ -519,7 +581,19 @@ final class MethodLowerer {
                 return new Var(lv.name, kind, elem, localArraySpace(lv), -1, -1);
             }
             if (kind == Kinds.K_OTHER) {
-                throw new NotYet("local variable of type " + Type.getType(lv.desc).getClassName() + " (step A5)");
+                Aggs.Shape sh = aggs.shape(lv.desc);
+                if (sh.kind() == Kinds.K_AGG) {
+                    Var v = new Var(lv.name, Kinds.K_AGG, -1, -1, -1, -1);
+                    v.cls = sh.cls();
+                    return v;
+                }
+                if (sh.kind() == Kinds.K_PTR) {
+                    Var v = new Var(lv.name, Kinds.K_PTR, sh.elemKind(), sh.space(),
+                            sh.ref() ? Kinds.storageType(sh.elemKind()) : -1, -1);
+                    v.owned = sh.ref();
+                    return v;
+                }
+                throw new NotYet("local variable of type " + Type.getType(lv.desc).getClassName());
             }
             return new Var(lv.name, kind, -1, -1, Kinds.irType(kind), -1);
         });
@@ -558,13 +632,14 @@ final class MethodLowerer {
         int p = paramAtSlot(slot);
         if (p >= 0) {
             return paramVars[p] != null ? Ex.localGet(paramVars[p])
-                    : Ex.param(p, paramKinds[p], paramElems[p], paramSpaces[p]);
+                    : Ex.param(p, paramKinds[p], paramElems[p], paramSpaces[p]).typed(paramCls[p]);
         }
         LocalVariableNode lv = lvtAt(slot, at, false);
         if (lv == null) {
             throw new IllegalStateException("no LocalVariableTable entry for slot " + slot + " at a load");
         }
-        return Ex.localGet(varOf(lv));
+        Var v = varOf(lv);
+        return v.owned ? Ex.localAddr(v) : Ex.localGet(v);
     }
 
     // =============================================================================================
@@ -781,7 +856,7 @@ final class MethodLowerer {
     }
 
     void spillPending() {
-        spillOpen(false, null);
+        spillOpen(false, (Var) null);
     }
 
     int line() {
@@ -834,7 +909,11 @@ final class MethodLowerer {
     boolean ownEffects() {
         for (AbstractInsnNode in = insns.getFirst(); in != null; in = in.getNext()) {
             int op = in.getOpcode();
-            if (op >= Opcodes.IASTORE && op <= Opcodes.SASTORE) {
+            if (op >= Opcodes.IASTORE && op <= Opcodes.SASTORE || op == Opcodes.PUTFIELD) {
+                return true;
+            }
+            if (op == Opcodes.INVOKEVIRTUAL && ((MethodInsnNode) in).name.equals("set")
+                    && (Aggs.pointer(((MethodInsnNode) in).owner) != null || Aggs.resident(((MethodInsnNode) in).owner) >= 0)) {
                 return true;
             }
             if (op == Opcodes.INVOKESTATIC && ((MethodInsnNode) in).owner.equals(GPU)) {
@@ -868,6 +947,15 @@ final class MethodLowerer {
         }
         Ex r = pop();
         Ex l = pop();
+        if (op == Opcodes.IF_ACMPEQ || op == Opcodes.IF_ACMPNE) {
+            if (l.kind == Kinds.K_PTR || r.kind == Kinds.K_PTR) {
+                report("GPU0198", line, simple(l.cls != null ? l.cls : String.valueOf(r.cls)),
+                        "pointers are not compared: compare values (p.get(0)) or indices");
+            } else {
+                report("GPU0196", line, "by reference");
+            }
+            return Ex.constant(Kinds.K_BOOLEAN, 0);
+        }
         return Conds.compare(rel, l, r);
     }
 
@@ -876,6 +964,10 @@ final class MethodLowerer {
      * или {@code boolean} принимает их тип, как в Java); {@code c ? true : false} → {@code c}.
      */
     Ex diamond(Ex c, Ex a, Ex b) {
+        if (a.kind == Kinds.K_PTR || b.kind == Kinds.K_PTR) {
+            report("GPU0198", line, simple(a.cls != null ? a.cls : String.valueOf(b.cls)),
+                    "a pointer cannot be chosen by a conditional expression; use if with assignment");
+        }
         int k;
         if (a.kind == b.kind) {
             k = a.kind;
@@ -954,7 +1046,11 @@ final class MethodLowerer {
             }
             int p = slot < 0 ? -1 : paramAtSlot(slot);
             if (p >= 0 && paramVars[p] == null && paramKinds[p] != Kinds.K_ARRAY) {
-                paramVars[p] = new Var(paramNames[p], paramKinds[p], -1, -1, Kinds.irType(paramKinds[p]), p);
+                int k = paramKinds[p];
+                boolean scalar = k != Kinds.K_AGG && k != Kinds.K_PTR;
+                paramVars[p] = new Var(paramNames[p], k, k == Kinds.K_PTR ? paramElems[p] : -1,
+                        k == Kinds.K_PTR ? paramSpaces[p] : -1, scalar ? Kinds.irType(k) : -1, p);
+                paramVars[p].cls = paramCls[p];
             }
         }
     }
@@ -992,7 +1088,7 @@ final class MethodLowerer {
     private Map<Ex, Var> add(St s) {
         int at = out.size();
         List<Ex> ready = readyValues();
-        Map<Ex, Var> spilled = spillOpen(true, null);
+        Map<Ex, Var> spilled = spillOpen(true, (Var) null);
         out.add(s);
         markReady(at, ready);
         return spilled;
@@ -1003,7 +1099,7 @@ final class MethodLowerer {
         List<Ex> r = new ArrayList<>();
         for (Slot s : stack) {
             Ex e = s.ex();
-            if (e.kind != Kinds.K_ARRAY && e.op != Ex.NEW_ARRAY && e.op != Ex.CMP3) {
+            if (e.kind != Kinds.K_ARRAY && e.op != Ex.NEW_ARRAY && e.op != Ex.CMP3 && e.op != Ex.NEW_OBJ) {
                 r.add(e);
             }
         }
@@ -1023,6 +1119,17 @@ final class MethodLowerer {
      *                ({@code aux = 2}, эмиттер создаёт его чтение сразу за записью {@code x})
      */
     private Map<Ex, Var> spillOpen(boolean operand, Var old) {
+        return spillOpen(operand, e -> old != null && e.op == Ex.LOCAL_GET && e.var == old);
+    }
+
+    /**
+     * Сохраняет открытые значения стека во временные локали.
+     *
+     * @param operand стейтмент - операнд выражения (временная локаль объявляется после него, {@code aux = 1})
+     * @param isOld   значение - старое значение цели постфиксного {@code ++/--} ({@code aux = 2})
+     * @return спилленные значения → их временные локали
+     */
+    private Map<Ex, Var> spillOpen(boolean operand, java.util.function.Predicate<Ex> isOld) {
         Map<Ex, Var> spilled = new IdentityHashMap<>();
         for (int i = 0; i < stack.size(); i++) {
             Slot s = stack.get(i);
@@ -1032,9 +1139,9 @@ final class MethodLowerer {
             }
             Var t = spilled.get(e);
             if (t == null) {
-                t = temp(e.kind);
+                t = temp(e);
                 // aux = 1: временная локаль спилла (эмиттер создаёт её после стейтмента, который её потребовал)
-                int aux = old != null && e.op == Ex.LOCAL_GET && e.var == old ? 2 : operand ? 1 : 0;
+                int aux = isOld.test(e) ? 2 : operand ? 1 : 0;
                 out.add(new St(St.DECL, t, e, null, null, aux, false, line, group));
                 spilled.put(e, t);
             }
@@ -1045,6 +1152,21 @@ final class MethodLowerer {
 
     static Var temp(int kind) {
         return new Var(null, kind, -1, -1, Kinds.irType(kind), -1);
+    }
+
+    /** Временная локаль для значения {@code like} (агрегат, указатель или скаляр). */
+    static Var temp(Ex like) {
+        if (like.kind != Kinds.K_AGG && like.kind != Kinds.K_PTR) {
+            return temp(like.kind);
+        }
+        Var v = new Var(null, like.kind, like.elemKind, like.space, -1, -1);
+        v.cls = like.cls;
+        return v;
+    }
+
+    /** Нулевое значение переменной (объявление без инициализатора). */
+    static Ex zeroOf(Var v) {
+        return v.kind == Kinds.K_AGG ? Ex.zeroAgg(v.cls) : zero(v.kind);
     }
 
     private St st(int kind, Var v, Ex a) {
@@ -1116,13 +1238,18 @@ final class MethodLowerer {
             case Opcodes.ISTORE, Opcodes.LSTORE, Opcodes.FSTORE, Opcodes.DSTORE, Opcodes.ASTORE -> store((VarInsnNode) in);
             case Opcodes.IINC -> iinc((IincInsnNode) in);
             case Opcodes.IALOAD, Opcodes.LALOAD, Opcodes.FALOAD, Opcodes.DALOAD, Opcodes.BALOAD, Opcodes.CALOAD,
-                 Opcodes.SALOAD -> {
+                 Opcodes.SALOAD, Opcodes.AALOAD -> {
                 Ex idx = pop();
                 Ex arr = pop();
                 push(Ex.load(arr, index(idx)));
             }
             case Opcodes.IASTORE, Opcodes.LASTORE, Opcodes.FASTORE, Opcodes.DASTORE, Opcodes.BASTORE, Opcodes.CASTORE,
-                 Opcodes.SASTORE -> arrayStore();
+                 Opcodes.SASTORE, Opcodes.AASTORE -> arrayStore();
+            case Opcodes.GETFIELD -> getField((FieldInsnNode) in);
+            case Opcodes.PUTFIELD -> putField((FieldInsnNode) in);
+            case Opcodes.NEW -> push(Ex.newObject(((TypeInsnNode) in).desc));
+            case Opcodes.INVOKESPECIAL -> construct((MethodInsnNode) in);
+            case Opcodes.INVOKEVIRTUAL -> apiMethod((MethodInsnNode) in, false);
             case Opcodes.ARRAYLENGTH -> push(Ex.arrayLen(pop()));
             case Opcodes.NEWARRAY -> newArray((IntInsnNode) in);
             case Opcodes.POP -> pop();
@@ -1197,10 +1324,17 @@ final class MethodLowerer {
             }
             case Opcodes.INVOKESTATIC -> {
                 MethodInsnNode mi = (MethodInsnNode) in;
+                if (Aggs.vector(mi.owner) != null || Aggs.pointer(mi.owner) != null) {
+                    apiMethod(mi, true);
+                    return in;
+                }
                 return mi.owner.equals(GPU) ? builtin(mi) : deviceCall(mi);
             }
-            case Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN ->
-                    add(st(St.RETURN, null, coerce(pop(), retKind)));
+            case Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN, Opcodes.ARETURN -> {
+                Ex r = pop();
+                requireFresh(r, retKind, retCls);
+                add(st(St.RETURN, null, coerce(r, retKind)));
+            }
             case Opcodes.RETURN -> {
                 if (!last) {
                     add(st(St.RETURN, null, null));
@@ -1291,11 +1425,45 @@ final class MethodLowerer {
             add(new St(St.ARRAY_DECL, var, null, null, null, v.aux, false, line, group));
             return;
         }
+        if (var.owned || var.kind == Kinds.K_PTR && var.paramIndex >= 0 && paramRef[var.paramIndex]) {
+            if (v.op != Ex.NEW_PTR || var.paramIndex >= 0 || declaringEntry(in.var, in) == null) {
+                report("GPU0198", line, var.name, "a reference is not reassigned: change the value via .value");
+                return;
+            }
+            v = v.kids[0];
+        } else if (var.kind == Kinds.K_PTR) {
+            if (v.op == Ex.NEW_PTR) {
+                report("GPU0198", line, var.name, "an explicit pointer is created with of(array, offset), not a constructor");
+                return;
+            }
+            if (stackHolds(v)) {
+                report("GPU0198", line, var.name, "assignment to a pointer is allowed only as a standalone statement");
+                return;
+            }
+        }
+        requireFresh(v, var.kind, var.cls);
         // объявление ставит Scopes после структурирования (17.10): здесь любая запись - local_set
-        St s = st(St.SET, var, coerce(v, var.kind));
+        St s = st(St.SET, var, var.owned ? v : coerce(v, var.kind));
         s.lvt = var.paramIndex < 0 ? declaringEntry(in.var, in) : null;
         add(s);
         lastStored = var;
+    }
+
+    /** Значение ещё лежит на стеке (присваивание-выражение {@code a = (b = v)}: {@code dup} перед записью). */
+    private boolean stackHolds(Ex v) {
+        for (Slot sl : stack) {
+            if (sl.ex() == v) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** {@code GPU0193}: значение struct, которое сохраняется (в локаль, элемент, поле, возврат), должно быть свежим. */
+    private void requireFresh(Ex v, int kind, String cls) {
+        if (kind == Kinds.K_AGG && cls != null && aggs.isStruct(cls) && !v.isFresh()) {
+            report("GPU0193", line, Type.getObjectType(cls).getClassName());
+        }
     }
 
     private void iinc(IincInsnNode in) {
@@ -1322,6 +1490,7 @@ final class MethodLowerer {
         Ex v = pop();
         Ex idx = pop();
         Slot arr = popSlot();
+        requireFresh(v, arr.ex().elemKind, arr.ex().cls);
         Ex value = coerce(v, arr.ex().elemKind);
         // isPure в frontend-java: любой вызов, кроме чистого builtin, делает порядок вычисления наблюдаемым
         boolean ordered = out.size() > arr.mark() || impureCall(v) || impureCall(idx);
@@ -1395,7 +1564,7 @@ final class MethodLowerer {
                 args[i] = coerce(args[i], c.paramKinds()[i]);
             }
         }
-        Ex call = Ex.call(c.key(), c.retKind(), insns.indexOf(mi), start, args);
+        Ex call = Ex.call(c.key(), c.retKind(), insns.indexOf(mi), start, args).typed(c.retCls());
         AbstractInsnNode next = mi.getNext();
         while (next != null && next.getOpcode() < 0) {
             next = next.getNext();
@@ -1409,9 +1578,9 @@ final class MethodLowerer {
             return next;
         }
         if (c.effects()) {
-            Var t = temp(c.retKind());
+            Var t = temp(call);
             add(st(St.DECL, t, call));
-            push(Ex.localGet(t));
+            push(Ex.localGet(t).asFresh());
             return mi;
         }
         push(call);
@@ -1439,7 +1608,9 @@ final class MethodLowerer {
         boolean anyOpen = false;
         for (int i = 0; i < args.length; i++) {
             int k = Kinds.ofDescriptor(at[i].getDescriptor());
-            if (k != Kinds.K_ARRAY) {
+            if (k == Kinds.K_OTHER) {
+                anyOpen |= args[i].open;
+            } else if (k != Kinds.K_ARRAY) {
                 args[i] = coerce(args[i], k);
                 anyOpen |= args[i].open;
             }
@@ -1448,9 +1619,10 @@ final class MethodLowerer {
             add(new St(St.BARRIER, null, null, null, null, mi.name.equals("barrierGlobal") ? 3 : 1, false, line, group));
             return mi;
         }
-        int rk = Kinds.ofDescriptor(Type.getReturnType(mi.desc).getDescriptor());
+        Aggs.Shape rs = aggs.shape(Type.getReturnType(mi.desc).getDescriptor());
+        int rk = rs.kind();
         boolean effect = Builtins.has(id, Builtins.EFFECT);
-        Ex call = Ex.intrinsic(id, rk, anyOpen || Builtins.has(id, Builtins.READS), args);
+        Ex call = Ex.intrinsic(id, rk, anyOpen || Builtins.has(id, Builtins.READS), args).typed(rs.cls());
         if (!effect) {
             push(call);
             return mi;
@@ -1468,9 +1640,272 @@ final class MethodLowerer {
             add(st(St.EXPR, null, call));
             return next;
         }
-        Var t = temp(rk);
+        Var t = temp(call);
         add(st(St.DECL, t, call));
         push(Ex.localGet(t));
         return mi;
+    }
+
+    // =============================================================================================
+    // Объекты API: векторы, struct, указатели (шаг A5, 17.8)
+    // =============================================================================================
+
+    /** @return класс - вектор, {@code @Struct} или указатель */
+    private boolean api(String owner) {
+        return aggs.isAggregate(owner) || Aggs.pointer(owner) != null;
+    }
+
+    private void getField(FieldInsnNode f) {
+        Ex recv = pop();
+        Aggs.Ptr p = Aggs.pointer(f.owner);
+        if (p != null) {
+            push(Ex.loadPtr(recv));
+            return;
+        }
+        Aggs.Vec v = Aggs.vector(f.owner);
+        if (v != null) {
+            push(Ex.agg(Ex.EXTRACT, v.scalarKind(), null, Aggs.laneIndex(v, f.name), recv));
+            return;
+        }
+        Aggs.Shape s = aggs.shape(f.desc);
+        push(Ex.agg(Ex.FIELD_GET, s.kind(), s.cls(), aggs.fieldIndex(f.owner, f.name), recv));
+    }
+
+    /**
+     * {@code putfield}: запись через указатель ({@code p.value = v}) или в поле struct - локали или элемента массива
+     * ({@code fieldRef} в frontend-java: цепочка полей пересобирается {@code field_set} от корня).
+     */
+    private void putField(FieldInsnNode f) {
+        Ex v = pop();
+        Ex recv = pop();
+        St s;
+        Ex reread;
+        if (Aggs.pointer(f.owner) != null) {
+            s = new St(St.PSTORE, null, recv, null, null, 0, false, line, group);
+            reread = Ex.loadPtr(recv);
+        } else if (Aggs.vector(f.owner) != null) {
+            report("GPU0194", line, f.name, "a field can be changed only on a struct (vectors are immutable)");
+            return;
+        } else {
+            java.util.ArrayDeque<Integer> path = new java.util.ArrayDeque<>();
+            path.add(aggs.fieldIndex(f.owner, f.name));
+            Ex root = recv;
+            while (root.op == Ex.FIELD_GET) {
+                path.addFirst(root.aux);
+                root = root.kids[0];
+            }
+            boolean local = root.op == Ex.LOCAL_GET && !root.var.temp() && root.var.paramIndex < 0;
+            if (!local && root.op != Ex.LOAD) {
+                report("GPU0194", line, f.name, root.op == Ex.PARAM || root.op == Ex.LOCAL_GET
+                        ? "a struct parameter is read-only" : "the write target must be a local variable or an array element");
+                return;
+            }
+            s = new St(St.FSTORE, null, root, null, null, 0, false, line, group);
+            s.values = path.stream().mapToInt(Integer::intValue).toArray();
+            Aggs.Shape fs = aggs.shape(f.desc);
+            requireFresh(v, fs.kind(), fs.cls());
+            reread = Ex.agg(Ex.FIELD_GET, fs.kind(), fs.cls(), aggs.fieldIndex(f.owner, f.name), recv);
+        }
+        int fk = Aggs.pointer(f.owner) != null ? Aggs.pointer(f.owner).elemKind() : aggs.shape(f.desc).kind();
+        // значение присваивания (++p.value, x = (s.f = v)): чтение цели после записи, как Target.read()
+        List<Integer> again = new ArrayList<>();
+        for (int i = 0; i < stack.size(); i++) {
+            if (stack.get(i).ex() == v) {
+                again.add(i);
+            }
+        }
+        for (int i = again.size() - 1; i >= 0; i--) {
+            stack.remove((int) again.get(i));
+        }
+        int at = out.size();
+        List<Ex> ready = readyValues();
+        Map<Ex, Var> spilled = spillOpen(true, e -> contains(v, e));
+        Ex value = coerce(substitute(v, spilled), fk);
+        St done = new St(s.kind, null, s.a, value, null, s.aux, false, line, group);
+        done.values = s.values;
+        out.add(done);
+        markReady(at, ready);
+        for (int i : again) {
+            stack.add(i, new Slot(reread, out.size(), curInsn));
+        }
+    }
+
+    private static boolean contains(Ex tree, Ex e) {
+        if (tree == e) {
+            return true;
+        }
+        for (Ex k : tree.kids) {
+            if (contains(k, e)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Подставляет чтения временных локалей вместо спилленных подвыражений. */
+    private static Ex substitute(Ex e, Map<Ex, Var> spilled) {
+        Var t = spilled.get(e);
+        if (t != null) {
+            return Ex.localGet(t);
+        }
+        Ex[] kids = null;
+        for (int i = 0; i < e.kids.length; i++) {
+            Ex k = substitute(e.kids[i], spilled);
+            if (k != e.kids[i]) {
+                if (kids == null) {
+                    kids = e.kids.clone();
+                }
+                kids[i] = k;
+            }
+        }
+        return kids == null ? e : e.withKids(kids);
+    }
+
+    /** {@code invokespecial <init>}: значение заменяет все копии метки {@code new} на стеке (17.8). */
+    private void construct(MethodInsnNode mi) {
+        Type[] at = Type.getArgumentTypes(mi.desc);
+        Ex[] args = new Ex[at.length];
+        for (int i = at.length - 1; i >= 0; i--) {
+            args[i] = pop();
+        }
+        Ex marker = pop();
+        String cls = mi.owner;
+        Ex value;
+        Aggs.Ptr p = Aggs.pointer(cls);
+        Aggs.Vec vec = Aggs.vector(cls);
+        if (p != null) {
+            if (!p.ref()) {
+                report("GPU0198", line, simple(cls), "an explicit pointer is created with of(array, offset), not a constructor");
+                return;
+            }
+            value = Ex.newPtr(args.length == 0 ? zero(p.elemKind()) : coerce(args[0], p.elemKind()), p.elemKind());
+        } else if (vec != null) {
+            if (args.length != vec.lanes()) {
+                report("GPU0192", line, simple(cls), "a vector is created with a constructor over all components");
+                return;
+            }
+            for (int i = 0; i < args.length; i++) {
+                args[i] = coerce(args[i], vec.scalarKind());
+            }
+            value = Ex.agg(Ex.BUILD, Kinds.K_AGG, cls, 0, args);
+        } else {
+            List<org.objectweb.asm.tree.FieldNode> fs = aggs.fields(cls);
+            if (args.length == 0 || args.length != fs.size()) {
+                report("GPU0192", line, simple(cls), "a no-arg constructor would leave object fields null; list all fields");
+                return;
+            }
+            for (int i = 0; i < args.length; i++) {
+                Aggs.Shape fsh = aggs.shape(fs.get(i).desc);
+                // поле-struct хранит ссылку, поэтому и аргумент обязан быть свежим значением
+                requireFresh(args[i], fsh.kind(), fsh.cls());
+                args[i] = coerce(args[i], fsh.kind());
+            }
+            value = Ex.agg(Ex.BUILD, Kinds.K_AGG, cls, 0, args);
+        }
+        for (int i = 0; i < stack.size(); i++) {
+            Slot sl = stack.get(i);
+            if (sl.ex() == marker) {
+                stack.set(i, new Slot(value, sl.mark(), sl.start()));
+            }
+        }
+    }
+
+    private static String simple(String internal) {
+        String n = internal.substring(internal.lastIndexOf('/') + 1);
+        return n.substring(n.lastIndexOf('$') + 1);
+    }
+
+    private static final Map<String, Integer> VECTOR_BINARY = Map.ofEntries(
+            Map.entry("add", Op.ADD), Map.entry("sub", Op.SUB), Map.entry("mul", Op.MUL), Map.entry("div", Op.DIV),
+            Map.entry("rem", Op.REM), Map.entry("and", Op.AND), Map.entry("or", Op.OR), Map.entry("xor", Op.XOR),
+            Map.entry("shl", Op.SHL), Map.entry("shr", Op.SHR), Map.entry("ushr", Op.USHR));
+
+    /** Методы векторов, struct ({@code copy}), указателей и резидентных массивов (17.11). */
+    private void apiMethod(MethodInsnNode mi, boolean isStatic) {
+        Type[] at = Type.getArgumentTypes(mi.desc);
+        Ex[] args = new Ex[at.length];
+        for (int i = at.length - 1; i >= 0; i--) {
+            args[i] = pop();
+        }
+        Ex recv = isStatic ? null : pop();
+        String name = mi.name;
+        Aggs.Vec vec = Aggs.vector(mi.owner);
+        Aggs.Ptr ptr = Aggs.pointer(mi.owner);
+        int res = Aggs.resident(mi.owner);
+        String retCls = aggs.shape(Type.getReturnType(mi.desc).getDescriptor()).cls();
+        if (vec != null) {
+            int lk = vec.scalarKind();
+            if (name.equals("splat")) {
+                push(Ex.agg(Ex.SPLAT, Kinds.K_AGG, mi.owner, 0, coerce(args[0], lk)));
+            } else if (name.startsWith("with") && args.length == 1) {
+                String suffix = name.substring(4);
+                String lane = Character.toLowerCase(suffix.charAt(0)) + suffix.substring(1);
+                push(Ex.agg(Ex.INSERT, Kinds.K_AGG, mi.owner, Aggs.laneIndex(vec, lane), recv, coerce(args[0], lk)));
+            } else if (name.equals("shuffle")) {
+                int[] lanes = new int[args.length];
+                for (int i = 0; i < lanes.length; i++) {
+                    if (args[i].op != Ex.CONST || args[i].bits < 0 || args[i].bits >= vec.lanes()) {
+                        report("GPU0195", line, vec.lanes() - 1);
+                        lanes[i] = 0;
+                    } else {
+                        lanes[i] = (int) args[i].bits;
+                    }
+                }
+                Ex e = Ex.agg(Ex.SHUFFLE, Kinds.K_AGG, retCls, 0, recv);
+                e.lanes = lanes;
+                push(e);
+            } else if (name.equals("neg") || name.equals("not")) {
+                push(Ex.agg(name.equals("neg") ? Ex.NEG : Ex.NOT, Kinds.K_AGG, mi.owner, 0, recv));
+            } else if (VECTOR_BINARY.containsKey(name) && args.length == 1) {
+                Ex other = args[0].kind == Kinds.K_AGG ? args[0]
+                        : Ex.agg(Ex.SPLAT, Kinds.K_AGG, mi.owner, 0, coerce(args[0], lk));
+                Ex e = Ex.binary(VECTOR_BINARY.get(name), Kinds.K_AGG, recv, other);
+                push(e.typed(mi.owner));
+            } else {
+                report("GPU0112", line, simple(mi.owner) + "." + name);
+                push(recv);
+            }
+            return;
+        }
+        if (ptr != null) {
+            switch (name) {
+                case "of", "plus" -> {
+                    Ex base = isStatic ? args[0] : recv;
+                    Ex off = isStatic ? args[1] : args[0];
+                    if (isStatic && base.space != ptr.space()) {
+                        report("GPU0199", line, simple(mi.owner), spaceName(ptr.space()), spaceName(base.space));
+                    }
+                    push(Ex.elemPtr(base, index(off), ptr.elemKind(), ptr.space(), true));
+                }
+                case "get" -> push(Ex.loadPtr(Ex.elemPtr(recv, index(args[0]), ptr.elemKind(), ptr.space(), true)));
+                case "set" -> pointerSet(Ex.elemPtr(recv, index(args[0]), ptr.elemKind(), ptr.space(), true),
+                        args[1], ptr.elemKind());
+                default -> report("GPU0112", line, simple(mi.owner) + "." + name);
+            }
+            return;
+        }
+        if (res >= 0) {
+            switch (name) {
+                case "length" -> push(Ex.arrayLen(recv));
+                case "get" -> push(Ex.load(recv, index(args[0])));
+                case "set" -> pointerSet(Ex.elemPtr(recv, index(args[0]), res, recv.space, false), args[1], res);
+                default -> report("GPU0112", line, simple(mi.owner) + "." + name);
+            }
+            return;
+        }
+        // struct: copy() - то же значение (агрегаты передаются по значению)
+        if (name.equals("copy") && args.length == 0) {
+            push(recv.asFresh());
+            return;
+        }
+        report("GPU0112", line, simple(mi.owner) + "." + name);
+        if (Type.getReturnType(mi.desc).getSort() != Type.VOID) {
+            push(recv);
+        }
+    }
+
+    /** {@code p.set(i, v)}: операнды по порядку, затем адрес и запись ({@code pointerCall} в frontend-java). */
+    private void pointerSet(Ex ptr, Ex v, int elemKind) {
+        add(new St(St.PSTORE, null, ptr, coerce(v, elemKind), null, 1, false, line, group));
     }
 }

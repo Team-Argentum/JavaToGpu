@@ -19,8 +19,12 @@ final class Kinds {
     static final int K_FLOAT = 7;
     static final int K_DOUBLE = 8;
     static final int K_ARRAY = 9;
-    /** Ссылка на объект, не поддерживаемый на шаге A2 (векторы, struct, указатели - шаг A5). */
+    /** Ссылка на объект, который ядро использовать не может. */
     static final int K_OTHER = 10;
+    /** Вектор или {@code @Struct} (значение-агрегат, 5.20). */
+    static final int K_AGG = 11;
+    /** Указатель или ссылка {@code FloatPtr} (5.21). */
+    static final int K_PTR = 12;
 
     private Kinds() {
     }

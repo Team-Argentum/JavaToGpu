@@ -43,6 +43,30 @@ final class Ex {
      * восстанавливается порядок вызовов исходника, 17.11).
      */
     static final int CALL = 15;
+    /** Поле struct: {@code kids[0]} - значение struct, {@code aux} - номер поля. */
+    static final int FIELD_GET = 16;
+    /** Компонента вектора: {@code aux} - номер. */
+    static final int EXTRACT = 17;
+    /** Вектор или struct из компонент/полей ({@link #cls} - тип). */
+    static final int BUILD = 18;
+    /** Вектор из одного скаляра ({@code splat}). */
+    static final int SPLAT = 19;
+    /** Вектор с заменённой компонентой {@code aux} ({@code withX}). */
+    static final int INSERT = 20;
+    /** Перестановка компонент ({@link #lanes}). */
+    static final int SHUFFLE = 21;
+    /** Чтение через указатель ({@code p.value}, {@code p.get(i)}). */
+    static final int LOAD_PTR = 22;
+    /** Указатель на элемент массива или указателя ({@code of}, {@code plus}); {@code aux = 1} - вызов API указателя. */
+    static final int ELEM_PTR = 23;
+    /** Адрес локали-ссылки {@code FloatPtr}. */
+    static final int LOCAL_ADDR = 24;
+    /** Нулевой агрегат (объявление без инициализатора). */
+    static final int ZERO_AGG = 25;
+    /** Ещё не инициализированный объект ({@code new T} до {@code <init>}). */
+    static final int NEW_OBJ = 26;
+    /** Начальное значение ссылки {@code new FloatPtr(v)}: {@code kids[0]} - значение ячейки. */
+    static final int NEW_PTR = 27;
 
     final int op;
     /** Вид Java результата ({@link Kinds}). */
@@ -65,6 +89,12 @@ final class Ex {
     final boolean implicit;
     /** Для {@link #CALL}: ключ вызываемой функции, иначе {@code null}. */
     final String target;
+    /** Внутреннее имя агрегата (у массива - элемента; у {@code NEW_OBJ} - создаваемого класса), иначе {@code null}. */
+    String cls;
+    /** Номера компонент {@code SHUFFLE}. */
+    int[] lanes;
+    /** Свежее значение struct ({@code copy()}, результат вызова, сохранённый во временную локаль): правило 17.8. */
+    boolean fresh;
 
     private Ex(int op, int kind, int elemKind, int space, boolean open, long bits, int aux, Var var, Ex[] kids,
                boolean implicit) {
@@ -99,7 +129,9 @@ final class Ex {
     static Ex localGet(Var v) {
         // массив-ссылку переназначить нельзя (IR-V04), временная локаль пишется один раз: такие чтения не «открыты»
         boolean open = !v.temp() && v.kind != Kinds.K_ARRAY;
-        return new Ex(LOCAL_GET, v.kind, v.elemKind, v.space, open, 0, 0, v, NONE, false);
+        Ex e = new Ex(LOCAL_GET, v.kind, v.elemKind, v.space, open, 0, 0, v, NONE, false);
+        e.cls = v.cls;
+        return e;
     }
 
     static Ex binary(int irOp, int kind, Ex l, Ex r) {
@@ -115,7 +147,9 @@ final class Ex {
     }
 
     static Ex load(Ex array, Ex index) {
-        return new Ex(LOAD, array.elemKind, -1, -1, true, 0, 0, null, new Ex[]{array, index}, false);
+        Ex e = new Ex(LOAD, array.elemKind, -1, -1, true, 0, 0, null, new Ex[]{array, index}, false);
+        e.cls = array.cls;
+        return e;
     }
 
     static Ex arrayLen(Ex array) {
@@ -138,13 +172,68 @@ final class Ex {
         return new Ex(CALL, kind, -1, -1, true, start, at, null, args, false, target);
     }
 
+    /** Агрегатная операция {@code op} над {@code kids}; открыта, если открыт любой операнд. */
+    static Ex agg(int op, int kind, String cls, int aux, Ex... kids) {
+        boolean open = false;
+        for (Ex k : kids) {
+            open |= k.open;
+        }
+        Ex e = new Ex(op, kind, -1, -1, open, 0, aux, null, kids, false);
+        e.cls = cls;
+        return e;
+    }
+
+    /** Чтение через указатель {@code ptr}. */
+    static Ex loadPtr(Ex ptr) {
+        return new Ex(LOAD_PTR, ptr.elemKind, -1, -1, true, 0, 0, null, new Ex[]{ptr}, false);
+    }
+
+    /** Указатель на элемент {@code index} массива или указателя {@code base} с элементом {@code elemKind}. */
+    static Ex elemPtr(Ex base, Ex index, int elemKind, int space, boolean api) {
+        return new Ex(ELEM_PTR, Kinds.K_PTR, elemKind, space, base.open || index.open, 0, api ? 1 : 0, null,
+                new Ex[]{base, index}, false);
+    }
+
+    /** Адрес локали-ссылки. */
+    static Ex localAddr(Var v) {
+        return new Ex(LOCAL_ADDR, Kinds.K_PTR, v.elemKind, v.space, false, 0, 0, v, NONE, false);
+    }
+
+    /** Нулевое значение агрегата {@code cls}. */
+    static Ex zeroAgg(String cls) {
+        Ex e = new Ex(ZERO_AGG, Kinds.K_AGG, -1, -1, false, 0, 0, null, NONE, false);
+        e.cls = cls;
+        return e;
+    }
+
+    /** Неинициализированный объект класса {@code cls}. */
+    static Ex newObject(String cls) {
+        Ex e = new Ex(NEW_OBJ, Kinds.K_OTHER, -1, -1, false, 0, 0, null, NONE, false);
+        e.cls = cls;
+        return e;
+    }
+
+    /** Ссылка {@code new FloatPtr(init)}. */
+    static Ex newPtr(Ex init, int elemKind) {
+        return new Ex(NEW_PTR, Kinds.K_PTR, elemKind, com.sixik.gpu.ir.AddressSpace.PRIVATE, init.open, 0, 0, null,
+                new Ex[]{init}, false);
+    }
+
+    /** @return то же выражение с именем агрегата {@code c} */
+    Ex typed(String c) {
+        this.cls = c;
+        return this;
+    }
+
     static Ex newArray(int elemKind, int length) {
         return new Ex(NEW_ARRAY, Kinds.K_ARRAY, elemKind, -1, false, 0, length, null, NONE, false);
     }
 
     /** @return то же приведение с другим признаком «неявное» */
     static Ex select(int kind, Ex c, Ex a, Ex b) {
-        return new Ex(SELECT, kind, a.elemKind, a.space, c.open || a.open || b.open, 0, 0, null, new Ex[]{c, a, b}, false);
+        Ex e = new Ex(SELECT, kind, a.elemKind, a.space, c.open || a.open || b.open, 0, 0, null, new Ex[]{c, a, b}, false);
+        e.cls = a.cls;
+        return e;
     }
 
     static Ex logical(int op, Ex c, Ex d) {
@@ -155,8 +244,36 @@ final class Ex {
         return new Ex(CMP3, Kinds.K_INT, -1, -1, l.open || r.open, 0, variant, null, new Ex[]{l, r}, false);
     }
 
+    /** @return копия с другими операндами */
+    Ex withKids(Ex[] k) {
+        Ex e = new Ex(op, kind, elemKind, space, open, bits, aux, var, k, implicit, target);
+        e.cls = cls;
+        e.lanes = lanes;
+        e.fresh = fresh;
+        return e;
+    }
+
     Ex withImplicit(boolean value) {
-        return new Ex(op, kind, elemKind, space, open, bits, aux, var, kids, value, target);
+        Ex e = new Ex(op, kind, elemKind, space, open, bits, aux, var, kids, value, target);
+        e.cls = cls;
+        e.lanes = lanes;
+        e.fresh = fresh;
+        return e;
+    }
+
+    /** @return то же значение, помеченное свежим */
+    Ex asFresh() {
+        Ex e = withKids(kids);
+        e.fresh = true;
+        return e;
+    }
+
+    /**
+     * Свежее значение struct (как {@code isFresh} в frontend-java): {@code new S(...)}, {@code copy()}, вызов
+     * device-функции или {@code ?:} из таких. Копия переменной, параметра или элемента на JVM была бы общей ссылкой.
+     */
+    boolean isFresh() {
+        return fresh || op == BUILD || op == NEW_OBJ || op == CALL || op == SELECT && kids[1].isFresh() && kids[2].isFresh();
     }
 
     /** @return {@code true}, если в дереве есть чтение переменной {@code v} */

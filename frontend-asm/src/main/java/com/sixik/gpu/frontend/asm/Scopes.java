@@ -87,7 +87,7 @@ final class Scopes {
                 d.lvt = s.lvt;
                 list.set(first, d);
             } else {
-                St d = new St(St.DECL, v, MethodLowerer.zero(v.kind), null, null, 0, false, s.line, zeroGroup--);
+                St d = new St(St.DECL, v, MethodLowerer.zeroOf(v), null, null, 0, false, s.line, zeroGroup--);
                 inserts.computeIfAbsent(first, z -> new ArrayList<>()).add(d);
             }
         }
