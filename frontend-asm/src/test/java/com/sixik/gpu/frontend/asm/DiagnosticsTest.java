@@ -87,11 +87,80 @@ class DiagnosticsTest {
         assertTrue(missing.get(0).message().contains("t.Missing"), missing.toString());
     }
 
+    /** Ядро {@code static void k(int n)} с телом, которое пишет {@code body}; локалей сверх параметра нет. */
+    private static byte[] kernel(String name, java.util.function.Consumer<MethodVisitor> body) {
+        ClassWriter cw = new ClassWriter(0);
+        cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+        MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "k", "(I)V", null, null);
+        mv.visitAnnotation(Annotations.KERNEL, false).visitEnd();
+        mv.visitCode();
+        body.accept(mv);
+        mv.visitMaxs(3, 1);
+        mv.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    @Test
+    void irreducibleControlFlowIsRejected() {
+        // в цикл A..B входят двумя путями: проходом в A и переходом в B - javac так не строит
+        byte[] c = kernel("t/Irreducible", mv -> {
+            Label a = new Label();
+            Label b = new Label();
+            mv.visitVarInsn(Opcodes.ILOAD, 0);
+            mv.visitJumpInsn(Opcodes.IFEQ, b);
+            mv.visitLabel(a);
+            mv.visitIincInsn(0, 1);
+            mv.visitLabel(b);
+            mv.visitIincInsn(0, 2);
+            mv.visitVarInsn(Opcodes.ILOAD, 0);
+            mv.visitIntInsn(Opcodes.BIPUSH, 100);
+            mv.visitJumpInsn(Opcodes.IF_ICMPLT, a);
+            mv.visitInsn(Opcodes.RETURN);
+        });
+        List<AsmDiagnostic> d = compile(Map.of("t/Irreducible", c), "t.Irreducible");
+        assertEquals(List.of("GPU0304"), d.stream().map(AsmDiagnostic::code).toList(), d.toString());
+    }
+
+    @Test
+    void valueOnTheStackAcrossALoopIsRejected() {
+        // значение, лежащее на стеке через весь цикл, - не условное выражение
+        byte[] c = kernel("t/StackLoop", mv -> {
+            Label h = new Label();
+            mv.visitInsn(Opcodes.ICONST_5);
+            mv.visitLabel(h);
+            mv.visitIincInsn(0, 1);
+            mv.visitVarInsn(Opcodes.ILOAD, 0);
+            mv.visitIntInsn(Opcodes.BIPUSH, 10);
+            mv.visitJumpInsn(Opcodes.IF_ICMPLT, h);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+        });
+        List<AsmDiagnostic> d = compile(Map.of("t/StackLoop", c), "t.StackLoop");
+        assertEquals(List.of("GPU0305"), d.stream().map(AsmDiagnostic::code).toList(), d.toString());
+    }
+
+    @Test
+    void calleeClassMissingFromTheClasspathIsReported() {
+        byte[] c = kernel("t/CallsMissing", mv -> {
+            mv.visitVarInsn(Opcodes.ILOAD, 0);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "t/Missing", "f", "(I)I", false);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitInsn(Opcodes.RETURN);
+        });
+        List<AsmDiagnostic> d = compile(Map.of("t/CallsMissing", c), "t.CallsMissing");
+        assertEquals(List.of("GPU0303"), d.stream().map(AsmDiagnostic::code).toList(), d.toString());
+        assertTrue(d.get(0).message().contains("t.Missing") && d.get(0).message().contains("Missing.f"), d.toString());
+    }
+
     @Test
     void everyBytecodeOnlyCodeIsCovered() throws IOException {
         classWithoutLocalVariableTableIsRejected();
         subroutinesAreUnsupportedInstructions();
         unreadableClassFilesAreReported();
+        irreducibleControlFlowIsRejected();
+        valueOnTheStackAcrossALoopIsRejected();
+        calleeClassMissingFromTheClasspathIsReported();
         Set<String> table = Diag.codes().stream().filter(c -> c.startsWith("GPU03"))
                 .collect(Collectors.toCollection(TreeSet::new));
         assertFalse(table.isEmpty());

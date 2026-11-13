@@ -15,4 +15,12 @@ dependencies {
     testImplementation project(':ir-interpreter')
     testImplementation project(':tools')
     testImplementation project(':api')
+    // A4 (17.15): образцы с device-функциями компилируются javac в памяти вместе с процессором frontend-java - один
+    // проход даёт и class-файлы (вход frontend-asm), и IR_java для сравнения
+    testImplementation project(':frontend-java')
+}
+
+tasks.named('test') {
+    // classpath образцов задаётся явно, а не берётся из java.class.path воркера (как в frontend-java)
+    systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
 }

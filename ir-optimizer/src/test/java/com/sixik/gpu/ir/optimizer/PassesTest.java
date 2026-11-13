@@ -174,6 +174,32 @@ class PassesTest {
     // ---- мёртвый код ---------------------------------------------------------------------------
 
     @Test
+    void conversionOfConstantSelectIsFolded() {
+        // out[i] = (long) (in[i] < 5 ? 1 : 0) -> out[i] = in[i] < 5 ? 1L : 0L
+        IrModule m = OptTest.kernel(new int[]{Types.I64, Types.I32}, new int[0], (b, l) -> new int[]{
+                OptTest.storeAt(b, 0, OptTest.gid(b), b.convert(Types.I64, b.select(
+                        b.binary(Op.LT, OptTest.loadAt(b, 1, OptTest.gid(b)), b.constI32(5)),
+                        b.constI32(1), b.constI32(0))))});
+        IrModule o = OptTest.opt(m);
+        assertEquals(0, OptTest.count(o, Op.CONVERT));
+        assertEquals(1, OptTest.count(o, Op.SELECT));
+        OptTest.assertSameBehavior("convert-select", m, o, NdRange.of1D(8),
+                () -> new Object[]{new long[8], new int[]{-3, 0, 4, 5, 6, 100, Integer.MIN_VALUE, Integer.MAX_VALUE}});
+    }
+
+    @Test
+    void longShiftCountRoundTripThroughIntIsDropped() {
+        // x << (long) (int) y == x << y: счётчик 64-битного сдвига берётся по маске 63
+        IrModule m = OptTest.kernel(new int[]{Types.I64, Types.I64}, new int[0], (b, l) -> new int[]{
+                OptTest.storeAt(b, 0, OptTest.gid(b), b.binary(Op.SHL, OptTest.loadAt(b, 0, OptTest.gid(b)),
+                        b.convert(Types.I64, b.convert(Types.I32, OptTest.loadAt(b, 1, OptTest.gid(b))))))});
+        IrModule o = OptTest.opt(m);
+        assertEquals(0, OptTest.count(o, Op.CONVERT));
+        OptTest.assertSameBehavior("shift-count", m, o, NdRange.of1D(4), () -> new Object[]{
+                new long[]{1, -7, Long.MAX_VALUE, 3}, new long[]{0x1_0000_0003L, -1, 0xFFFF_FFFF_0000_0041L, 64}});
+    }
+
+    @Test
     void deadCodeIsRemoved() {
         IrModule m = OptTest.kernel(new int[]{Types.I32}, new int[]{Types.I32, Types.I32}, (b, l) -> new int[]{
                 // неиспользуемая локаль с чистой инициализацией

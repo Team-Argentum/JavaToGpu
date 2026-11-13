@@ -1,0 +1,568 @@
+package com.sixik.gpu.frontend.asm;
+
+import com.sixik.gpu.frontend.common.KernelAttributes;
+import com.sixik.gpu.ir.IrBuilder;
+import com.sixik.gpu.ir.IrModule;
+import com.sixik.gpu.ir.Types;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AnnotationNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Сборка модуля ядра (REWORK_ARCHITECTURE.md, 17.11; логика {@code ModuleCompiler} из {@code frontend-java} на
+ * индексах ASM): проверка метода, разрешение вызовов {@code @DeviceFunction} через {@link ClassSource} (тот же
+ * каталог, другие классы, jar), рекурсия ({@code GPU0105}), варианты {@code fallback} ({@code GPU0010/0011/0014}),
+ * порядок функций и эмиссия.
+ *
+ * <p><b>Состав и порядок модуля</b> - как у {@code frontend-java}: функции от листьев вызовов к корню, ядро последним,
+ * варианты {@code fallback} - функции вида {@code KERNEL}. Порядок обхода вызовов - порядок исходника (pre-order
+ * дерева: внешний вызов раньше вызовов в своих аргументах, шаг {@code for} раньше тела), а не порядок инструкций
+ * байткода: от него зависят номера функций и {@code kernelId}.</p>
+ *
+ * <p>Проверка метода и его диагностики - один раз на экземпляр сборщика (на один вызов {@link AsmFrontend#compile}),
+ * сколько бы ядер его ни звали. Стейтменты строятся заново для каждого модуля: эмиттер назначает переменным номера
+ * локалей модуля.</p>
+ */
+final class ModuleBuilder {
+
+    /** Метод - ядро или device-функция модуля. */
+    private static final class Unit {
+        final String key;
+        final String cls;
+        final ClassNode cn;
+        final MethodNode decl;
+        final MethodNode body;
+        final boolean kernel;
+        final boolean reduction;
+        /** Проверочный исполнитель: сигнатура, найденные вызовы. */
+        MethodLowerer ml;
+        int line;
+        KernelAttributes attrs;
+        /** Имя варианта {@code fallback} либо {@code null}. */
+        String fallbackName;
+        boolean checked;
+        boolean valid;
+        /** Конструкция следующего шага (17.15), найденная проверкой: повторяется для каждого ядра. */
+        RuntimeException notYet;
+        /** Вызов → вызываемая функция (разрешённые вызовы). */
+        final Map<MethodInsnNode, Unit> resolved = new IdentityHashMap<>();
+        /** Вызываемые в порядке байткода (без повторов). */
+        final List<Unit> callees = new ArrayList<>();
+        Unit fallback;
+        boolean prepared;
+        boolean prepareOk;
+        boolean effects;
+        /** Стейтменты уже строились (повторные построения не выдают диагностик). */
+        boolean lowered;
+
+        Unit(String key, ClassNode cn, MethodNode decl, MethodNode body, boolean kernel, boolean reduction) {
+            this.key = key;
+            this.cls = cn.name.replace('/', '.');
+            this.cn = cn;
+            this.decl = decl;
+            this.body = body;
+            this.kernel = kernel;
+            this.reduction = reduction;
+        }
+
+        String name() {
+            return decl.name;
+        }
+    }
+
+    /**
+     * Построенный модуль.
+     *
+     * @param module модуль IR (ещё не проверенный валидатором)
+     * @param line   первая строка ядра (позиция диагностик модуля)
+     */
+    record Built(IrModule module, int line) {
+    }
+
+    private static final String JVM_SUFFIX = "$jvm";
+
+    private final ClassSource source;
+    private final List<AsmDiagnostic> diags;
+    private final Map<String, ClassNode> classes = new HashMap<>();
+    private final Set<String> missing = new HashSet<>();
+    private final Map<String, Unit> units = new HashMap<>();
+    private final Set<String> reportedCycles = new HashSet<>();
+
+    ModuleBuilder(ClassSource source, List<AsmDiagnostic> diags) {
+        this.source = source;
+        this.diags = diags;
+    }
+
+    /** Класс, уже прочитанный вызывающим ({@code compile} перечисляет ядра его методов). */
+    void add(ClassNode cn) {
+        classes.put(cn.name, cn);
+    }
+
+    /**
+     * Строит модуль ядра.
+     *
+     * @param cn класс ядра
+     * @param mn метод с {@code @Kernel} или {@code @Reduction}
+     * @return модуль либо {@code null}, если найдены ошибки (диагностики уже выданы)
+     */
+    Built build(ClassNode cn, MethodNode mn) {
+        Unit k = unit(cn, mn);
+        if (!prepare(k, new ArrayDeque<>())) {
+            return null;
+        }
+        // стейтменты всех функций замыкания (порядок вызовов исходника берётся из них)
+        Map<Unit, List<St>> bodies = new HashMap<>();
+        Map<Unit, MethodLowerer> lowerers = new HashMap<>();
+        int before = errorCount();
+        for (Unit u : closure(k)) {
+            MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), u.lowered ? new ArrayList<>() : diags);
+            ml.callees = mi -> callee(u, mi);
+            bodies.put(u, ml.execute());
+            lowerers.put(u, ml);
+            u.lowered = true;
+        }
+        if (errorCount() != before) {
+            return null;
+        }
+        List<Unit> order = new ArrayList<>();
+        order(k, bodies, order);
+
+        IrBuilder b = new IrBuilder();
+        Map<String, Integer> fns = new HashMap<>();
+        for (Unit u : order) {
+            MethodLowerer ml = lowerers.get(u);
+            int n = ml.paramKinds.length;
+            int[] ptypes = new int[n];
+            for (int i = 0; i < n; i++) {
+                ptypes[i] = ml.paramKinds[i] == Kinds.K_ARRAY
+                        ? b.array(ml.paramSpaces[i], Kinds.storageType(ml.paramElems[i]))
+                        : Kinds.irType(ml.paramKinds[i]);
+            }
+            int ret = ml.retKind == Kinds.K_VOID ? Types.VOID : Kinds.irType(ml.retKind);
+            boolean kernelFn = u.kernel;
+            int f = b.beginFunction(kernelFn ? IrModule.KERNEL : IrModule.DEVICE, ret, ptypes);
+            if (u.attrs != null) {
+                u.attrs.apply(b, u.fallback == null ? -1 : fns.get(u.fallback.key));
+            }
+            b.nameFunction(u.name());
+            b.nameParams(ml.paramNames);
+            List<Integer> top = new Emitter(b, fns).body(ml.paramVars, ptypes, bodies.get(u));
+            int[] root = new int[top.size()];
+            for (int i = 0; i < root.length; i++) {
+                root[i] = top.get(i);
+            }
+            b.endFunction(b.block(root));
+            fns.put(u.key, f);
+        }
+        return new Built(b.build(), k.line);
+    }
+
+    // =============================================================================================
+    // Методы
+    // =============================================================================================
+
+    private Unit unit(ClassNode cn, MethodNode mn) {
+        String key = MethodLowerer.key(cn.name, mn.name, mn.desc);
+        Unit u = units.get(key);
+        if (u == null) {
+            boolean kernel = Annotations.find(mn.invisibleAnnotations, Annotations.KERNEL) != null;
+            boolean reduction = Annotations.find(mn.invisibleAnnotations, Annotations.REDUCTION) != null;
+            u = new Unit(key, cn, mn, bodyOf(cn, mn), kernel, reduction);
+            units.put(key, u);
+        }
+        return u;
+    }
+
+    /** Тело ядра: у сплетённого класса - {@code <имя>$jvm} с тем же дескриптором, иначе сам метод. */
+    private static MethodNode bodyOf(ClassNode cn, MethodNode mn) {
+        for (MethodNode other : cn.methods) {
+            if (other.name.equals(mn.name + JVM_SUFFIX) && other.desc.equals(mn.desc)) {
+                return other;
+            }
+        }
+        return mn;
+    }
+
+    /** Проверка метода (один раз): сигнатура, атрибуты ядра, подмножество, разрешение вызовов. */
+    private void check(Unit u) {
+        if (u.checked) {
+            if (u.notYet != null) {
+                throw u.notYet;
+            }
+            return;
+        }
+        u.checked = true;
+        MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), diags);
+        u.ml = ml;
+        u.line = ml.firstLine();
+        int before = errorCount();
+        MethodNode mn = u.decl;
+        String what = u.kernel ? "Kernel" : u.reduction ? "Reduction" : "DeviceFunction";
+        if (u.kernel && u.reduction) {
+            report(u, "GPU0017", u.line, mn.name);
+            return;
+        }
+        if ((mn.access & Opcodes.ACC_STATIC) == 0) {
+            report(u, "GPU0001", u.line, mn.name, what);
+        }
+        if ((mn.access & Opcodes.ACC_VARARGS) != 0 || mn.exceptions != null && !mn.exceptions.isEmpty()
+                || mn.signature != null && mn.signature.startsWith("<")) {
+            report(u, "GPU0007", u.line, mn.name);
+        }
+        if (u.kernel && ml.retKind != Kinds.K_VOID) {
+            report(u, "GPU0002", u.line, mn.name);
+        }
+        if (u.reduction && (ml.retKind < Kinds.K_INT || ml.retKind > Kinds.K_DOUBLE)) {
+            report(u, "GPU0016", u.line, mn.name);
+        }
+        if (u.kernel) {
+            AnnotationNode k = Annotations.find(mn.invisibleAnnotations, Annotations.KERNEL);
+            AnnotationNode wg = Annotations.find(mn.invisibleAnnotations, Annotations.WORK_GROUP);
+            Map<String, Object> explicit = Annotations.explicitValues(k);
+            if (explicit.get("fallback") instanceof String fb && !fb.isEmpty()) {
+                u.fallbackName = fb;
+            }
+            u.attrs = KernelAttributes.parse(mn.name, explicit,
+                    wg == null ? null : Annotations.explicitValues(wg),
+                    (code, args) -> report(u, code, u.line, args));
+        }
+        boolean ok;
+        try {
+            ok = ml.check();
+        } catch (MethodLowerer.NotYet e) {
+            u.notYet = e;
+            throw e;
+        }
+        for (MethodLowerer.DeviceCall c : ml.deviceCalls) {
+            Unit callee = resolve(u, c);
+            if (callee != null) {
+                u.resolved.put(c.insn(), callee);
+                if (!u.callees.contains(callee)) {
+                    u.callees.add(callee);
+                }
+            }
+        }
+        u.valid = ok && errorCount() == before && (!u.kernel || u.attrs != null);
+    }
+
+    /**
+     * Вызываемый метод: класс через {@link ClassSource} ({@code GPU0303}, если его нет), метод в нём или в
+     * суперклассах, {@code @DeviceFunction} на нём ({@code GPU0113}).
+     */
+    private Unit resolve(Unit caller, MethodLowerer.DeviceCall c) {
+        MethodInsnNode mi = c.insn();
+        String shown = simpleName(mi.owner) + "." + mi.name;
+        String owner = mi.owner;
+        while (owner != null) {
+            ClassNode cn = classNode(owner);
+            if (cn == null) {
+                report(caller, "GPU0303", c.line(), owner.replace('/', '.'), shown);
+                return null;
+            }
+            for (MethodNode m : cn.methods) {
+                if (m.name.equals(mi.name) && m.desc.equals(mi.desc)) {
+                    boolean device = Annotations.find(m.invisibleAnnotations, Annotations.DEVICE_FUNCTION) != null;
+                    boolean kernel = Annotations.find(m.invisibleAnnotations, Annotations.KERNEL) != null
+                            || Annotations.find(m.invisibleAnnotations, Annotations.REDUCTION) != null;
+                    if (!device || kernel) {
+                        report(caller, "GPU0113", c.line(), shown);
+                        return null;
+                    }
+                    return unit(cn, m);
+                }
+            }
+            owner = cn.superName == null || cn.superName.equals("java/lang/Object") ? null : cn.superName;
+        }
+        report(caller, "GPU0113", c.line(), shown);
+        return null;
+    }
+
+    private ClassNode classNode(String internal) {
+        ClassNode cn = classes.get(internal);
+        if (cn != null || missing.contains(internal)) {
+            return cn;
+        }
+        byte[] bytes;
+        try {
+            bytes = source.bytes(internal);
+        } catch (RuntimeException e) {
+            bytes = null;
+        }
+        if (bytes == null) {
+            missing.add(internal);
+            return null;
+        }
+        try {
+            cn = new ClassNode();
+            new ClassReader(bytes).accept(cn, 0);
+        } catch (RuntimeException e) {
+            missing.add(internal);
+            return null;
+        }
+        classes.put(internal, cn);
+        return cn;
+    }
+
+    private static String simpleName(String internal) {
+        String s = internal.substring(internal.lastIndexOf('/') + 1);
+        return s.substring(s.lastIndexOf('$') + 1);
+    }
+
+    // =============================================================================================
+    // Замыкание
+    // =============================================================================================
+
+    /**
+     * Проверка замыкания (порядок байткода): допустимость всех функций, рекурсия, цепочка {@code fallback} и эффекты
+     * функций (нужны исполнителю вызывающих: результат эффектной функции - временная локаль).
+     */
+    private boolean prepare(Unit u, Deque<Unit> stack) {
+        if (u.prepared) {
+            return u.prepareOk;
+        }
+        check(u);
+        boolean ok = u.valid;
+        boolean effects = u.ml != null && u.ml.ownEffects();
+        stack.push(u);
+        for (MethodLowerer.DeviceCall c : u.ml == null ? List.<MethodLowerer.DeviceCall>of() : u.ml.deviceCalls) {
+            Unit callee = u.resolved.get(c.insn());
+            if (callee == null) {
+                ok = false;
+            } else if (stack.contains(callee)) {
+                if (reportedCycles.add(u.key + "@" + u.body.instructions.indexOf(c.insn()))) {
+                    report(u, "GPU0105", c.line(), chain(stack, callee));
+                }
+                ok = false;
+            } else {
+                ok &= prepare(callee, stack);
+                effects |= callee.effects;
+            }
+        }
+        if (u.attrs != null && u.fallbackName != null) {
+            Unit fb = findFallback(u, u.fallbackName);
+            if (fb == null) {
+                ok = false;
+            } else if (stack.contains(fb)) {
+                check(fb);
+                if (reportedCycles.add(fb.key)) {
+                    report(fb, "GPU0014", fb.line, chain(stack, fb));
+                }
+                ok = false;
+            } else {
+                u.fallback = fb;
+                ok &= prepare(fb, stack);
+            }
+        }
+        stack.pop();
+        u.effects = effects;
+        // функция в цикле вызовов проверяется заново из другого входа: итог кэшируется только вне стека
+        if (stack.isEmpty() || ok) {
+            u.prepared = true;
+            u.prepareOk = ok;
+        }
+        return ok;
+    }
+
+    private static String chain(Deque<Unit> stack, Unit closing) {
+        List<String> names = new ArrayList<>();
+        for (Unit s : stack) {
+            names.add(s.name());
+        }
+        Collections.reverse(names);
+        names.add(closing.name());
+        return String.join(" -> ", names);
+    }
+
+    /** Вариант {@code fallback}: ядро класса с тем же именем и той же сигнатурой ({@code FnSig.sameAs}). */
+    private Unit findFallback(Unit k, String name) {
+        boolean sameName = false;
+        for (MethodNode m : k.cn.methods) {
+            if (m.name.equals(name) && Annotations.find(m.invisibleAnnotations, Annotations.KERNEL) != null) {
+                sameName = true;
+                Unit fb = unit(k.cn, m);
+                if (m.desc.equals(k.decl.desc) && sameSpaces(k, fb)) {
+                    return fb;
+                }
+            }
+        }
+        report(k, sameName ? "GPU0011" : "GPU0010", k.line, name, k.name());
+        return null;
+    }
+
+    private boolean sameSpaces(Unit a, Unit b) {
+        int[] x = a.ml.paramSpaces;
+        int[] y = new MethodLowerer(b.cls, b.body, b.name(), new ArrayList<>()).paramSpaces;
+        return java.util.Arrays.equals(x, y);
+    }
+
+    /** Все функции замыкания (с вариантами {@code fallback}). */
+    private static Set<Unit> closure(Unit k) {
+        Set<Unit> r = new LinkedHashSet<>();
+        Deque<Unit> work = new ArrayDeque<>();
+        work.add(k);
+        while (!work.isEmpty()) {
+            Unit u = work.poll();
+            if (r.add(u)) {
+                work.addAll(u.callees);
+                if (u.fallback != null) {
+                    work.add(u.fallback);
+                }
+            }
+        }
+        return r;
+    }
+
+    private MethodLowerer.Callee callee(Unit caller, MethodInsnNode mi) {
+        Unit u = caller.resolved.get(mi);
+        if (u == null) {
+            return null;
+        }
+        MethodLowerer ml = u.ml;
+        return new MethodLowerer.Callee(u.key, ml.paramKinds, ml.paramSpaces, ml.paramNames, ml.retKind, u.effects);
+    }
+
+    // =============================================================================================
+    // Порядок функций
+    // =============================================================================================
+
+    /** Обход {@code ModuleCompiler.collect}: функция попадает в {@code order} после всех, от кого зависит. */
+    private static void order(Unit u, Map<Unit, List<St>> bodies, List<Unit> order) {
+        if (order.contains(u)) {
+            return;
+        }
+        List<String> keys = new ArrayList<>(callOrder(bodies.get(u)));
+        // вызовы в недостижимом коде проверка тоже видит (как SubsetChecker): после достижимых, в порядке байткода
+        for (Unit c : u.callees) {
+            keys.add(c.key);
+        }
+        for (String key : keys) {
+            for (Unit c : u.callees) {
+                if (c.key.equals(key)) {
+                    order(c, bodies, order);
+                }
+            }
+        }
+        if (u.fallback != null) {
+            order(u.fallback, bodies, order);
+        }
+        if (!order.contains(u)) {
+            order.add(u);
+        }
+    }
+
+    private record CallAt(String key, int group, int start, int at) {
+    }
+
+    /**
+     * Вызовы функции в порядке исходника, как их собирает {@code SubsetChecker} (обход дерева javac): стейтменты по
+     * порядку; у {@code for} - условие, шаг, тело; у {@code do-while} - тело, условие; в выражении внешний вызов
+     * раньше своих аргументов. Внутри одного исходного стейтмента ({@link St#group}) порядок восстанавливается по
+     * началу вычисления аргументов - так вызов, вынесенный во временную локаль (эффектная функция), встаёт на своё
+     * место в дереве.
+     */
+    static List<String> callOrder(List<St> body) {
+        List<CallAt> calls = new ArrayList<>();
+        walk(body, calls);
+        List<String> r = new ArrayList<>();
+        int i = 0;
+        while (i < calls.size()) {
+            int j = i;
+            while (j < calls.size() && calls.get(j).group() == calls.get(i).group()) {
+                j++;
+            }
+            List<CallAt> seg = new ArrayList<>(calls.subList(i, j));
+            seg.sort((a, b) -> a.start() != b.start() ? Integer.compare(a.start(), b.start())
+                    : Integer.compare(b.at(), a.at()));
+            for (CallAt c : seg) {
+                r.add(c.key());
+            }
+            i = j;
+        }
+        return r;
+    }
+
+    private static void walk(List<St> list, List<CallAt> out) {
+        if (list == null) {
+            return;
+        }
+        for (St s : list) {
+            switch (s.kind) {
+                case St.LOOP -> {
+                    walk(s.pre, out);
+                    walk(s.a, s.group, out);
+                    walk(s.update, out);
+                    walk(s.body, out);
+                }
+                case St.DO_WHILE -> {
+                    walk(s.body, out);
+                    walk(s.a, s.group, out);
+                }
+                case St.IF -> {
+                    walk(s.a, s.group, out);
+                    walk(s.body, out);
+                    walk(s.alt, out);
+                }
+                case St.SWITCH -> {
+                    walk(s.a, s.group, out);
+                    for (List<St> c : s.cases) {
+                        walk(c, out);
+                    }
+                }
+                case St.BLOCK -> walk(s.body, out);
+                case St.SHORT -> {
+                    walk(s.a, s.group, out);
+                    walk(s.body, out);
+                    walk(s.b, s.group, out);
+                }
+                default -> {
+                    walk(s.a, s.group, out);
+                    walk(s.b, s.group, out);
+                    walk(s.c, s.group, out);
+                }
+            }
+        }
+    }
+
+    private static void walk(Ex e, int group, List<CallAt> out) {
+        if (e == null) {
+            return;
+        }
+        if (e.op == Ex.CALL) {
+            out.add(new CallAt(e.target, group, (int) e.bits, e.aux));
+        }
+        for (Ex k : e.kids) {
+            walk(k, group, out);
+        }
+    }
+
+    // =============================================================================================
+
+    private void report(Unit u, String code, int line, Object... args) {
+        diags.add(AsmDiagnostic.of(code, u.cls, u.name(), line, args));
+    }
+
+    private int errorCount() {
+        int n = 0;
+        for (AsmDiagnostic d : diags) {
+            if (d.error()) {
+                n++;
+            }
+        }
+        return n;
+    }
+}

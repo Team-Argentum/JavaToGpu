@@ -79,6 +79,9 @@ GPU0201 error   Failed to get access to the javac Tree API from {0} | Compile wi
 # --- class files (frontend-asm) ----------------------------------------------------------------
 GPU0301 error   Class {0} has no LocalVariableTable: the bytecode frontend needs it to tell boolean, byte, short and char from int | Compile with -g (Gradle and Maven do it by default)
 GPU0302 error   Unsupported bytecode instruction {0} in {1} | GPU code is compiled from the subset that javac produces for the allowed Java code
+GPU0303 error   Class {0} of the called method {1} is not found on the classpath | Add the library with the @DeviceFunction to the compile classpath
+GPU0304 error   Control flow of {0} cannot be structured (irreducible) | GPU code is compiled from the structured control flow that javac produces for the allowed Java code
+GPU0305 error   Operand stack is not empty at a join that is not a conditional expression in {0} | GPU code is compiled from the subset that javac produces for the allowed Java code
 GPU0306 error   Class file {0} cannot be read: {1} | Rebuild the class; check that its version is supported by ASM
 
 # --- internal errors ----------------------------------------------------------------------------

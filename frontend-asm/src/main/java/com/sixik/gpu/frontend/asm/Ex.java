@@ -26,6 +26,23 @@ final class Ex {
     static final int INTRINSIC = 9;
     /** Метка {@code newarray} до записи в локаль (в IR не попадает: становится объявлением массива). */
     static final int NEW_ARRAY = 10;
+    /** {@code select(kids[0], kids[1], kids[2])} - тернарный оператор. */
+    static final int SELECT = 11;
+    /** {@code kids[0] && kids[1]} = {@code select(c, d, false)}. */
+    static final int LAND = 12;
+    /** {@code kids[0] || kids[1]} = {@code select(c, true, d)}. */
+    static final int LOR = 13;
+    /**
+     * Результат {@code lcmp}, {@code fcmpl/fcmpg}, {@code dcmpl/dcmpg} (живёт до ближайшего условного перехода);
+     * {@code aux} - вариант: {@link Conds#CMP_EXACT}, {@link Conds#CMP_NAN_LESS}, {@link Conds#CMP_NAN_GREATER}.
+     */
+    static final int CMP3 = 14;
+    /**
+     * Вызов {@code @DeviceFunction}: {@link #target} - ключ функции ({@code владелец.имя дескриптор}), {@link #aux} -
+     * индекс инструкции {@code invokestatic}, {@link #bits} - индекс первой инструкции вычисления аргументов (по ним
+     * восстанавливается порядок вызовов исходника, 17.11).
+     */
+    static final int CALL = 15;
 
     final int op;
     /** Вид Java результата ({@link Kinds}). */
@@ -46,9 +63,17 @@ final class Ex {
     final Ex[] kids;
     /** Для {@link #CONVERT}: неявное приведение. */
     final boolean implicit;
+    /** Для {@link #CALL}: ключ вызываемой функции, иначе {@code null}. */
+    final String target;
 
     private Ex(int op, int kind, int elemKind, int space, boolean open, long bits, int aux, Var var, Ex[] kids,
                boolean implicit) {
+        this(op, kind, elemKind, space, open, bits, aux, var, kids, implicit, null);
+    }
+
+    private Ex(int op, int kind, int elemKind, int space, boolean open, long bits, int aux, Var var, Ex[] kids,
+               boolean implicit, String target) {
+        this.target = target;
         this.op = op;
         this.kind = kind;
         this.elemKind = elemKind;
@@ -101,13 +126,37 @@ final class Ex {
         return new Ex(INTRINSIC, kind, -1, -1, open, 0, id, null, args, false);
     }
 
+    /**
+     * @param target ключ функции
+     * @param kind   вид результата
+     * @param at     индекс инструкции вызова
+     * @param start  индекс первой инструкции аргументов
+     * @param args   аргументы (с неявными приведениями к типам параметров)
+     * @return вызов; результат «открыт», как у {@code frontend-java}: функция может читать память
+     */
+    static Ex call(String target, int kind, int at, int start, Ex[] args) {
+        return new Ex(CALL, kind, -1, -1, true, start, at, null, args, false, target);
+    }
+
     static Ex newArray(int elemKind, int length) {
         return new Ex(NEW_ARRAY, Kinds.K_ARRAY, elemKind, -1, false, 0, length, null, NONE, false);
     }
 
     /** @return то же приведение с другим признаком «неявное» */
+    static Ex select(int kind, Ex c, Ex a, Ex b) {
+        return new Ex(SELECT, kind, a.elemKind, a.space, c.open || a.open || b.open, 0, 0, null, new Ex[]{c, a, b}, false);
+    }
+
+    static Ex logical(int op, Ex c, Ex d) {
+        return new Ex(op, Kinds.K_BOOLEAN, -1, -1, c.open || d.open, 0, 0, null, new Ex[]{c, d}, false);
+    }
+
+    static Ex cmp3(int variant, Ex l, Ex r) {
+        return new Ex(CMP3, Kinds.K_INT, -1, -1, l.open || r.open, 0, variant, null, new Ex[]{l, r}, false);
+    }
+
     Ex withImplicit(boolean value) {
-        return new Ex(op, kind, elemKind, space, open, bits, aux, var, kids, value);
+        return new Ex(op, kind, elemKind, space, open, bits, aux, var, kids, value, target);
     }
 
     /** @return {@code true}, если в дереве есть чтение переменной {@code v} */

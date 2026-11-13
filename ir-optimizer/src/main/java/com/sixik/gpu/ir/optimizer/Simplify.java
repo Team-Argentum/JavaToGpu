@@ -491,6 +491,16 @@ final class Simplify {
                 return a;
             }
         }
+        if (Types.bits(t.type) == 64 && b.op == Op.CONVERT && b.kids[0].op == Op.CONVERT) {
+            // счётчик 64-битного сдвига берётся по маске 63: x << (long) (int) y == x << y для 64-битного y
+            // (javac пишет l2i и для x << y, и для x << (int) y - формы frontend-java и frontend-asm сходятся)
+            Tree mid = b.kids[0];
+            Tree y = mid.kids[0];
+            if (isArithInt(b.type) && Types.bits(b.type) == 64 && isArithInt(mid.type)
+                    && Types.bits(mid.type) == 32 && isArithInt(y.type) && Types.bits(y.type) == 64) {
+                return t.withKids(new Tree[]{a, y});
+            }
+        }
         return t;
     }
 
@@ -599,6 +609,16 @@ final class Simplify {
         }
         if (a.isConst() && scalarKind(a.type) && scalarKind(t.type)) {
             return Tree.constLike(t, t.type, Eval.convert(a.type, t.type, a.k));
+        }
+        if (a.op == Op.SELECT && a.kids[1].isConst() && a.kids[2].isConst() && scalarKind(a.type)
+                && scalarKind(t.type)) {
+            // convert(c ? k1 : k2) -> c ? convert(k1) : convert(k2): у javac ветки уже свёрнуты в тип результата
+            // (lconst_1/lconst_0 в long[]), у frontend-java - convert(select i32); обе формы сходятся к одной
+            Tree x = a.kids[1];
+            Tree y = a.kids[2];
+            return t.retarget(Op.SELECT, a.kids[0],
+                    Tree.constLike(x, t.type, Eval.convert(x.type, t.type, x.k)),
+                    Tree.constLike(y, t.type, Eval.convert(y.type, t.type, y.k)));
         }
         if (a.op == Op.CONVERT && a.kids[0].type == t.type) {
             int from = t.type;

@@ -28,12 +28,17 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Метод байткода → стейтменты фронтенда (REWORK_ARCHITECTURE.md, 17.7, шаги 1 и 3): проверка подмножества (все
- * нарушения метода за один проход, 17.6) и символьное исполнение тела на типизированном стеке (17.8).
+ * Метод байткода → стейтменты фронтенда (REWORK_ARCHITECTURE.md, 17.7, шаги 1-4): проверка подмножества (все
+ * нарушения метода за один проход, 17.6), граф ({@link Cfg}), символьное исполнение блоков на типизированном стеке
+ * (17.8) под управлением структуризатора ({@link Structurer}, 17.9) и размещение объявлений ({@link Scopes}, 17.10).
  *
- * <p><b>Шаг A2</b> (17.15): прямолинейные тела - скаляры, массивы, builtins {@code Gpu.*}, приведения, правило
- * эффектов и {@code dup}-семейство. Управление потоком (A3), вызовы {@code @DeviceFunction} (A4), векторы, struct,
- * указатели и атомики (A5) дают {@link NotYet}: вызывающий превращает это в {@code GPU0902}, а не строит неверный IR.</p>
+ * <p>Шаги 17.15: A2 - прямолинейные тела, A3 - управление потоком, A4 - вызовы {@code @DeviceFunction} (сведения о
+ * вызываемых даёт сборщик модуля через {@link #callees}). Векторы, struct, указатели и атомики (A5) дают
+ * {@link NotYet}: вызывающий превращает это в {@code GPU0902}, а не строит неверный IR.</p>
+ *
+ * <p><b>Переменные.</b> Переменная - «паутина» записей LVT с одинаковыми слотом, именем и дескриптором, связанных
+ * достигающими определениями: javac дробит диапазон локали без инициализатора, присвоенной в ветках, а соседние
+ * области ({@code for (int i ...)} дважды) дают разные переменные в одном слоте.</p>
  *
  * <p><b>Правило эффектов.</b> Перед любым стейтментом, который появляется, пока на стеке лежат ожидающие значения,
  * «открытые» из них (читают изменяемую локаль или память) сохраняются во временные локали - то же правило, что
@@ -54,8 +59,41 @@ final class MethodLowerer {
         }
     }
 
-    /** Элемент стека: выражение и число стейтментов на момент, когда оно легло на стек. */
-    private record Slot(Ex ex, int mark) {
+    /** Ошибка структуры уже выдана диагностикой: исполнение метода прекращается. */
+    static final class Fail extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        Fail(String code) {
+            super(code, null, false, false);
+        }
+    }
+
+    /** Снимок состояния исполнителя (пробное исполнение блока при сборке цепочки условий). */
+    record Snap(List<St> out, int outSize, List<Slot> stack, int diags, int group, int line) {
+    }
+
+    /**
+     * Сведения о вызываемой device-функции.
+     *
+     * @param key         ключ функции ({@link #key})
+     * @param paramKinds  виды параметров
+     * @param paramSpaces адресные пространства параметров-массивов (иначе -1)
+     * @param paramNames  имена параметров (для диагностик)
+     * @param retKind     вид результата
+     * @param effects     функция или её вызываемые пишут память, используют барьер или эффектный builtin
+     */
+    record Callee(String key, int[] paramKinds, int[] paramSpaces, String[] paramNames, int retKind, boolean effects) {
+    }
+
+    /** Вызов device-функции в теле: инструкция и строка (для диагностик сборщика модуля). */
+    record DeviceCall(MethodInsnNode insn, int line) {
+    }
+
+    /**
+     * Элемент стека: выражение, число стейтментов на момент, когда оно легло на стек, и индекс первой инструкции его
+     * вычисления (порядок вызовов исходника, 17.11).
+     */
+    record Slot(Ex ex, int mark, int start) {
         int words() {
             return Kinds.wide(ex.kind) ? 2 : 1;
         }
@@ -77,10 +115,22 @@ final class MethodLowerer {
     final Var[] paramVars;
     final int retKind;
 
-    private final Map<String, Var> lvtVars = new HashMap<>();
-    private final Set<Var> declared = new HashSet<>();
+    /** Паутины переменных: запись LVT → представитель; представитель → переменная. */
+    private final Map<LocalVariableNode, LocalVariableNode> webParent = new IdentityHashMap<>();
+    private final Map<LocalVariableNode, Var> webVars = new IdentityHashMap<>();
     private final List<Slot> stack = new ArrayList<>();
-    private final List<St> out = new ArrayList<>();
+    /** Текущая инструкция и наименьшее начало значений, снятых ею со стека. */
+    private int curInsn;
+    /** Переменная последней записи {@link #store} ({@code null}, если это не {@code local_set}). */
+    private Var lastStored;
+    private int popMin = Integer.MAX_VALUE;
+    /** Вызовы device-функций, найденные проверкой ({@link #check}), в порядке байткода. */
+    final List<DeviceCall> deviceCalls = new ArrayList<>();
+    /** Сведения о вызываемых; {@code null} для вызова, который сборщик модуля не разрешил. */
+    java.util.function.Function<MethodInsnNode, Callee> callees = mi -> null;
+    private List<St> out = new ArrayList<>();
+    private int[] lineAt;
+    private AbstractInsnNode lastOp;
     private int line;
     private int group;
 
@@ -198,7 +248,7 @@ final class MethodLowerer {
                     } else if (mi.owner.startsWith("java/") || mi.owner.startsWith("javax/")) {
                         report("GPU0112", ln, mi.owner.replace('/', '.') + "." + mi.name);
                     } else {
-                        notYet = notYet != null ? notYet : "calls of @DeviceFunction methods (step A4)";
+                        deviceCalls.add(new DeviceCall(mi, ln));
                     }
                 }
                 case Opcodes.CHECKCAST, Opcodes.INSTANCEOF ->
@@ -210,8 +260,9 @@ final class MethodLowerer {
                 case Opcodes.GOTO, Opcodes.IFEQ, Opcodes.IFNE, Opcodes.IFLT, Opcodes.IFGE, Opcodes.IFGT, Opcodes.IFLE,
                      Opcodes.IF_ICMPEQ, Opcodes.IF_ICMPNE, Opcodes.IF_ICMPLT, Opcodes.IF_ICMPGE, Opcodes.IF_ICMPGT,
                      Opcodes.IF_ICMPLE, Opcodes.TABLESWITCH, Opcodes.LOOKUPSWITCH, Opcodes.LCMP, Opcodes.FCMPL,
-                     Opcodes.FCMPG, Opcodes.DCMPL, Opcodes.DCMPG ->
-                        notYet = notYet != null ? notYet : "control flow: if, loops, switch, ?:, && and || (step A3)";
+                     Opcodes.FCMPG, Opcodes.DCMPL, Opcodes.DCMPG -> {
+                    // управление потоком: структуризатор (17.9)
+                }
                 case Opcodes.IF_ACMPEQ, Opcodes.IF_ACMPNE -> report("GPU0196", ln, "by reference");
                 case Opcodes.IFNULL, Opcodes.IFNONNULL -> report("GPU0107", ln, "null");
                 default -> {
@@ -333,9 +384,135 @@ final class MethodLowerer {
         return null;
     }
 
-    private Var varOf(LocalVariableNode lv) {
-        String key = lv.index + ":" + lv.name + ":" + lv.desc;
-        return lvtVars.computeIfAbsent(key, k -> {
+    /**
+     * Запись LVT, которую начинает запись в слот: её диапазон начинается сразу за инструкцией.
+     *
+     * @return запись либо {@code null} (запись в уже живую переменную)
+     */
+    private LocalVariableNode declaringEntry(int slot, AbstractInsnNode at) {
+        LocalVariableNode lv = lvtAt(slot, at, true);
+        return lv != null && insns.indexOf(lv.start) > insns.indexOf(at) ? lv : null;
+    }
+
+    private LocalVariableNode root(LocalVariableNode lv) {
+        LocalVariableNode r = lv;
+        while (webParent.containsKey(r)) {
+            r = webParent.get(r);
+        }
+        return r;
+    }
+
+    private void union(LocalVariableNode a, LocalVariableNode b) {
+        if (a == null || b == null || a.index != b.index || !a.name.equals(b.name) || !a.desc.equals(b.desc)) {
+            return;
+        }
+        LocalVariableNode ra = root(a);
+        LocalVariableNode rb = root(b);
+        if (ra != rb) {
+            webParent.put(rb, ra);
+        }
+    }
+
+    private static int storeSlot(AbstractInsnNode in) {
+        if (in instanceof VarInsnNode v && v.getOpcode() >= Opcodes.ISTORE && v.getOpcode() <= Opcodes.ASTORE) {
+            return v.var;
+        }
+        return in instanceof IincInsnNode ii ? ii.var : -1;
+    }
+
+    private static int loadSlot(AbstractInsnNode in) {
+        if (in instanceof VarInsnNode v && v.getOpcode() >= Opcodes.ILOAD && v.getOpcode() <= Opcodes.ALOAD) {
+            return v.var;
+        }
+        return in instanceof IincInsnNode ii ? ii.var : -1;
+    }
+
+    /**
+     * Паутины переменных (17.10): достигающие определения по каждому слоту; чтение объединяет свою запись LVT с
+     * записями LVT всех достигающих его записей в слот.
+     */
+    private void buildWebs(Cfg g) {
+        if (m.localVariables == null) {
+            return;
+        }
+        Set<Integer> slots = new HashSet<>();
+        for (LocalVariableNode lv : m.localVariables) {
+            if (paramAtSlot(lv.index) < 0) {
+                slots.add(lv.index);
+            }
+        }
+        int n = g.size();
+        for (int slot : slots) {
+            List<Integer> defs = new ArrayList<>();
+            for (int k = 0; k < insns.size(); k++) {
+                if (storeSlot(insns.get(k)) == slot) {
+                    defs.add(k);
+                }
+            }
+            if (defs.isEmpty()) {
+                continue;
+            }
+            Map<Integer, Integer> bit = new HashMap<>();
+            for (int d = 0; d < defs.size(); d++) {
+                bit.put(defs.get(d), d);
+            }
+            java.util.BitSet[] outSet = new java.util.BitSet[n];
+            for (int b = 0; b < n; b++) {
+                outSet[b] = new java.util.BitSet();
+            }
+            boolean changed = true;
+            while (changed) {
+                changed = false;
+                for (int b = 0; b < n; b++) {
+                    java.util.BitSet cur = inSet(g, b, outSet);
+                    Cfg.Block bl = g.get(b);
+                    for (int k = bl.start; k < bl.end; k++) {
+                        if (storeSlot(insns.get(k)) == slot) {
+                            cur.clear();
+                            cur.set(bit.get(k));
+                        }
+                    }
+                    if (!cur.equals(outSet[b])) {
+                        outSet[b] = cur;
+                        changed = true;
+                    }
+                }
+            }
+            for (int b = 0; b < n; b++) {
+                java.util.BitSet cur = inSet(g, b, outSet);
+                Cfg.Block bl = g.get(b);
+                for (int k = bl.start; k < bl.end; k++) {
+                    AbstractInsnNode in = insns.get(k);
+                    if (loadSlot(in) == slot) {
+                        LocalVariableNode use = lvtAt(slot, in, false);
+                        for (int d = cur.nextSetBit(0); d >= 0; d = cur.nextSetBit(d + 1)) {
+                            union(use, defEntry(slot, insns.get(defs.get(d))));
+                        }
+                    }
+                    if (storeSlot(in) == slot) {
+                        cur.clear();
+                        cur.set(bit.get(k));
+                    }
+                }
+            }
+        }
+    }
+
+    private static java.util.BitSet inSet(Cfg g, int b, java.util.BitSet[] outSet) {
+        java.util.BitSet r = new java.util.BitSet();
+        for (int p : g.get(b).preds) {
+            r.or(outSet[p]);
+        }
+        return r;
+    }
+
+    private LocalVariableNode defEntry(int slot, AbstractInsnNode def) {
+        return def instanceof IincInsnNode ? lvtAt(slot, def, false) : lvtAt(slot, def, true);
+    }
+
+    private Var varOf(LocalVariableNode entry) {
+        LocalVariableNode lv = root(entry);
+        return webVars.computeIfAbsent(lv, k -> {
             int kind = Kinds.ofDescriptor(lv.desc);
             if (kind == Kinds.K_ARRAY) {
                 int elem = Kinds.ofDescriptor(lv.desc.substring(1));
@@ -395,14 +572,93 @@ final class MethodLowerer {
     // =============================================================================================
 
     /**
-     * Исполняет тело на абстрактном стеке.
+     * Строит граф, исполняет тело под управлением структуризатора и размещает объявления.
      *
-     * @return стейтменты функции (без объявлений изменяемых параметров - их добавляет эмиттер)
+     * @return стейтменты функции (без объявлений изменяемых параметров - их добавляет эмиттер); после ошибки
+     * структуры (диагностика уже выдана) - пустой список
      */
     List<St> execute() {
         markAssignedParams();
-        AbstractInsnNode last = lastOpcode();
-        for (AbstractInsnNode in = insns.getFirst(); in != null; in = in.getNext()) {
+        lastOp = lastOpcode();
+        lineAt = new int[insns.size()];
+        int ln = 0;
+        for (int k = 0; k < insns.size(); k++) {
+            if (insns.get(k) instanceof LineNumberNode l) {
+                ln = l.line;
+            }
+            lineAt[k] = ln;
+        }
+        Map<Integer, Integer> updates = new HashMap<>();
+        Cfg g = Cfg.build(insns, updateSplits(Cfg.build(insns, List.of()), updates));
+        Map<Integer, Integer> byBlock = new HashMap<>();
+        updates.forEach((h, u) -> byBlock.put(g.blockOfInsn(h), g.blockOfInsn(u)));
+        g.computeDominators();
+        buildWebs(g);
+        try {
+            List<St> body = new Structurer(this, g, byBlock).run();
+            Scopes.place(body);
+            return body;
+        } catch (Fail f) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Шаг цикла {@code for} (17.9-4): хвост латча {@code goto заголовок}, все инструкции которого стоят на строке
+     * заголовка (javac относит {@code i++} из {@code for (...; i++)} к строке {@code for}).
+     *
+     * @param g0      граф без разбиения
+     * @param updates сюда: индекс первой инструкции заголовка → индекс начала шага
+     * @return индексы, с которых начинаются блоки шага
+     */
+    private List<Integer> updateSplits(Cfg g0, Map<Integer, Integer> updates) {
+        List<Integer> splits = new ArrayList<>();
+        for (int li = 0; li < g0.size(); li++) {
+            Cfg.Block l = g0.get(li);
+            if (l.term != Cfg.GOTO || l.target > li || g0.get(l.target).term != Cfg.COND) {
+                continue;
+            }
+            Cfg.Block h = g0.get(l.target);
+            int headerLine = lineAt[firstOpcodeIndex(h)];
+            int jump = insns.indexOf(l.last);
+            int u = -1;
+            int before = -1;
+            for (int k = jump - 1; k >= l.start; k--) {
+                if (insns.get(k).getOpcode() < 0) {
+                    continue;
+                }
+                if (lineAt[k] == headerLine) {
+                    u = k;
+                } else {
+                    before = k;
+                    break;
+                }
+            }
+            if (u < 0) {
+                continue;
+            }
+            int split = before < 0 ? l.start : before + 1;
+            splits.add(split);
+            updates.put(h.start, split);
+        }
+        return splits;
+    }
+
+    private int firstOpcodeIndex(Cfg.Block b) {
+        for (int k = b.start; k < b.end; k++) {
+            if (insns.get(k).getOpcode() >= 0) {
+                return k;
+            }
+        }
+        return b.start;
+    }
+
+    // ---- интерфейс для структуризатора ------------------------------------------------------------
+
+    /** Исполняет инструкции {@code [from, to)} (без завершающего перехода блока). */
+    void run(int from, int to) {
+        for (int k = from; k < to; k++) {
+            AbstractInsnNode in = insns.get(k);
             if (in instanceof LineNumberNode l) {
                 line = l.line;
                 continue;
@@ -414,9 +670,268 @@ final class MethodLowerer {
             if (stack.isEmpty()) {
                 group++;
             }
-            in = step(in, op, in == last);
+            curInsn = k;
+            popMin = Integer.MAX_VALUE;
+            AbstractInsnNode r = step(in, op, in == lastOp);
+            if (r != in) {
+                k = insns.indexOf(r);
+            }
         }
-        return out;
+    }
+
+    Snap snap() {
+        return new Snap(out, out.size(), new ArrayList<>(stack), diags.size(), group, line);
+    }
+
+    void restore(Snap s) {
+        out = s.out();
+        while (out.size() > s.outSize()) {
+            out.remove(out.size() - 1);
+        }
+        stack.clear();
+        stack.addAll(s.stack());
+        while (diags.size() > s.diags()) {
+            diags.remove(diags.size() - 1);
+        }
+        group = s.group();
+        line = s.line();
+    }
+
+    /** Подменяет список, в который идут стейтменты; возвращает прежний. */
+    List<St> swapOut(List<St> list) {
+        List<St> old = out;
+        out = list;
+        return old;
+    }
+
+    /** Стейтмент с правилом эффектов (ожидающие открытые значения стека сохраняются раньше него). */
+    void emit(St s) {
+        add(s);
+    }
+
+    void emitRaw(St s) {
+        out.add(s);
+    }
+
+    /** @return число стейтментов текущего списка */
+    int outSize() {
+        return out.size();
+    }
+
+    /**
+     * Стейтменты условного выражения-значения - часть стейтмента, который потребит значение (стек между блоками
+     * условия пуст, но исходный стейтмент тот же): они получают его номер, и эмиттер объявляет его переменную раньше
+     * их временных локалей, как {@code frontend-java}.
+     *
+     * @param from     начало стейтментов выражения в текущем списке
+     * @param minGroup номер, с которого начинается выражение (более ранние стейтменты блока - другие исходные)
+     */
+    void regroup(int from, int minGroup) {
+        for (int i = from; i < out.size(); i++) {
+            St s = out.get(i);
+            if (s.group >= minGroup) {
+                s.group = group;
+            }
+        }
+    }
+
+    void emitAll(List<St> list) {
+        out.addAll(list);
+    }
+
+    /** Выдаёт ошибку структуры и прекращает исполнение метода. */
+    void fail(String code, Object... args) {
+        report(code, line, args);
+        throw new Fail(code);
+    }
+
+    int stackSize() {
+        return stack.size();
+    }
+
+    List<Slot> stackCopy() {
+        return new ArrayList<>(stack);
+    }
+
+    void setStack(List<Slot> s) {
+        stack.clear();
+        stack.addAll(s);
+    }
+
+    /** {@code true}, если стек совпадает с {@code base} поэлементно (те же записи). */
+    boolean sameStack(List<Slot> base) {
+        if (stack.size() != base.size()) {
+            return false;
+        }
+        for (int i = 0; i < base.size(); i++) {
+            if (stack.get(i) != base.get(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    boolean hasOpenPending() {
+        for (Slot s : stack) {
+            if (s.ex().open && s.ex().kind != Kinds.K_ARRAY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void spillPending() {
+        spillOpen(false, null);
+    }
+
+    int line() {
+        return line;
+    }
+
+    int group() {
+        return group;
+    }
+
+    String name() {
+        return name;
+    }
+
+    int lineOf(AbstractInsnNode in) {
+        return lineAt[insns.indexOf(in)];
+    }
+
+    /**
+     * {@code invokestatic} без эффектов: builtin {@code Gpu.*} без флагов {@code EFFECT/SYNC} или device-функция без
+     * эффектов.
+     */
+    boolean pureCall(MethodInsnNode mi) {
+        if (!mi.owner.equals(GPU)) {
+            Callee c = callees.apply(mi);
+            return c != null && !c.effects();
+        }
+        int id = Builtins.idOf(mi.name);
+        return id >= 0 && !Builtins.has(id, Builtins.EFFECT) && !Builtins.has(id, Builtins.SYNC);
+    }
+
+    /**
+     * Ключ функции в модуле.
+     *
+     * @param owner внутреннее имя класса
+     * @param name  имя метода
+     * @param desc  дескриптор
+     * @return {@code owner.name desc}
+     */
+    static String key(String owner, String name, String desc) {
+        return owner + "." + name + desc;
+    }
+
+    /**
+     * Собственные эффекты тела (без вызываемых): запись элемента массива, барьер, эффектный builtin - то, от чего
+     * {@code frontend-java} помечает функцию эффектной.
+     *
+     * @return {@code true}, если тело пишет память или синхронизируется
+     */
+    boolean ownEffects() {
+        for (AbstractInsnNode in = insns.getFirst(); in != null; in = in.getNext()) {
+            int op = in.getOpcode();
+            if (op >= Opcodes.IASTORE && op <= Opcodes.SASTORE) {
+                return true;
+            }
+            if (op == Opcodes.INVOKESTATIC && ((MethodInsnNode) in).owner.equals(GPU)) {
+                int id = Builtins.idOf(((MethodInsnNode) in).name);
+                if (id >= 0 && (Builtins.has(id, Builtins.EFFECT) || Builtins.has(id, Builtins.SYNC))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Условие условного перехода: снимает операнды со стека.
+     *
+     * @return булево выражение «переход выполняется»
+     */
+    Ex jumpCond(org.objectweb.asm.tree.JumpInsnNode j) {
+        int op = j.getOpcode();
+        int rel = Conds.relation(op);
+        if (op >= Opcodes.IFEQ && op <= Opcodes.IFLE) {
+            Ex v = pop();
+            if (v.op == Ex.CMP3) {
+                return Conds.fromCmp3(v, rel);
+            }
+            Ex bv = Conds.boolValue(v);
+            if (bv != null && (rel == Op.EQ || rel == Op.NE)) {
+                return rel == Op.NE ? bv : Conds.neg(bv);
+            }
+            return Conds.compare(rel, v, Ex.constant(Kinds.K_INT, 0));
+        }
+        Ex r = pop();
+        Ex l = pop();
+        return Conds.compare(rel, l, r);
+    }
+
+    /**
+     * Значение «ромба» {@code c ? a : b}: тип - общий тип плеч (константа {@code int} рядом с {@code byte/short/char}
+     * или {@code boolean} принимает их тип, как в Java); {@code c ? true : false} → {@code c}.
+     */
+    Ex diamond(Ex c, Ex a, Ex b) {
+        int k;
+        if (a.kind == b.kind) {
+            k = a.kind;
+        } else if (a.kind == Kinds.K_BOOLEAN && isBit(b) || b.kind == Kinds.K_BOOLEAN && isBit(a)) {
+            k = Kinds.K_BOOLEAN;
+        } else if (isIntConst(a) && small(b.kind)) {
+            k = b.kind;
+        } else if (isIntConst(b) && small(a.kind)) {
+            k = a.kind;
+        } else {
+            k = Kinds.binaryPromoted(a.kind, b.kind);
+        }
+        Ex aa = coerce(a, k);
+        Ex bb = coerce(b, k);
+        if (k == Kinds.K_BOOLEAN && aa.op == Ex.CONST && bb.op == Ex.CONST && aa.bits != bb.bits) {
+            return aa.bits == 1 ? c : Conds.neg(c);
+        }
+        return Ex.select(k, c, aa, bb);
+    }
+
+    private static boolean isBit(Ex e) {
+        return e.isIntConstant(0) || e.isIntConstant(1);
+    }
+
+    private static boolean isIntConst(Ex e) {
+        return e.op == Ex.CONST && e.kind == Kinds.K_INT;
+    }
+
+    private static boolean small(int k) {
+        return k == Kinds.K_BYTE || k == Kinds.K_SHORT || k == Kinds.K_CHAR;
+    }
+
+    /**
+     * Инициализаторы {@code for} (17.9-8): хвостовые записи текущего списка, объявляющие локаль, диапазон LVT
+     * которой кончается на выходе цикла. Снимаются со списка.
+     */
+    List<St> pullForInit(Cfg g, int exit) {
+        List<St> r = new ArrayList<>();
+        while (!out.isEmpty()) {
+            St s = out.get(out.size() - 1);
+            if (s.kind == St.SET && s.lvt != null && g.blockAt(s.lvt.end) == exit) {
+                r.add(0, out.remove(out.size() - 1));
+            } else {
+                break;
+            }
+        }
+        return r;
+    }
+
+    /** Нулевое значение вида (инициализатор {@code local_decl} без записи, как {@code zero} в {@code frontend-java}). */
+    static Ex zero(int kind) {
+        return switch (kind) {
+            case Kinds.K_FLOAT -> Ex.constant(kind, Float.floatToRawIntBits(0f));
+            case Kinds.K_DOUBLE -> Ex.constant(kind, Double.doubleToRawLongBits(0.0));
+            default -> Ex.constant(kind, 0);
+        };
     }
 
     private AbstractInsnNode lastOpcode() {
@@ -444,16 +959,18 @@ final class MethodLowerer {
         }
     }
 
-    private void push(Ex e) {
-        stack.add(new Slot(e, out.size()));
+    void push(Ex e) {
+        stack.add(new Slot(e, out.size(), Math.min(curInsn, popMin)));
     }
 
-    private Ex pop() {
-        return stack.remove(stack.size() - 1).ex();
+    Ex pop() {
+        return popSlot().ex();
     }
 
     private Slot popSlot() {
-        return stack.remove(stack.size() - 1);
+        Slot s = stack.remove(stack.size() - 1);
+        popMin = Math.min(popMin, s.start());
+        return s;
     }
 
     /** Снимает со стека ровно {@code words} слов (элементы возвращаются в порядке стека, снизу вверх). */
@@ -473,12 +990,39 @@ final class MethodLowerer {
 
     /** Добавляет стейтмент, предварительно сохранив открытые ожидающие значения стека. */
     private Map<Ex, Var> add(St s) {
-        Map<Ex, Var> spilled = spillOpen();
+        int at = out.size();
+        List<Ex> ready = readyValues();
+        Map<Ex, Var> spilled = spillOpen(true, null);
         out.add(s);
+        markReady(at, ready);
         return spilled;
     }
 
-    private Map<Ex, Var> spillOpen() {
+    /** Готовые значения стека (их узлы {@code frontend-java} уже создал): всё, кроме массивов. */
+    private List<Ex> readyValues() {
+        List<Ex> r = new ArrayList<>();
+        for (Slot s : stack) {
+            Ex e = s.ex();
+            if (e.kind != Kinds.K_ARRAY && e.op != Ex.NEW_ARRAY && e.op != Ex.CMP3) {
+                r.add(e);
+            }
+        }
+        return r;
+    }
+
+    private void markReady(int at, List<Ex> ready) {
+        if (!ready.isEmpty() && out.size() > at && out.get(at).ready == null) {
+            out.get(at).ready = ready;
+        }
+    }
+
+    /**
+     * @param operand спилл перед стейтментом, который выдало вычисление следующего операнда ({@code operandsFrom} в
+     *                {@code frontend-java}): эмиттер создаёт его после этого стейтмента
+     * @param old     переменная {@code x++}: её сохранённое значение - старое значение постфиксного шага
+     *                ({@code aux = 2}, эмиттер создаёт его чтение сразу за записью {@code x})
+     */
+    private Map<Ex, Var> spillOpen(boolean operand, Var old) {
         Map<Ex, Var> spilled = new IdentityHashMap<>();
         for (int i = 0; i < stack.size(); i++) {
             Slot s = stack.get(i);
@@ -489,15 +1033,17 @@ final class MethodLowerer {
             Var t = spilled.get(e);
             if (t == null) {
                 t = temp(e.kind);
-                out.add(new St(St.DECL, t, e, null, null, 0, false, line, group));
+                // aux = 1: временная локаль спилла (эмиттер создаёт её после стейтмента, который её потребовал)
+                int aux = old != null && e.op == Ex.LOCAL_GET && e.var == old ? 2 : operand ? 1 : 0;
+                out.add(new St(St.DECL, t, e, null, null, aux, false, line, group));
                 spilled.put(e, t);
             }
-            stack.set(i, new Slot(Ex.localGet(t), s.mark()));
+            stack.set(i, new Slot(Ex.localGet(t), s.mark(), s.start()));
         }
         return spilled;
     }
 
-    private static Var temp(int kind) {
+    static Var temp(int kind) {
         return new Var(null, kind, -1, -1, Kinds.irType(kind), -1);
     }
 
@@ -516,6 +1062,10 @@ final class MethodLowerer {
         if (kind == Kinds.K_BOOLEAN && v.op == Ex.CONST && (v.bits == 0 || v.bits == 1)) {
             return Ex.constant(Kinds.K_BOOLEAN, v.bits);
         }
+        Ex bv = kind == Kinds.K_BOOLEAN ? Conds.boolValue(v) : null;
+        if (bv != null) {
+            return bv; // boolean, материализованный ромбом c ? 1 : 0
+        }
         return Ex.convert(kind, v, true);
     }
 
@@ -529,7 +1079,7 @@ final class MethodLowerer {
     }
 
     /** Операнд бинарной операции, повышенный до {@code pk} (числовое повышение Java - неявное). */
-    private static Ex promoteOperand(Ex x, Ex other, int pk) {
+    static Ex promoteOperand(Ex x, Ex other, int pk) {
         if (x.kind == pk) {
             if (isExplicitWidening(x) && Kinds.binaryPromoted(sourceKind(x), sourceKind(other)) == pk) {
                 return x.withImplicit(true);
@@ -577,10 +1127,27 @@ final class MethodLowerer {
             case Opcodes.NEWARRAY -> newArray((IntInsnNode) in);
             case Opcodes.POP -> pop();
             case Opcodes.POP2 -> popWords(2);
-            case Opcodes.DUP -> dup(1, 0);
+            case Opcodes.DUP, Opcodes.DUP2 -> {
+                AbstractInsnNode nx = nextOpcode(in);
+                boolean wide = !stack.isEmpty() && stack.get(stack.size() - 1).words() == 2;
+                if (nx instanceof VarInsnNode vs && vs.getOpcode() >= Opcodes.ISTORE && vs.getOpcode() <= Opcodes.DSTORE
+                        && wide == (op == Opcodes.DUP2)) {
+                    // x = (y = v): значение присваивания - чтение y после записи (assign в frontend-java)
+                    store(vs);
+                    if (lastStored != null) {
+                        push(Ex.localGet(lastStored));
+                    }
+                    return nx;
+                }
+                if (op == Opcodes.DUP) {
+                    dup(1, 0);
+                } else {
+                    dup(2, 0);
+                }
+            }
             case Opcodes.DUP_X1 -> dup(1, 1);
             case Opcodes.DUP_X2 -> dup(1, 2);
-            case Opcodes.DUP2 -> dup(2, 0);
+
             case Opcodes.DUP2_X1 -> dup(2, 1);
             case Opcodes.DUP2_X2 -> dup(2, 2);
             case Opcodes.SWAP -> {
@@ -618,11 +1185,19 @@ final class MethodLowerer {
             case Opcodes.I2F, Opcodes.L2F, Opcodes.D2F -> push(Ex.convert(Kinds.K_FLOAT, pop(), false));
             case Opcodes.I2D, Opcodes.L2D, Opcodes.F2D -> push(Ex.convert(Kinds.K_DOUBLE, pop(), false));
             case Opcodes.L2I, Opcodes.F2I, Opcodes.D2I -> push(Ex.convert(Kinds.K_INT, pop(), false));
-            case Opcodes.I2B -> push(Ex.convert(Kinds.K_BYTE, pop(), false));
-            case Opcodes.I2S -> push(Ex.convert(Kinds.K_SHORT, pop(), false));
-            case Opcodes.I2C -> push(Ex.convert(Kinds.K_CHAR, pop(), false));
+            case Opcodes.I2B -> push(narrow(Kinds.K_BYTE, pop()));
+            case Opcodes.I2S -> push(narrow(Kinds.K_SHORT, pop()));
+            case Opcodes.I2C -> push(narrow(Kinds.K_CHAR, pop()));
+            case Opcodes.LCMP, Opcodes.FCMPL, Opcodes.FCMPG, Opcodes.DCMPL, Opcodes.DCMPG -> {
+                Ex r = pop();
+                Ex l = pop();
+                int variant = op == Opcodes.LCMP ? Conds.CMP_EXACT
+                        : op == Opcodes.FCMPL || op == Opcodes.DCMPL ? Conds.CMP_NAN_LESS : Conds.CMP_NAN_GREATER;
+                push(Ex.cmp3(variant, l, r));
+            }
             case Opcodes.INVOKESTATIC -> {
-                return builtin((MethodInsnNode) in);
+                MethodInsnNode mi = (MethodInsnNode) in;
+                return mi.owner.equals(GPU) ? builtin(mi) : deviceCall(mi);
             }
             case Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN ->
                     add(st(St.RETURN, null, coerce(pop(), retKind)));
@@ -634,6 +1209,20 @@ final class MethodLowerer {
             default -> throw new IllegalStateException("opcode " + Insns.name(op) + " passed the subset check");
         }
         return in;
+    }
+
+    /**
+     * Сужение до {@code byte/short/char}. {@code (byte) f} у вещественного javac пишет как {@code f2i; i2b} (JLS 5.1.3
+     * так и определяет это приведение), а {@code frontend-java} строит одно {@code convert(i8, f)} с тем же смыслом;
+     * так же {@code (short) l} у {@code long} - {@code l2i; i2s} (младшие биты те же).
+     */
+    private static Ex narrow(int kind, Ex v) {
+        if (v.op == Ex.CONVERT && !v.implicit && v.kind == Kinds.K_INT
+                && (v.kids[0].kind == Kinds.K_FLOAT || v.kids[0].kind == Kinds.K_DOUBLE
+                || v.kids[0].kind == Kinds.K_LONG)) {
+            return Ex.convert(kind, v.kids[0], false);
+        }
+        return Ex.convert(kind, v, false);
     }
 
     private static Ex ldc(Object c) {
@@ -691,6 +1280,7 @@ final class MethodLowerer {
     }
 
     private void store(VarInsnNode in) {
+        lastStored = null;
         Ex v = pop();
         Var var = varForStore(in.var, in);
         if (var.kind == Kinds.K_ARRAY) {
@@ -701,14 +1291,19 @@ final class MethodLowerer {
             add(new St(St.ARRAY_DECL, var, null, null, null, v.aux, false, line, group));
             return;
         }
-        boolean first = var.paramIndex < 0 && declared.add(var);
-        add(st(first ? St.DECL : St.SET, var, coerce(v, var.kind)));
+        // объявление ставит Scopes после структурирования (17.10): здесь любая запись - local_set
+        St s = st(St.SET, var, coerce(v, var.kind));
+        s.lvt = var.paramIndex < 0 ? declaringEntry(in.var, in) : null;
+        add(s);
+        lastStored = var;
     }
 
     private void iinc(IincInsnNode in) {
         int p = paramAtSlot(in.var);
         Var var = p >= 0 ? paramVars[p] : varOf(lvtAt(in.var, in, false));
-        Map<Ex, Var> spilled = spillOpen();
+        int at = out.size();
+        List<Ex> ready = readyValues();
+        Map<Ex, Var> spilled = spillOpen(true, var);
         Ex base = Ex.localGet(var);
         for (Map.Entry<Ex, Var> e : spilled.entrySet()) {
             // постфиксный x++ в выражении: старое значение уже во временной локали - шаг считается от неё, как в
@@ -720,6 +1315,7 @@ final class MethodLowerer {
         int c = in.incr;
         Ex value = Ex.binary(c < 0 ? Op.SUB : Op.ADD, Kinds.K_INT, base, Ex.constant(Kinds.K_INT, Math.abs((long) c)));
         out.add(st(St.SET, var, value));
+        markReady(at, ready);
     }
 
     private void arrayStore() {
@@ -727,8 +1323,29 @@ final class MethodLowerer {
         Ex idx = pop();
         Slot arr = popSlot();
         Ex value = coerce(v, arr.ex().elemKind);
-        boolean ordered = out.size() > arr.mark();
+        // isPure в frontend-java: любой вызов, кроме чистого builtin, делает порядок вычисления наблюдаемым
+        boolean ordered = out.size() > arr.mark() || impureCall(v) || impureCall(idx);
         add(new St(St.STORE, null, arr.ex(), index(idx), value, 0, ordered, line, group));
+    }
+
+    private static AbstractInsnNode nextOpcode(AbstractInsnNode in) {
+        AbstractInsnNode n = in.getNext();
+        while (n != null && n.getOpcode() < 0) {
+            n = n.getNext();
+        }
+        return n;
+    }
+
+    private static boolean impureCall(Ex e) {
+        if (e.op == Ex.CALL || e.op == Ex.INTRINSIC && !Builtins.has(e.aux, Builtins.PURE)) {
+            return true;
+        }
+        for (Ex k : e.kids) {
+            if (impureCall(k)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void newArray(IntInsnNode in) {
@@ -749,6 +1366,66 @@ final class MethodLowerer {
             return;
         }
         push(Ex.newArray(elem, (int) len.bits));
+    }
+
+    /**
+     * Вызов {@code @DeviceFunction} (как {@code call} в {@code frontend-java}): аргументы приводятся к типам параметров,
+     * у массива проверяется адресное пространство ({@code GPU0121}); вызов-стейтмент - {@code expr_stmt}, результат
+     * эффектной функции - временная локаль, иначе вызов остаётся в дереве выражения.
+     */
+    private AbstractInsnNode deviceCall(MethodInsnNode mi) {
+        Callee c = callees.apply(mi);
+        if (c == null) {
+            throw new IllegalStateException("call of " + mi.owner + "." + mi.name + " is not resolved");
+        }
+        int n = c.paramKinds().length;
+        Ex[] args = new Ex[n];
+        int start = curInsn;
+        for (int i = n - 1; i >= 0; i--) {
+            Slot s = popSlot();
+            args[i] = s.ex();
+            start = Math.min(start, s.start());
+        }
+        for (int i = 0; i < n; i++) {
+            if (c.paramKinds()[i] == Kinds.K_ARRAY) {
+                if (args[i].space != c.paramSpaces()[i]) {
+                    report("GPU0121", line, c.paramNames()[i], spaceName(c.paramSpaces()[i]), spaceName(args[i].space));
+                }
+            } else {
+                args[i] = coerce(args[i], c.paramKinds()[i]);
+            }
+        }
+        Ex call = Ex.call(c.key(), c.retKind(), insns.indexOf(mi), start, args);
+        AbstractInsnNode next = mi.getNext();
+        while (next != null && next.getOpcode() < 0) {
+            next = next.getNext();
+        }
+        if (c.retKind() == Kinds.K_VOID) {
+            add(st(St.EXPR, null, call));
+            return mi;
+        }
+        if (next != null && (next.getOpcode() == Opcodes.POP || next.getOpcode() == Opcodes.POP2)) {
+            add(st(St.EXPR, null, call));
+            return next;
+        }
+        if (c.effects()) {
+            Var t = temp(c.retKind());
+            add(st(St.DECL, t, call));
+            push(Ex.localGet(t));
+            return mi;
+        }
+        push(call);
+        return mi;
+    }
+
+    /** Имя адресного пространства для сообщений (как {@code Ann.spaceName} в {@code frontend-java}). */
+    static String spaceName(int space) {
+        return switch (space) {
+            case com.sixik.gpu.ir.AddressSpace.GLOBAL -> "global";
+            case com.sixik.gpu.ir.AddressSpace.LOCAL -> "local";
+            case com.sixik.gpu.ir.AddressSpace.CONSTANT -> "constant";
+            default -> "private";
+        };
     }
 
     /** {@code invokestatic Gpu.*}: builtin, барьер или эффектный builtin (его результат - временная локаль). */

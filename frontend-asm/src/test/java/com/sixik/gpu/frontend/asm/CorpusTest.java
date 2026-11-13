@@ -30,34 +30,54 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Критерий приёмки 17.14 на корпусе образцов {@code ir-interpreter}: их class-файлы собраны javac с процессором
  * {@code frontend-java}, IR_java лежит в ресурсах, а {@code frontend-asm} строит IR_asm из тех же class-файлов.
  *
- * <p>Шаг A2 (17.15): прямолинейные ядра. Остальные ядра корпуса пока дают {@code GPU0902} «not supported by
- * frontend-asm yet» - тест следит, чтобы ни одно допустимое ядро не получило другую ошибку или неверный IR.</p>
+ * <p>Шаги A2-A4 (17.15): прямолинейные ядра, управление потоком и вызовы device-функций. Остальные ядра корпуса пока дают
+ * {@code GPU0902} «not supported by frontend-asm yet» - тест следит, чтобы ни одно допустимое ядро не получило другую
+ * ошибку или неверный IR.</p>
  */
 class CorpusTest {
 
-    /** Прямолинейные ядра корпуса (без переходов, вызовов device-функций и объектов). */
-    private static final Set<String> STRAIGHT_LINE = Set.of(
+    /** Ядра корпуса без объектов (A2 - прямолинейные, A3 - с управлением потоком, A4 - с device-функциями). */
+    private static final Set<String> BUILT = Set.of(
             "ControlKernels.parameters", "FloatKernels.fromIntegers", "IndexKernels.grouped", "IndexKernels.sine",
             "LocalKernels.transpose", "MemoryKernels.aliasing", "MemoryKernels.lengths",
-            "SmallTypeKernels.compound");
+            "SmallTypeKernels.compound",
+            "ControlKernels.earlyReturn", "ControlKernels.loops", "FloatKernels.doubleOps", "FloatKernels.floatOps",
+            "IndexKernels.ids", "IntKernels.ops", "LocalKernels.scan", "LongKernels.ops", "MemoryKernels.prefixSum",
+            "SmallTypeKernels.storage",
+            "ControlKernels.effects", "LocalKernels.reduceSum", "MemoryKernels.helpers", "MemoryKernels.manyCalls",
+            "MemoryKernels.privateArrays");
 
     /**
      * Пункт (д) закрытого списка 17.14-3: IR отличается только константами, которые свернул javac ({@code c /= 3} -
-     * в байткоде уже {@code 3.0f}, {@code (byte) 200} - уже {@code -56}), а {@code frontend-java} строит
-     * {@code convert} константы. После оптимизатора (свёртка {@code convert(const)}) IR совпадает.
+     * в байткоде уже {@code 3.0f}, {@code (byte) 200} - уже {@code -56}, у {@code long}-элемента
+     * {@code x < y ? 1 : 0} ветки уже {@code lconst_1/lconst_0}, {@code f[r] * 10} - уже {@code 10.0f}), а
+     * {@code frontend-java} строит {@code convert}
+     * константы или {@code convert(select)}. После оптимизатора (свёртка {@code convert(const)} и
+     * {@code convert(select(c, k1, k2))}) IR совпадает.
      */
-    private static final Set<String> JAVAC_FOLDED = Set.of("ControlKernels.parameters", "SmallTypeKernels.compound");
+    private static final Set<String> JAVAC_FOLDED = Set.of("ControlKernels.parameters", "SmallTypeKernels.compound",
+            "LongKernels.ops", "MemoryKernels.privateArrays");
+
+    /**
+     * Пункт (г) закрытого списка 17.14-3: локаль без инициализатора ({@code int c1;}) в байткоде не видна до первой
+     * записи, а {@code frontend-java} объявляет её нулём в месте объявления; у {@code effects} к этому добавляется (д).
+     * IR отличается, поведение (17.14-2) проверяет {@link #builtKernelsBehaveLikeFrontendJava}.
+     */
+    private static final Set<String> UNINITIALIZED_DECLS = Set.of("ControlKernels.effects");
 
     /**
      * Запуски, которых требуют сами ядра (как в тестах {@code ir-interpreter}): {@code reqd_work_group_size},
-     * длины массивов, один work-item для ядер, пишущих в общую ячейку. Остальные - {@code of1D(64, 16)}.
+     * длины массивов, один work-item для ядер, пишущих в общую ячейку. Остальные - {@code of1D(16, 16)}: массивы
+     * {@link SampleArgs} рассчитаны на 16-24 work-item'а.
      */
     private static final Map<String, NdRange> RANGES = Map.of(
             "IndexKernels.grouped", NdRange.of2D(8, 6),
             "LocalKernels.transpose", NdRange.of2D(24, 16),
             "MemoryKernels.lengths", NdRange.of1D(3),
             "SmallTypeKernels.compound", NdRange.of1D(1),
-            "ControlKernels.parameters", NdRange.of1D(1));
+            "ControlKernels.parameters", NdRange.of1D(1),
+            "MemoryKernels.manyCalls", NdRange.of1D(2),
+            "LocalKernels.reduceSum", NdRange.of1D(128, 64));
 
     private record Pair(SampleKernels.Kernel java, AsmFrontend.Kernel asm, List<AsmDiagnostic> diags) {
     }
@@ -84,11 +104,11 @@ class CorpusTest {
     }
 
     @Test
-    void straightLineKernelsGiveTheSameIr() {
+    void builtKernelsGiveTheSameIr() {
         List<String> built = new ArrayList<>();
         for (Pair p : corpus()) {
             String label = p.java().label();
-            if (!STRAIGHT_LINE.contains(label)) {
+            if (!BUILT.contains(label)) {
                 continue;
             }
             assertTrue(p.asm() != null, label + ": " + p.diags());
@@ -96,10 +116,15 @@ class CorpusTest {
             if (JAVAC_FOLDED.contains(label)) {
                 continue;
             }
+            if (UNINITIALIZED_DECLS.contains(label)) {
+                assertNotEquals(IrDump.dump(p.java().module(), false), IrDump.dump(p.asm().module(), false),
+                        label + ": the IR is the same, the kernel must leave UNINITIALIZED_DECLS");
+                continue;
+            }
             assertEquals(IrDump.dump(p.java().module(), false), IrDump.dump(p.asm().module(), false), label);
             assertEquals(IrBinary.kernelId(p.java().module()), p.asm().entry().kernelId(), label + ": kernelId");
         }
-        assertEquals(STRAIGHT_LINE.size(), built.size(), "every straight-line kernel is in the corpus: " + built);
+        assertEquals(BUILT.size(), built.size(), "every expected kernel is in the corpus: " + built);
     }
 
     /** 17.14-3 (д): расхождение есть и целиком снимается свёрткой констант. */
@@ -124,7 +149,8 @@ class CorpusTest {
     private static IrModule optimized(IrModule m) {
         OptimizeResult r = Optimizer.optimize(m, OptimizeOptions.DEFAULT);
         assertTrue(r.ok(), r.failures().toString());
-        return r.module();
+        // оптимизатор не перевыпускает модуль, который не изменил: порядок узлов выравнивается отдельно
+        return Optimizer.canonical(r.module());
     }
 
     @Test
@@ -153,26 +179,38 @@ class CorpusTest {
             for (long seed : new long[]{1, 42}) {
                 Object[] a = args(p.java(), seed);
                 Object[] j = args(p.java(), seed);
-                NdRange range = RANGES.getOrDefault(p.java().label(), NdRange.of1D(64, 16));
+                NdRange range = RANGES.getOrDefault(p.java().label(), NdRange.of1D(16, 16));
                 String ra = outcome(p.asm().module(), range, a);
                 String rj = outcome(p.java().module(), range, j);
                 assertEquals(rj, ra, p.java().label() + ": interpreter outcome");
-                if (STRAIGHT_LINE.contains(p.java().label())) {
+                if (BUILT.contains(p.java().label())) {
                     assertEquals("ok", rj, p.java().label() + ": the comparison must run the kernel, not two failures");
                 }
                 assertTrue(Arrays.deepEquals(j, a), p.java().label() + ": arguments after the run differ (seed " + seed + ")");
             }
             checked++;
         }
-        assertTrue(checked >= STRAIGHT_LINE.size(), "checked " + checked);
+        assertTrue(checked >= BUILT.size(), "checked " + checked);
     }
 
-    /** Случайные аргументы; у {@code transpose} ширина и высота должны совпадать с запуском. */
+    /**
+     * Случайные аргументы; у {@code transpose} ширина и высота должны совпадать с запуском, у {@code reduceSum} вход -
+     * по элементу на work-item двух групп по 64.
+     */
     private static Object[] args(SampleKernels.Kernel k, long seed) {
         Object[] a = SampleArgs.random(k, seed).get();
         if (k.label().equals("LocalKernels.transpose")) {
             a[2] = 24;
             a[3] = 16;
+        }
+        if (k.label().equals("LocalKernels.reduceSum")) {
+            java.util.Random rnd = new java.util.Random(seed);
+            int[] in = new int[128];
+            for (int i = 0; i < in.length; i++) {
+                in[i] = rnd.nextInt();
+            }
+            a[0] = in;
+            a[1] = new int[2];
         }
         return a;
     }
