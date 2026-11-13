@@ -9,7 +9,8 @@ include 'ir-interpreter'   // эталонный CPU-интерпретатор 
 include 'codegen-opencl'   // IR -> OpenCL C. Чистая функция.
 include 'runtime'          // GpuContext, устройства, буферы, кэш, запуск, JVM-fallback. FFM (Panama).
 include 'frontend-common'  // общий код фронтендов: атрибуты ядра, таблица диагностик, формат ресурсов.
-include 'frontend-java'    // javac Tree API + annotation processor -> пишет IR.
+include 'frontend-java'
+include 'frontend-asm'     // байткод (ASM tree API) -> тот же IR, что у frontend-java (раздел 17).    // javac Tree API + annotation processor -> пишет IR.
 include 'weaver'           // подмена тела @Kernel-метода (ASM, post-compile).
 include 'gradle-plugin'    // тонкая обёртка над weaver для Gradle.
 include 'test-support'     // JUnit 5/6: GpuAssert, @GPUTest, KernelSample.

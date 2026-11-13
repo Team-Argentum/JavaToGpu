@@ -65,6 +65,8 @@ def allowedProjectDeps = [
         // общий код фронтендов (REWORK_ARCHITECTURE.md, 17.2): не знает ни javac, ни ASM, ни api
         'frontend-common': ['ir'],
         'frontend-java' : ['api', 'ir', 'ir-optimizer', 'frontend-common'],
+        // фронтенд байткода (17.2): api не нужен - имена аннотаций и Gpu.* для него данные (строки дескрипторов)
+        'frontend-asm'  : ['ir', 'ir-optimizer', 'frontend-common'],
         'weaver'        : [],
         'gradle-plugin' : ['weaver'],
         'test-support'  : ['api', 'ir', 'ir-interpreter', 'runtime'],
@@ -75,6 +77,7 @@ def allowedProjectDeps = [
 // Внешние библиотеки (production-конфигурации). Всё остальное запрещено.
 def allowedExternalGroups = [
         'weaver'       : ['org.ow2.asm'],
+        'frontend-asm' : ['org.ow2.asm'],
         'test-support' : ['org.junit'],
 ]
 
@@ -88,6 +91,12 @@ def forbiddenInCore = [
         'com.sixik.gpu.runtime', 'com.sixik.gpu.frontend', 'com.sixik.gpu.weaver', 'com.sixik.gpu.tools',
 ]
 def forbiddenInPureCore = ['java.nio.file', 'java.io.File', 'java.net.']
+// Запреты отдельных модулей вне ядра (REWORK_ARCHITECTURE.md, 17.2).
+def forbiddenByModule = [
+        'frontend-asm': ['com.sun.', 'javax.annotation.processing', 'javax.lang.model', 'javax.tools', 'java.lang.foreign',
+                         'com.sixik.gpu.api', 'com.sixik.gpu.frontend.java', 'com.sixik.gpu.runtime',
+                         'com.sixik.gpu.weaver'],
+]
 
 tasks.register('verifyModuleBoundaries') {
     group = 'verification'
@@ -125,6 +134,7 @@ tasks.register('verifyModuleBoundaries') {
             def forbidden = []
             if (coreModules.contains(name)) forbidden += forbiddenInCore
             if (pureCore.contains(name)) forbidden += forbiddenInPureCore
+            forbidden += forbiddenByModule.getOrDefault(name, [])
             if (!forbidden.isEmpty()) {
                 sp.fileTree('src/main/java').matching { include '**/*.java' }.each { f ->
                     f.eachLine { line, idx ->

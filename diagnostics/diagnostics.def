@@ -1,7 +1,7 @@
 # Diagnostics table of the GPU-code frontend - the single source of the GPU#### codes (REWORK_ARCHITECTURE.md, 3.3).
 #
 # This is data shared by future frontends (ASM, Rust): code, severity, message and hint are not hard-coded in
-# Java code. It is packaged into the resources of the frontend-java module. Codes are stable: their meaning does
+# Java code. It is packaged into the resources of the frontend-common module. Codes are stable: their meaning does
 # not change, numbers are not reused.
 #
 # Line format:   <code> <error|warning> <message> | <hint>
@@ -9,7 +9,8 @@
 #
 # Groups:  GPU00xx - declarations and annotations (signatures, attributes, fallback)
 #          GPU01xx - constructs and types in method bodies (the Java subset for GPU)
-#          GPU02xx - compilation environment
+#          GPU02xx - compilation environment (javac)
+#          GPU03xx - class files (the bytecode frontend frontend-asm)
 #          GPU09xx - internal errors (IR validation, frontend failure); report them as a library bug
 
 # --- declarations and annotations ---------------------------------------------------------------
@@ -74,6 +75,11 @@ GPU0199 error   Pointer {0} is created from an array of address space {1}, but a
 
 # --- compilation environment --------------------------------------------------------------------
 GPU0201 error   Failed to get access to the javac Tree API from {0} | Compile with javac (ECJ is not supported); report your environment if this is javac
+
+# --- class files (frontend-asm) ----------------------------------------------------------------
+GPU0301 error   Class {0} has no LocalVariableTable: the bytecode frontend needs it to tell boolean, byte, short and char from int | Compile with -g (Gradle and Maven do it by default)
+GPU0302 error   Unsupported bytecode instruction {0} in {1} | GPU code is compiled from the subset that javac produces for the allowed Java code
+GPU0306 error   Class file {0} cannot be read: {1} | Rebuild the class; check that its version is supported by ASM
 
 # --- internal errors ----------------------------------------------------------------------------
 GPU0901 error   The IR of kernel {0} failed validation: {1} | Internal frontend error or an IR contract violation; report it with a code sample

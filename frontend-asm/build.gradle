@@ -1,0 +1,18 @@
+description = 'Bytecode frontend: reads class files (ASM tree API) and builds the same IR as frontend-java.'
+
+dependencies {
+    implementation project(':ir')
+    // шаблон @Reduction проверяется тем же кодом, которым рантайм строит параллельное ядро (как у frontend-java)
+    implementation project(':ir-optimizer')
+    // compilationProperties, атрибуты ядра, таблица диагностик, формат ресурсов - общий код с frontend-java (17.2)
+    implementation project(':frontend-common')
+    implementation 'org.ow2.asm:asm:9.11.1'
+    implementation 'org.ow2.asm:asm-tree:9.11.1'
+
+    // Только тесты: корпус образцов (class-файлы с IR от frontend-java в ресурсах), дамп IR и интерпретатор для
+    // сравнения IR_asm с IR_java по тексту и по поведению (критерий 17.14).
+    testImplementation testFixtures(project(':ir-interpreter'))
+    testImplementation project(':ir-interpreter')
+    testImplementation project(':tools')
+    testImplementation project(':api')
+}

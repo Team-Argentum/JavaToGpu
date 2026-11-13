@@ -323,12 +323,19 @@ class DiagnosticsTest {
         assertTrue(r.errorCodes().containsAll(List.of("GPU0101", "GPU0106", "GPU0116", "GPU0111")), r.describe());
     }
 
+    /** Коды таблицы, которые выдаёт этот фронтенд: группа GPU03xx (class-файлы) принадлежит frontend-asm и его тестам. */
+    private static Set<String> javaCodes() {
+        Set<String> codes = new TreeSet<>(Diag.codes());
+        codes.removeIf(c -> c.startsWith("GPU03"));
+        return codes;
+    }
+
     @Test
     void tableCoversEveryCaseAndNothingElse() {
         Set<String> covered = new TreeSet<>();
         CASES.forEach(c -> covered.add(c.code()));
         covered.addAll(ENVIRONMENT_CODES);
-        assertEquals(new TreeSet<>(Diag.codes()), covered,
+        assertEquals(javaCodes(), covered,
                 "every code in the diagnostics.def table must have a negative test, and vice versa");
     }
 
@@ -351,7 +358,7 @@ class DiagnosticsTest {
         List<String> unknown = new ArrayList<>(used);
         unknown.removeAll(Diag.codes());
         assertTrue(unknown.isEmpty(), "codes in sources without an entry in diagnostics.def: " + unknown);
-        List<String> unused = new ArrayList<>(Diag.codes());
+        List<String> unused = new ArrayList<>(javaCodes());
         unused.removeAll(used);
         assertTrue(unused.isEmpty(), "table codes that the code never reports: " + unused);
     }
