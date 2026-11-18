@@ -12,11 +12,14 @@ dependencies {
     //  * образцы-ядра ir-interpreter (настоящие @Kernel-методы, собранные процессором) - материал для @GPUTest;
     //  * фейковый DeviceApi runtime - проверка ветви устройства без железа;
     //  * frontend-java + weaver - сборка и подмена ядра в самом тесте: проверка выбора <имя>$jvm.
+    //  * frontend-asm - IR образцов из class-файлов для сверки с устройством (17.14-4).
     testImplementation testFixtures(project(':ir-interpreter'))
     testImplementation testFixtures(project(':ir'))
     testImplementation testFixtures(project(':runtime'))
     testImplementation project(':frontend-java')
     testImplementation project(':weaver')
+    // 17.14-4: те же образцы на IR frontend-asm (AsmSampleDeviceTest)
+    testImplementation project(':frontend-asm')
     testImplementation testFixtures(project(':weaver'))
 }
 

@@ -55,7 +55,8 @@
 
 ### Не-цели v1 (сознательно НЕ делаем)
 
-Оптимизатор (e-graph), CUDA/SPIR-V/ROCm-эмиттеры, ASM-фронтенд, images/samplers, async-API, multi-GPU,
+Оптимизатор (e-graph), CUDA/SPIR-V/ROCm-эмиттеры, ASM-фронтенд (сделан после M14 — `frontend-asm`, раздел 17
+архитектуры), images/samplers, async-API, multi-GPU,
 Benchmark/AutoTune, вендорная адаптация кодгена, `@GpuNative`, разбиение одного запуска между картами. В языке: объекты
 и куча, виртуальные вызовы, исключения, рекурсия, мониторы, labeled `break/continue`, `try/finally`, `assert`, строки.
 
@@ -118,9 +119,11 @@ Benchmark/AutoTune, вендорная адаптация кодгена, `@GpuN
 | `ir-interpreter` | эталонный CPU-интерпретатор IR                                                     | `ir`                                                | —                    |
 | `codegen-opencl` | IR → OpenCL C, чистая функция                                                      | `ir`                                                | —                    |
 | `runtime`        | `GpuContext`, устройства (FFM), `GpuBuffer`, кэш, запуск, JVM-fallback, хост-фасад | `api`, `ir`, `codegen-opencl`                       | —                    |
-| `frontend-java`  | annotation processor → IR, subset-валидатор, диагностики                           | `api`, `ir`                                         | — (javac API из JDK) |
+| `frontend-common`| общий код фронтендов: атрибуты ядра, таблица диагностик, формат ресурсов           | `ir`                                                | —                    |
+| `frontend-java`  | annotation processor → IR, subset-валидатор, диагностики                           | `api`, `ir`, `ir-optimizer`, `frontend-common`      | — (javac API из JDK) |
+| `frontend-asm`   | class-файлы → тот же IR (`gpu { frontend = 'asm' }`), device-функции из jar        | `ir`, `ir-optimizer`, `frontend-common`             | `org.ow2.asm`        |
 | `weaver`         | подмена тела `@Kernel`-метода (ASM, чистая функция над `ClassNode`)                | —                                                   | `org.ow2.asm`        |
-| `gradle-plugin`  | подключает зависимости, processor, weave-шаг, `--enable-native-access`             | `weaver`                                            | Gradle API           |
+| `gradle-plugin`  | подключает зависимости, фронтенд (processor или ASM), weave-шаг, `--enable-native-access` | `weaver`, `frontend-asm`                     | Gradle API           |
 | `test-support`   | `GpuAssert`, `@GPUTest`, `KernelSample`                                            | `api`, `ir`, `ir-interpreter`, `runtime`            | `org.junit`          |
 | `tools`          | дамп IR, golden-генерация, отчёты (не публикуется)                                 | `ir`, `codegen-opencl`, `ir-interpreter`, `runtime` | —                    |
 
@@ -690,7 +693,7 @@ JVM-fallback не уходит (`RT-F01`); интерпретатор строж
 | **Multi-GPU + балансировщик**              | раздача целых запусков по разнородным картам (напр. 5070+1060+Arc B580+RX 480)                     | потокобезопасный `GpuContext`, `DeviceInfo`, единая точка выбора устройства, события с id устройства | Планировщик по ожидаемому времени завершения; порог 48 % — защита от аномалий; исключение слабых карт всегда с записью в лог; разные OpenCL-платформы = отдельные контексты |
 | **Вендорная адаптация** (AMD/NVIDIA/Intel) | автоматическая адаптация кодгена под вендора                                                       | `emit(IrModule, Target)`, `Target` в ключе кэша                                                      | Таблица правил (quirks) — данные; знания — из legacy `docs/Device-Quirks.md`                                                                                                |
 | **CUDA / SPIR-V (ROCm)**                   | новые эмиттеры                                                                                     | интерфейс `Backend`, `required_features`                                                             | В legacy есть заготовка CUDA (`runtime/cuda`) — не переносить, использовать как справку                                                                                     |
-| **ASM-фронтенд**                           | чтение байткода любых JVM-языков                                                                   | IR как контракт                                                                                      | В legacy — `frontend/asm/*`, не подключено к пайплайну                                                                                                                      |
+| **ASM-фронтенд** `[x]`                     | чтение байткода любых JVM-языков                                                                   | IR как контракт                                                                                      | Сделано: `frontend-asm`, `gpu { frontend = 'asm' }` (архитектура, раздел 17, шаги A0–A6). Kotlin/Scala-специфика — позже                                                  |
 | **Images / samplers**                      | `Image1D/2D/3D`, `read/write_image`                                                                | зарезервированные type-kind'ы                                                                        | Тяжёлая поверхность в типах и бэкендах                                                                                                                                      |
 | **`@GpuNative`**                           | нативные тела по backend'ам + Java-fallback                                                        | `body_kind=NATIVE` + таблица `backend→строка` у функции                                              |                                                                                                                                                                             |
 | **Async API**                              | `submit → GpuFuture`, очереди, события                                                             | синхронный запуск изолирован за одной точкой                                                         | Нужен для multi-GPU                                                                                                                                                         |

@@ -2,10 +2,12 @@ plugins {
     id 'java-gradle-plugin'
 }
 
-description = 'Gradle plugin: wires dependencies, the annotation processor and the weave step.'
+description = 'Gradle plugin: wires dependencies, the frontend (annotation processor or bytecode) and the weave step.'
 
 dependencies {
     implementation project(':weaver')
+    // gpu { frontend = 'asm' }: IR строится из class-файлов шагом сборки, а не annotation processor'ом (17.3)
+    implementation project(':frontend-asm')
 
     // TestKit-проверка плагина на тестовом проекте: плагин собирает ядро, подменяет его и запускает.
     testImplementation gradleTestKit()
@@ -32,7 +34,7 @@ jar {
 // Тестовому проекту TestKit нужны jar'ы библиотек: они кладутся в flatDir (зависимости плагин добавляет сам).
 def libraryModules = ['api', 'ir', 'ir-optimizer', 'codegen-opencl', 'runtime', 'frontend-common', 'frontend-java']
 def libraryJars = libraryModules.collect { m -> project(":${m}").tasks.named('jar') }
-def consumerModules = libraryModules + ['gradle-plugin', 'weaver', 'ir-interpreter', 'test-support']
+def consumerModules = libraryModules + ['gradle-plugin', 'weaver', 'frontend-asm', 'ir-interpreter', 'test-support']
 tasks.named('test') {
     dependsOn rootProject.tasks.named('publishLocal')
     // dependsOn задаёт порядок, но не инвалидирует тест при изменении чужого JAR/POM.

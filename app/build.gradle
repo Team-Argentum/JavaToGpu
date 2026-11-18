@@ -11,6 +11,16 @@ description = 'Test application for developing and running JavaToGpu kernels.'
 // Используем те же frontend и weaver напрямую, без публикации библиотек.
 sourceSets {
     buildTools
+    // Пример фронтенда байткода (REWORK_ARCHITECTURE.md, раздел 17): asmLib - «библиотека» с device-функциями,
+    // уходит в jar без исходников; asmExample компилируется без annotation processor'а, IR строит frontend-asm.
+    asmLib
+    asmExample
+}
+
+def asmLibJar = tasks.register('asmLibJar', Jar) {
+    description = 'Device-function library of the asm example: class files only, no sources.'
+    archiveBaseName = 'asm-example-lib'
+    from sourceSets.asmLib.output
 }
 
 dependencies {
@@ -20,6 +30,12 @@ dependencies {
     testAnnotationProcessor project(':frontend-java')
 
     buildToolsImplementation project(':weaver')
+    buildToolsImplementation project(':frontend-asm')
+
+    asmLibImplementation project(':api')
+    asmExampleImplementation project(':api')
+    asmExampleImplementation project(':runtime')
+    asmExampleImplementation files(asmLibJar)
     testImplementation project(':test-support')
     testImplementation testFixtures(project(':runtime'))
 }
@@ -93,6 +109,33 @@ def weavingLauncher = javaToolchains.launcherFor(java.toolchain)
             }
         }
     }
+}
+
+// ---- пример frontend-asm ------------------------------------------------------------------------------------
+
+tasks.named('compileAsmExampleJava', JavaCompile) {
+    dependsOn tasks.named('buildToolsClasses')
+    inputs.files(weavingClasspath).withPropertyName('weavingClasspath').withNormalizer(ClasspathNormalizer)
+    // то же, что плагин при gpu { frontend = 'asm' }: IR из class-файлов (frontend-asm), затем подмена тел ядер
+    doLast {
+        def classesDirectory = destinationDirectory.get().asFile.absolutePath
+        def compileClasspath = classpath.asPath
+        weavingServices.execOperations.javaexec {
+            executable = weavingLauncher.get().executablePath.asFile.absolutePath
+            classpath = weavingClasspath
+            mainClass = 'com.sixik.gpu.app.buildtools.AsmBuild'
+            args classesDirectory, compileClasspath
+        }
+    }
+}
+
+tasks.register('runAsmExample', JavaExec) {
+    group = 'application'
+    description = 'Runs the frontend-asm example: kernels built from bytecode, device functions from a jar.'
+    classpath = sourceSets.asmExample.runtimeClasspath
+    mainClass = 'com.sixik.gpu.app.asm.AsmMain'
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
 }
 
 tasks.named('test') {

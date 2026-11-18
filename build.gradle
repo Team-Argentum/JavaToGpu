@@ -68,7 +68,8 @@ def allowedProjectDeps = [
         // фронтенд байткода (17.2): api не нужен - имена аннотаций и Gpu.* для него данные (строки дескрипторов)
         'frontend-asm'  : ['ir', 'ir-optimizer', 'frontend-common'],
         'weaver'        : [],
-        'gradle-plugin' : ['weaver'],
+        // frontend-asm: режим gpu { frontend = 'asm' } - IR из class-файлов в doLast компиляции (17.3)
+        'gradle-plugin' : ['weaver', 'frontend-asm'],
         'test-support'  : ['api', 'ir', 'ir-interpreter', 'runtime'],
         'tools'         : ['ir', 'codegen-opencl', 'ir-interpreter', 'runtime'],
         'app'           : ['api', 'runtime', 'frontend-java'],

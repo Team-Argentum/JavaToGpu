@@ -153,6 +153,24 @@ public final class GpuAssert {
             throw new AssertionFailedError(title + ": kernel IR not found: " + e.getMessage()
                     + " (was the class built without the frontend-java annotation processor?)");
         }
+        return sameResult(owner, kernel, module, sample, device);
+    }
+
+    /**
+     * Сравнивает ветви на образце для заданного модуля IR, а не для ресурса класса: так проверяется IR другого
+     * фронтенда ({@code frontend-asm}, REWORK_ARCHITECTURE.md 17.14-4) на тех же ветвях JVM, интерпретатора и устройства.
+     *
+     * @param owner  класс с ядром (ветвь JVM вызывает его метод)
+     * @param kernel имя ядра
+     * @param module модуль IR ядра (ядро - последняя функция)
+     * @param sample образец
+     * @param device контекст для ветви DEVICE либо {@code null} - ветвь пропускается
+     * @return итог
+     * @throws AssertionError если ветви разошлись или ветвь завершилась ошибкой
+     */
+    public static Report sameResult(Class<?> owner, String kernel, IrModule module, KernelSample sample,
+                                    GpuContext device) {
+        String title = owner.getSimpleName() + "." + kernel + " [" + sample.name() + "]";
         int fn = module.functionCount() - 1;
         boolean groupSync = Validator.validate(module).functions()[fn].usesGroupSync();
         Object[] first = sample.args();

@@ -1,11 +1,12 @@
 description = 'Bytecode frontend: reads class files (ASM tree API) and builds the same IR as frontend-java.'
 
 dependencies {
-    implementation project(':ir')
+    // типы публичного API (IrModule, KernelResources.IndexEntry в AsmFrontend.Kernel) - api, а не implementation
+    api project(':ir')
     // шаблон @Reduction проверяется тем же кодом, которым рантайм строит параллельное ядро (как у frontend-java)
     implementation project(':ir-optimizer')
     // compilationProperties, атрибуты ядра, таблица диагностик, формат ресурсов - общий код с frontend-java (17.2)
-    implementation project(':frontend-common')
+    api project(':frontend-common')
     implementation 'org.ow2.asm:asm:9.11.1'
     implementation 'org.ow2.asm:asm-tree:9.11.1'
 
@@ -20,6 +21,8 @@ dependencies {
     testImplementation project(':frontend-java')
     // A5: примеры (examples/) - часть корпуса 17.14-1; их исходники обращаются к рантайму (JavaToGpu, GpuContext)
     testImplementation project(':runtime')
+    // A6: файловая обёртка проверяется вместе с weaver'ом (второй проход по сплетённым классам)
+    testImplementation project(':weaver')
 }
 
 tasks.named('test') {

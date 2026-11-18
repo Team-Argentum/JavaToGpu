@@ -199,6 +199,137 @@ class PluginTest {
                 || r.getOutput().contains("does not exist"), r.getOutput());
     }
 
+    // ---- gpu { frontend = 'asm' } (REWORK_ARCHITECTURE.md, 17.3, 17.14-6) --------------------------------------
+
+    private static final String MORE = """
+            package demo;
+
+            import com.sixik.gpu.api.Gpu;
+            import com.sixik.gpu.api.annotations.Global;
+            import com.sixik.gpu.api.annotations.Kernel;
+
+            public class More {
+                @Kernel
+                public static void inc(@Global int[] a) {
+                    a[Gpu.getGlobalId(0)] += 7;
+                }
+            }
+            """;
+
+    private static long irCount(Path dir) throws IOException {
+        try (var irs = Files.list(dir.resolve("build/classes/java/main/META-INF/gpu/ir"))) {
+            return irs.count();
+        }
+    }
+
+    private static String index(Path dir) throws IOException {
+        return Files.readString(dir.resolve("build/classes/java/main/META-INF/gpu/kernels.idx"));
+    }
+
+    @Test
+    void asmFrontendBuildsWeavesAndRunsWithoutTheProcessor(@TempDir Path dir) throws IOException {
+        project(dir, "frontend = 'asm'");
+        write(dir.resolve("build.gradle"), Files.readString(dir.resolve("build.gradle")) + """
+
+                tasks.register('inspect') {
+                    doLast {
+                        println 'AP ' + configurations.annotationProcessor.dependencies.collect { it.name }.sort()
+                    }
+                }
+                """);
+        BuildResult r = runner(dir, "runDemo", "inspect", "--stacktrace").build();
+        assertEquals(TaskOutcome.SUCCESS, r.task(":compileJava").getOutcome());
+        assertTrue(r.getOutput().contains("RESULT 3.0 5.0 7.0 9.0"), r.getOutput());
+        assertTrue(r.getOutput().contains("PLAIN 15"));
+        assertTrue(r.getOutput().contains("AP []"), "no annotation processor in asm mode: " + r.getOutput());
+        assertTrue(classText(dir, "Kernels").contains("scale$jvm"));
+        assertEquals(1, irCount(dir), "IR resource written by frontend-asm");
+        assertTrue(index(dir).contains("demo.Kernels"), index(dir));
+    }
+
+    @Test
+    void asmIncrementalBuildKeepsUnchangedKernelsAndDropsStaleIr(@TempDir Path dir) throws IOException {
+        project(dir, "frontend = 'asm'");
+        write(dir.resolve("src/main/java/demo/More.java"), MORE);
+        runner(dir, "classes").build();
+        assertEquals(2, irCount(dir));
+        // правка одного класса: Gradle перекомпилирует только его; More остаётся сплетённым, тело - из inc$jvm
+        write(dir.resolve("src/main/java/demo/Kernels.java"), KERNELS.replace("* k + 1.0f", "* k + 10.0f"));
+        BuildResult r = runner(dir, "runDemo").build();
+        assertEquals(TaskOutcome.SUCCESS, r.task(":compileJava").getOutcome());
+        assertTrue(r.getOutput().contains("RESULT 12.0 14.0 16.0 18.0"), r.getOutput());
+        assertTrue(index(dir).contains("demo.More"), "the unchanged woven class keeps its kernel: " + index(dir));
+        assertEquals(2, irCount(dir), "the IR of the old scale body is removed");
+        assertTrue(classText(dir, "More").contains("inc$jvm"));
+    }
+
+    @Test
+    void asmFrontendTakesDeviceFunctionsFromAJarWithoutSources(@TempDir Path dir) throws IOException {
+        project(dir, "frontend = 'asm'");
+        // библиотека: только class-файлы в jar (у frontend-java это GPU0114)
+        Path libSrc = dir.resolve("libsrc/lib/MathLib.java");
+        write(libSrc, """
+                package lib;
+
+                import com.sixik.gpu.api.annotations.DeviceFunction;
+
+                public final class MathLib {
+                    @DeviceFunction
+                    public static float twice(float x) {
+                        return x * 2f;
+                    }
+                }
+                """);
+        Path libClasses = dir.resolve("libclasses");
+        Files.createDirectories(libClasses);
+        String api = java.util.Arrays.stream(System.getProperty("gpu.libs").split(File.pathSeparator))
+                .filter(p -> Path.of(p).getFileName().toString().startsWith("api")).findFirst().orElseThrow();
+        int rc = javax.tools.ToolProvider.getSystemJavaCompiler().run(null, null, null, "-g", "-cp", api,
+                "-d", libClasses.toString(), libSrc.toString());
+        assertEquals(0, rc, "library compiled");
+        try (var jar = new java.util.jar.JarOutputStream(Files.newOutputStream(dir.resolve("libs/mathlib.jar")))) {
+            jar.putNextEntry(new java.util.zip.ZipEntry("lib/MathLib.class"));
+            jar.write(Files.readAllBytes(libClasses.resolve("lib/MathLib.class")));
+            jar.closeEntry();
+        }
+        write(dir.resolve("build.gradle"), Files.readString(dir.resolve("build.gradle")) + """
+
+                dependencies {
+                    implementation files('libs/mathlib.jar')
+                }
+                """);
+        write(dir.resolve("src/main/java/demo/Kernels.java"), KERNELS.replace("in[g] * k + 1.0f", "lib.MathLib.twice(in[g]) * k"));
+        BuildResult r = runner(dir, "runDemo", "--stacktrace").build();
+        assertTrue(r.getOutput().contains("RESULT 4.0 8.0 12.0 16.0"), r.getOutput());
+        assertEquals(1, irCount(dir));
+    }
+
+    @Test
+    void asmFrontendErrorsFailTheCompilation(@TempDir Path dir) throws IOException {
+        project(dir, "frontend = 'asm'");
+        write(dir.resolve("src/main/java/demo/Bad.java"), """
+                package demo;
+
+                import com.sixik.gpu.api.annotations.*;
+
+                public class Bad {
+                    @Kernel
+                    public static void k(@Global float[] a) {
+                        String s = "x";
+                    }
+                }
+                """);
+        BuildResult r = runner(dir, "classes").buildAndFail();
+        assertTrue(r.getOutput().contains("demo/Bad.java:8: GPU0106"), r.getOutput());
+    }
+
+    @Test
+    void unknownFrontendIsAConfigurationError(@TempDir Path dir) throws IOException {
+        project(dir, "frontend = 'kotlin'");
+        BuildResult r = runner(dir, "classes").buildAndFail();
+        assertTrue(r.getOutput().contains("gpu.frontend = 'kotlin'"), r.getOutput());
+    }
+
     @Test
     void pluginAppliesTheJavaPluginAndRegistersTheExtension(@TempDir Path dir) throws IOException {
         project(dir, "");

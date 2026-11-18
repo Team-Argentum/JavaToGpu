@@ -10,8 +10,19 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Фронтенд байткода (REWORK_ARCHITECTURE.md, раздел 17): читает class-файлы (ASM tree API) и строит тот же IR, что
@@ -60,7 +71,140 @@ public final class AsmFrontend {
         }
     }
 
+    /**
+     * Итог файловой обёртки {@link #compileTree}.
+     *
+     * @param kernels     число ядер в новом индексе
+     * @param removed     удалено устаревших {@code .gir} (ядра, которых больше нет)
+     * @param diagnostics все диагностики по порядку
+     * @param messages    те же диагностики для журнала сборки: {@code pkg/Имя.java:строка: GPU####: текст (метод)}
+     */
+    public record Report(int kernels, int removed, List<AsmDiagnostic> diagnostics, List<String> messages) {
+        /** @return {@code true}, если среди диагностик нет ошибок */
+        public boolean ok() {
+            return diagnostics.stream().noneMatch(AsmDiagnostic::error);
+        }
+    }
+
     private AsmFrontend() {
+    }
+
+    /**
+     * Файловая обёртка (17.3): находит ядра во всех классах каталога, строит их IR и пишет ресурсы
+     * {@code META-INF/gpu/**} туда же - как annotation processor. Индекс пересобирается по всем классам каталога (при
+     * инкрементальной сборке неизменённые классы уже сплетены: тело ядра берётся из {@code <имя>$jvm}); каталог
+     * {@code META-INF/gpu/ir/} принадлежит фронтенду - {@code .gir} вне нового индекса удаляются.
+     *
+     * @param classes   корень каталога классов модуля (выход {@code compileJava})
+     * @param classpath classpath компиляции: каталоги и jar (device-функции других классов и библиотек, типы API)
+     * @param options   настройки
+     * @return отчёт; при ошибках ресурсы ядер без ошибок всё равно записаны
+     * @throws UncheckedIOException при ошибке ввода-вывода
+     */
+    public static Report compileTree(Path classes, List<Path> classpath, Options options) {
+        List<Path> roots = new ArrayList<>();
+        roots.add(classes);
+        roots.addAll(classpath);
+        try (PathClassSource source = new PathClassSource(roots)) {
+            Map<String, String> sourceFiles = new HashMap<>();
+            List<String> kernelClasses = scan(classes, sourceFiles);
+            Result r = compile(source, kernelClasses, options);
+            Path irDir = classes.resolve(KernelResources.IR_DIR);
+            Set<String> keep = new HashSet<>();
+            List<KernelResources.IndexEntry> index = new ArrayList<>();
+            for (Kernel k : r.kernels()) {
+                Path file = classes.resolve(KernelResources.irPath(k.entry().kernelId()));
+                keep.add(file.getFileName().toString());
+                if (!Files.isRegularFile(file) || !Arrays.equals(Files.readAllBytes(file), k.bytes())) {
+                    Files.createDirectories(file.getParent());
+                    Files.write(file, k.bytes());
+                }
+                index.add(k.entry());
+            }
+            Path idx = classes.resolve(KernelResources.INDEX);
+            if (index.isEmpty()) {
+                Files.deleteIfExists(idx);
+            } else {
+                Files.createDirectories(idx.getParent());
+                Files.writeString(idx, KernelResources.formatIndex(index), StandardCharsets.UTF_8);
+            }
+            int removed = 0;
+            if (Files.isDirectory(irDir)) {
+                try (Stream<Path> files = Files.list(irDir)) {
+                    for (Path f : files.toList()) {
+                        String n = f.getFileName().toString();
+                        if (n.endsWith(KernelResources.IR_EXT) && !keep.contains(n)) {
+                            Files.delete(f);
+                            removed++;
+                        }
+                    }
+                }
+            }
+            List<String> messages = new ArrayList<>();
+            for (AsmDiagnostic d : r.diagnostics()) {
+                messages.add(position(d, sourceFiles, source) + ": " + d.message()
+                        + (d.method().isEmpty() ? "" : " (" + simpleClass(d.className()) + "." + d.method() + ")"));
+            }
+            return new Report(index.size(), removed, r.diagnostics(), List.copyOf(messages));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Классы каталога с {@code @Kernel}/{@code @Reduction}: только заголовки и аннотации, без кода. */
+    private static List<String> scan(Path classes, Map<String, String> sourceFiles) throws IOException {
+        List<String> out = new ArrayList<>();
+        if (!Files.isDirectory(classes)) {
+            return out;
+        }
+        List<Path> files;
+        try (Stream<Path> walk = Files.walk(classes)) {
+            files = walk.filter(f -> f.toString().endsWith(".class") && Files.isRegularFile(f)).sorted().toList();
+        }
+        for (Path f : files) {
+            ClassNode cn = new ClassNode();
+            try {
+                new ClassReader(Files.readAllBytes(f)).accept(cn, ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES);
+            } catch (RuntimeException e) {
+                continue; // повреждённый класс без ядер нам не нужен; класс с ядрами недоступен и weaver'у
+            }
+            if (cn.sourceFile != null) {
+                sourceFiles.put(cn.name, cn.sourceFile);
+            }
+            for (MethodNode mn : cn.methods) {
+                if (Annotations.find(mn.invisibleAnnotations, Annotations.KERNEL) != null
+                        || Annotations.find(mn.invisibleAnnotations, Annotations.REDUCTION) != null) {
+                    out.add(cn.name.replace('/', '.'));
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /** {@code pkg/Имя.java:строка} (17.12): имя файла из {@code SourceFile}, пакет из имени класса. */
+    private static String position(AsmDiagnostic d, Map<String, String> sourceFiles, ClassSource source) {
+        String internal = d.className().replace('.', '/');
+        String file = sourceFiles.computeIfAbsent(internal, n -> {
+            try {
+                byte[] b = source.bytes(n);
+                if (b == null) {
+                    return null;
+                }
+                ClassNode cn = new ClassNode();
+                new ClassReader(b).accept(cn, ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES);
+                return cn.sourceFile;
+            } catch (RuntimeException e) {
+                return null;
+            }
+        });
+        int slash = internal.lastIndexOf('/');
+        String where = file == null ? d.className() : internal.substring(0, slash + 1) + file;
+        return d.line() > 0 ? where + ":" + d.line() : where;
+    }
+
+    private static String simpleClass(String binary) {
+        return binary.substring(binary.lastIndexOf('.') + 1);
     }
 
     /**

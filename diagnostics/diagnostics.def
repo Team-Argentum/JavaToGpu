@@ -52,7 +52,7 @@ GPU0110 error   The switch construct is not supported: {0} | A switch statement 
 GPU0111 error   The for-each loop is not supported | Use a for loop with an index
 GPU0112 error   Method {0} is not supported in GPU code | Use the Gpu.* builtins or methods with @DeviceFunction
 GPU0113 error   The called method {0} is not marked @DeviceFunction | Add @DeviceFunction (a kernel cannot be called from GPU code)
-GPU0114 error   The source code of method {0} is unavailable: device functions from libraries without sources are not supported yet | Compile together with the module that has the processor
+GPU0114 error   The source code of method {0} is unavailable: device functions from libraries without sources are not supported yet | Compile together with the module that has the processor, or build with gpu { frontend = 'asm' }
 GPU0115 error   Invalid access to field {0} | Only local variables, parameters and constants (static final) are allowed
 GPU0116 error   Invalid use of an array: {0} | An array can be indexed, its length taken, and passed as a parameter
 GPU0117 error   Invalid array creation: {0} | Only 'T[] a = new T[constant];' in a local variable declaration is allowed
