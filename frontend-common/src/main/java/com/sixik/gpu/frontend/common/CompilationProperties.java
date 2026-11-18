@@ -19,7 +19,7 @@ import java.util.Map;
 public final class CompilationProperties {
 
     /** Известные ключи в порядке, в котором они перечисляются в подсказках. */
-    public static final List<String> KEYS = List.of("fp", "opt", "inline");
+    public static final List<String> KEYS = List.of("fp", "opt", "inline", "exact");
 
     /** Значения {@code fp} и их биты {@code IrModule.FP_*}. */
     private static final Map<String, Integer> FP = new LinkedHashMap<>();
@@ -54,14 +54,34 @@ public final class CompilationProperties {
     public final int opt;
     /** Политика inline либо {@code -1}, если ключ не задан. */
     public final int inline;
+    /**
+     * {@code exact=true} (FRONTEND_ASM_RUNTIME.md, 18.2-S6): результат ядра побитово равен JVM. Несовместимо с
+     * {@code fp} ({@code GPU0310}); достижимые операции проверяет {@link ExactCheck}.
+     */
+    public final boolean exact;
     /** Ошибки разбора; при непустом списке значения полей не используются. */
     public final List<Problem> problems;
 
-    private CompilationProperties(int fp, int opt, int inline, List<Problem> problems) {
+    private CompilationProperties(int fp, int opt, int inline, boolean exact, List<Problem> problems) {
         this.fp = fp;
         this.opt = opt;
         this.inline = inline;
+        this.exact = exact;
         this.problems = problems;
+    }
+
+    /**
+     * @param mask маска {@code fp}
+     * @return значения {@code fp} через запятую ({@code "contract,native"}), {@code relaxed} - отдельными флагами
+     */
+    public static String fpNames(int mask) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Integer> e : FP.entrySet()) {
+            if (e.getValue() != IrModule.FP_ALL && (mask & e.getValue()) != 0) {
+                sb.append(sb.isEmpty() ? "" : ",").append(e.getKey());
+            }
+        }
+        return sb.toString();
     }
 
     /**
@@ -89,6 +109,7 @@ public final class CompilationProperties {
         int fp = 0;
         int opt = IrModule.OPT_INHERIT;
         int inline = -1;
+        boolean exact = false;
         List<String> seen = new ArrayList<>();
         for (String raw : text.split(";", -1)) {
             String segment = raw.strip();
@@ -144,10 +165,20 @@ public final class CompilationProperties {
                         inline = policy;
                     }
                 }
+                case "exact" -> {
+                    if (value.equals("true") || value.equals("false")) {
+                        exact = value.equals("true");
+                    } else {
+                        problems.add(new Problem("GPU0021", key, quote(value), "true, false"));
+                    }
+                }
                 default -> throw new IllegalStateException("unhandled key " + key);
             }
         }
-        return new CompilationProperties(fp, opt, inline, List.copyOf(problems));
+        if (exact && fp != 0) {
+            problems.add(new Problem("GPU0310", "fp=" + fpNames(fp), "an fp flag"));
+        }
+        return new CompilationProperties(fp, opt, inline, exact, List.copyOf(problems));
     }
 
     private static String quote(String s) {

@@ -197,6 +197,39 @@ public final class RouterLinks {
      это важно и для скорости: ленивость `Ap2 MUL/MIN/MAX` и `RangeChoice` — главная экономия. Проверка: golden-тест
      «вызов из ветки не поднят» и счётчик вызовов в интерпретаторе.
 
+- **Сделано в B5 (2026-11-18).** Отличия от проекта выше:
+  - **`exact` в IR - бит `FP_EXACT` маски `fp`** (`IrModule.FP_EXACT = 1 << 5`): формат и `IrBinary` не меняются, бит
+    входит в хэш ядра. Валидатор: `FP_EXACT` вместе с битами `FP_ALL` - `IR-F04`; ядру `exact`, достигающему
+    `float`-деления или `sqrt(float)`, он добавляет `Features.EXACT_DIVIDE_SQRT` (новый бит возможностей). Рантайм
+    выставляет этот бит устройству по `CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT`, поэтому устройство без него получает `RT-D02`
+    обычным путём `required`; кодоген собирает такое ядро с `-cl-fp32-correctly-rounded-divide-sqrt`.
+  - **Проверка `exact`** - `ExactCheck` в `frontend-common` над построенным модулем: оба фронтенда вызывают её до
+    валидатора, поэтому функция, общая для строгого и `exact` ядра, проверяется по каждому ядру. Неточен builtin с
+    допуском больше 0 ULP для типа результата (`sin`, `cos`); `sqrt(float)` - нет (см. выше). `exact` вместе с `fp` -
+    `GPU0310` уже при разборе `compilationProperties`. Текст: `Kernel {0} is exact, but uses {1} ({2})`, где `{2}` -
+    `tolerance 4 ULP` или `an fp flag`.
+  - **JDK-интринсики - builtins с флагом `jdk`** (ids 24-39 в `builtins.def`: `floor, ceil, rint, abs, copySign,
+    nextAfter, signum, floorDiv, floorMod, rotateLeft, rotateRight, numberOfLeadingZeros, numberOfTrailingZeros, bitCount,
+    compareUnsigned, multiplyHigh`) над новыми скалярными классами `sf/si/sn`; в `Gpu` их нет. Таблица
+    `JdkIntrinsics` (`frontend-common`) ставит методу JDK (владелец, имя, дескриптор) в соответствие один builtin (у
+    `nextUp/nextDown` - `nextAfter` с константой `±∞`), прежний точный builtin (`sqrt, fma, min, max`) или `bitcast`.
+    `floorDiv/floorMod` - не раскрытие в IR, а builtin: так IR обоих фронтендов совпадает без временных локалей, а
+    генератор печатает функцию преамбулы (аргументы вычисляются один раз). Интерпретатор исполняет их тем же методом
+    JDK; генератор - точными функциями OpenCL C (`floor`, `rint`, `copysign`, `nextafter`, `rotate`, `clz`,
+    `popcount`, `mul_hi`) или помощниками там, где семантика расходится (`sign` для NaN, `ctz` только в OpenCL 2.0).
+    `StrictMath` входит наравне с `Math`. Не входят `Math.round`, `Double.doubleToLongBits` и
+    `Math.nextAfter(float, double)`. Критерий «`Math.sin` в `exact` - `GPU0310`» уточнён: `Math.sin` вне таблицы и
+    остаётся `GPU0112` в любом ядре, а `GPU0310` даёт `Gpu.sin`.
+  - **Неспекулятивность.** Тест нашёл нарушение: LICM выносил из тела цикла вызов чистой функции под `if`, а CSE
+    объединял одинаковые вызовы из веток `select` в локаль до них. Теперь из условного контекста не выносится и не
+    объединяется выражение с `call` (как раньше - с чтением памяти и целым делением). `Interpreter.Execution` получил
+    счётчик `calls`.
+  - **Проверка.** Образцы `ExactKernels` (F64 и F32/целые, все интринсики, `exact=true`) вошли в корпус:
+    JVM = интерпретатор (`SampleCoverageTest`), `ExactSamplesTest` - побитово по сырым битам на `opt=0..3` с `NaN`,
+    `±0`, `±∞`; IR `frontend-asm` = `frontend-java` (`CorpusTest`); на RTX 5070 - побитово с интерпретатором
+    (`DeviceTest`, для ядер `exact` без допуска ULP). `ExactDiagnosticsTest` - одинаковые коды обоих фронтендов,
+    `NonSpeculationTest` - `0` вызовов при ложном условии на всех уровнях.
+
 ### S7. Синтетический байткод: без LVT и строк
 
 - **Нужно:** генератор не пишет LVT и `LineNumberTable`. Строки позиций ему лучше заменить идентификаторами узлов `Node`.
@@ -386,7 +419,7 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 | `GPU0307` | Local variables of {0} cannot be synthesized: {1} (разные типы в вебе, чтение до записи, неизвестный тип ссылки) — B2 |
 | `GPU0308` | Binding of {0}: {1} (тип значения, диапазон, поле не примитивного типа) — B3 |
 | `GPU0309` | Call to {0}: {1} (нет связи у `@Extern`, другой дескриптор цели, вызов из `frontend-java`) — B3 |
-| `GPU0310` | Kernel {0} is `exact`, but uses {1} (tolerance {2} ULP or fp flag {3}) |
+| `GPU0310` | Kernel {0} is exact, but uses {1} ({2}) |
 
 **Изменения IR, кодогена и `api`:** несколько `KERNEL` в модуле и таблица `entries`, `kernelId`/`moduleId`, версия
 `IrBinary` (S4); печать `F_INLINE` (S4); `@DeviceFunction(inline)`, `@Extern` (S2, S4); этап 2 — `Ptr<private, Struct>`
@@ -439,7 +472,7 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 | **B2** | ✅ (S7): `LvtSynth` (`SYNTHESIZE`), `GPU0307`, позиции-узлы | корпус со стёртыми LVT и строками: то же поведение; IR — с пунктами (а)(г) 17.14-3 |
 | **B3** | ✅ (S2, S3): `Bindings` (константы), `Links`, `@Extern`, `GPU0308/0309` | тесты на `ClassWriter`: свёртка флага убирает ветку; библиотека ↔ сгенерированное в обе стороны |
 | **B4** | ✅ (S4; IR и `IrBinary` менять не понадобилось, рантайм `compileProgram` — в B6): модуль с многими точками входа, кодоген, `F_INLINE`, `@DeviceFunction(inline)` | модуль из 3 ядер с общей функцией: одна копия функции в исходнике; `noinline` в выводе; `kernelId` одиночного ядра не изменился |
-| **B5** | `exact`, JDK-интринсики (общие с `frontend-java`), тест неспекулятивности оптимизатора, `GPU0310` | F64-образцы: интерпретатор = JVM побитово на `opt=0..3`; `Math.sin` в `exact` даёт `GPU0310` |
+| **B5** | ✅ (S6; `exact` - бит `FP_EXACT`, `Math.sin` остаётся `GPU0112`, `GPU0310` - у `Gpu.sin`): `exact`, JDK-интринсики (общие с `frontend-java`), тест неспекулятивности оптимизатора, `GPU0310` | F64-образцы: интерпретатор = JVM побитово на `opt=0..3`; `Math.sin` в `exact` даёт `GPU0310` |
 | **B6** | ✅ частично: `runtime` и компиляторная часть под `--release 17`, бэкенды `runtime-opencl-ffm/-lwjgl`, `:runtime:deviceTestLwjgl`. Осталось: CI на JDK 17, `ClProgram`/`KernelAbi`, `GpuContext.compileProgram` (перенесено из B4), проверка в dev-клиенте | моды NeoForge 1.21.1, Fabric и версия на Java 17 (1.20.1) запускают ядро через `runtime-opencl-lwjgl` |
 | **B7** | Масштаб: итеративные алгоритмы, `budget`, детерминизм | роутер B0 укладывается в бюджет; два прогона дают одинаковый `moduleId` |
 | **B8** | **Пилот GA2:** `DfNoise`, `DfSpline`, `Jm` на Java; `GpuEmitter` для `FLAT`, `HOIST`, `CORNER` в F64; ядра `k_flat`, `k_hoist`, `k_corner` | критерии 18.8 |

@@ -1,5 +1,6 @@
 package com.sixik.gpu.frontend.asm;
 
+import com.sixik.gpu.frontend.common.JdkIntrinsics;
 import com.sixik.gpu.ir.Builtins;
 import com.sixik.gpu.ir.Op;
 import org.objectweb.asm.Opcodes;
@@ -284,7 +285,9 @@ final class MethodLowerer {
                     } else if (Aggs.vector(mi.owner) != null || Aggs.pointer(mi.owner) != null) {
                         // splat, of: API типов
                     } else if (mi.owner.startsWith("java/") || mi.owner.startsWith("javax/")) {
-                        report("GPU0112", ln, mi.owner.replace('/', '.') + "." + mi.name);
+                        if (JdkIntrinsics.find(mi.owner, mi.name, mi.desc) == null) {
+                            report("GPU0112", ln, mi.owner.replace('/', '.') + "." + mi.name);
+                        }
                     } else {
                         deviceCalls.add(new DeviceCall(mi, ln));
                     }
@@ -897,6 +900,9 @@ final class MethodLowerer {
      * эффектов.
      */
     boolean pureCall(MethodInsnNode mi) {
+        if (JdkIntrinsics.find(mi.owner, mi.name, mi.desc) != null) {
+            return true;
+        }
         if (!mi.owner.equals(GPU)) {
             Callee c = callees.apply(mi);
             return c != null && !c.effects();
@@ -1349,7 +1355,11 @@ final class MethodLowerer {
                     apiMethod(mi, true);
                     return in;
                 }
-                return mi.owner.equals(GPU) ? builtin(mi) : deviceCall(mi);
+                if (mi.owner.equals(GPU)) {
+                    return builtin(mi);
+                }
+                JdkIntrinsics.Intrinsic jdk = JdkIntrinsics.find(mi.owner, mi.name, mi.desc);
+                return jdk != null ? jdkIntrinsic(mi, jdk) : deviceCall(mi);
             }
             case Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN, Opcodes.ARETURN -> {
                 Ex r = pop();
@@ -1616,6 +1626,34 @@ final class MethodLowerer {
             case com.sixik.gpu.ir.AddressSpace.CONSTANT -> "constant";
             default -> "private";
         };
+    }
+
+    /**
+     * {@code invokestatic} метода JDK из таблицы {@link JdkIntrinsics} (18.2-S6): один builtin с флагом {@code jdk}
+     * (с дописанной константой {@code ±∞} у {@code nextUp/nextDown}) либо {@code bitcast}; как в {@code frontend-java}.
+     */
+    private AbstractInsnNode jdkIntrinsic(MethodInsnNode mi, JdkIntrinsics.Intrinsic jdk) {
+        Type[] at = Type.getArgumentTypes(mi.desc);
+        Ex[] args = new Ex[at.length + (jdk.extra() != JdkIntrinsics.EXTRA_NONE ? 1 : 0)];
+        boolean open = false;
+        for (int i = at.length - 1; i >= 0; i--) {
+            args[i] = coerce(pop(), Kinds.ofDescriptor(at[i].getDescriptor()));
+            open |= args[i].open;
+        }
+        int rk = Kinds.ofDescriptor(Type.getReturnType(mi.desc).getDescriptor());
+        if (jdk.isBitcast()) {
+            push(Ex.unary(Ex.BITCAST, rk, args[0]));
+            return mi;
+        }
+        if (jdk.extra() != JdkIntrinsics.EXTRA_NONE) {
+            boolean positive = jdk.extra() == JdkIntrinsics.EXTRA_POSITIVE_INFINITY;
+            int k = args[0].kind;
+            args[at.length] = Ex.constant(k, k == Kinds.K_FLOAT
+                    ? Float.floatToRawIntBits(positive ? Float.POSITIVE_INFINITY : Float.NEGATIVE_INFINITY)
+                    : Double.doubleToRawLongBits(positive ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY));
+        }
+        push(Ex.intrinsic(jdk.builtin(), rk, open, args));
+        return mi;
     }
 
     /** {@code invokestatic Gpu.*}: builtin, барьер или эффектный builtin (его результат - временная локаль). */

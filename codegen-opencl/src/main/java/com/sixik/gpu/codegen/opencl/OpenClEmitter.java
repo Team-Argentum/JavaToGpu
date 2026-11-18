@@ -222,7 +222,10 @@ public final class OpenClEmitter {
             boolean approximate = (m.fFp(kernels[i]) & (IrModule.FP_RECIPROCAL | IrModule.FP_NATIVE)) != 0;
             exact |= !approximate && Support.usesFloatDivideOrSqrt(m, reachOf[i]);
         }
-        String buildOptions = target.exactDivideSqrt() && exact ? Target.EXACT_DIVIDE_SQRT_OPTION : "";
+        // ядро exact (18.2-S6) требует точных деления и sqrt от устройства (EXACT_DIVIDE_SQRT, иначе RT-D02),
+        // поэтому опция нужна ему независимо от того, что известно о цели
+        boolean exactRequired = (features & Features.EXACT_DIVIDE_SQRT) != 0;
+        String buildOptions = (target.exactDivideSqrt() || exactRequired) && exact ? Target.EXACT_DIVIDE_SQRT_OPTION : "";
         List<Program.Kernel> ks = new ArrayList<>();
         for (int f = 0; f < n; f++) {
             if (isKernel[f]) {

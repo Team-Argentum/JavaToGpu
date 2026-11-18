@@ -85,8 +85,29 @@ class BuiltinsTest {
                 occupied++;
             }
         }
-        assertEquals(24, occupied);
-        assertEquals(24, Builtins.count());
+        assertEquals(40, occupied);
+        assertEquals(40, Builtins.count());
+    }
+
+    /** JDK-интринсики (S6-2): флаг {@code jdk}, классы {@code sf/si/sn} принимают только скаляры. */
+    @Test
+    void jdkIntrinsicsAreScalarOnly() {
+        int floor = Builtins.idOf("floor");
+        assertTrue(Builtins.has(floor, Builtins.JDK));
+        assertFalse(Builtins.has(Builtins.idOf("sin"), Builtins.JDK));
+        assertEquals(-1, Builtins.ulp(floor), "exact: compared bitwise");
+        IrBuilder b = new IrBuilder();
+        int v4 = b.vec(Types.F32, 4);
+        IrModule m = b.build();
+        assertEquals(Types.F64, Builtins.resultType(m, floor, new int[]{Types.F64}, 1));
+        assertEquals(-1, Builtins.resultType(m, floor, new int[]{v4}, 1), "no vector overloads");
+        assertEquals(-1, Builtins.resultType(m, floor, new int[]{Types.I32}, 1));
+        int nlz = Builtins.idOf("numberOfLeadingZeros");
+        assertEquals(Types.I32, Builtins.resultType(m, nlz, new int[]{Types.I64}, 1));
+        assertEquals(-1, Builtins.resultType(m, nlz, new int[]{Types.U32}, 1), "signed Java types only");
+        int rot = Builtins.idOf("rotateLeft");
+        assertEquals(Types.I64, Builtins.resultType(m, rot, new int[]{Types.I64, Types.I32}, 2));
+        assertEquals(Types.I32, Builtins.resultType(m, Builtins.idOf("abs"), new int[]{Types.I32}, 1));
     }
 
     @Test

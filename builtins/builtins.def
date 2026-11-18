@@ -8,7 +8,7 @@
 # Формат строки builtin:   <id> <name> <flags> <ret> (<args>)
 #   id     - стабильное число; НЕ переиспользуется и не меняется (на него ссылается бинарный IR)
 #   name   - имя в Java-API (camelCase)
-#   flags  - через запятую: pure | effect | reads | div | uniform | atomic | ext | sync | ulp=<N> | ulp64=<N>
+#   flags  - через запятую: pure | effect | reads | div | uniform | atomic | ext | sync | jdk | ulp=<N> | ulp64=<N>
 #              pure    - без побочных эффектов, результат зависит только от аргументов и work-item
 #              effect  - имеет побочный эффект (разрешён только в позиции значения стейтмента, IR-E01)
 #              reads   - читает память (узел «открытый», IR-E02)
@@ -17,11 +17,13 @@
 #              atomic  - атомарная операция (INT64_ATOMICS для 64-битных)
 #              ext     - «расширенный» атомик (min, max, and, or, xor): для 64 бит ещё и INT64_EXT_ATOMICS
 #              sync    - точка синхронизации группы: в IR узел barrier, а не intrinsic (IR-S08)
+#              jdk     - JDK-интринсик: строится фронтендом из вызова метода JDK (JdkIntrinsics), в Gpu не генерируется
 #              ulp=N   - допустимая погрешность в ULP для f32 (дифференциальные тесты, 8.3)
 #              ulp64=N - то же для f64; если не задано, равно ulp
 #   типы   - void bool i32 u32 i64 u64 f32 f64 (+ i8 u8 i16 u16 как типы хранения);
 #            T:<класс> - связывает T с первым аргументом, класс: genf (float/double и векторы),
 #                        geni (i32/u32/i64/u64 и векторы), genn (genf или geni);
+#                        только скаляры: sf (f32/f64), si (i32/i64), sn (sf или si);
 #            T         - тот же тип, что связан ранее;
 #            ptr<T:geni> - указатель (global или local) на скалярное целое, связывает T с pointee.
 #
@@ -149,3 +151,25 @@ jvm i64 = { long old = a.get(0); a.set(0, old ^ b); return old; }
 doc Атомарно записывает {@code b} по указателю {@code a} и возвращает прежнее значение.
 jvm i32 = { int old = a.get(0); a.set(0, b); return old; }
 jvm i64 = { long old = a.get(0); a.set(0, b); return old; }
+
+# --- JDK-интринсики (FRONTEND_ASM_RUNTIME.md, 18.2-S6, п. 2) -------------------------------------
+# Побитово точные операции JDK. Фронтенды строят их из вызовов Math.*, StrictMath.*, Integer.*, Long.* по таблице
+# JdkIntrinsics (frontend-common); в Gpu метода нет (флаг jdk), поэтому ни doc, ни jvm не нужны. Семантика - ровно
+# у одноимённого метода JDK (интерпретатор вызывает его же), генератор печатает точный эквивалент OpenCL C.
+# Допуска нет: результат сравнивается побитово. Деление на ноль в floorDiv/floorMod - как у целого деления.
+24  floor           pure,jdk        T (T:sf)
+25  ceil            pure,jdk        T (T:sf)
+26  rint            pure,jdk        T (T:sf)
+27  abs             pure,jdk        T (T:sn)
+28  copySign        pure,jdk        T (T:sf, T)
+29  nextAfter       pure,jdk        T (T:sf, T)
+30  signum          pure,jdk        T (T:sf)
+31  floorDiv        pure,jdk        T (T:si, T)
+32  floorMod        pure,jdk        T (T:si, T)
+33  rotateLeft      pure,jdk        T (T:si, i32)
+34  rotateRight     pure,jdk        T (T:si, i32)
+35  numberOfLeadingZeros  pure,jdk  i32 (T:si)
+36  numberOfTrailingZeros pure,jdk  i32 (T:si)
+37  bitCount        pure,jdk        i32 (T:si)
+38  compareUnsigned pure,jdk        i32 (T:si, T)
+39  multiplyHigh    pure,jdk        T (T:si, T)

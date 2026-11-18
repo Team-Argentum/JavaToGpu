@@ -738,6 +738,9 @@ final class Emitter {
             case Ex.CONVERT -> {
                 return b.convert(Kinds.irType(e.kind), full(e.kids[0]));
             }
+            case Ex.BITCAST -> {
+                return b.bitcast(Kinds.irType(e.kind), full(e.kids[0]));
+            }
             case Ex.LOAD -> {
                 int[] k = kids(e);
                 int n = b.load(b.elemPtr(k[0], k[1]));

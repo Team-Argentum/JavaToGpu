@@ -21,6 +21,12 @@ public final class Features {
     public static final int FP16 = 1 << 2;
     /** Зарезервировано под images. */
     public static final int IMAGES = 1 << 3;
+    /**
+     * Корректно округлённые {@code float}-деление и {@code sqrt} ({@code CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT}). Требуется
+     * ядру {@code exact} ({@link IrModule#FP_EXACT}), если оно достигает таких операций: без неё OpenCL допускает
+     * 2.5 и 3 ULP. В {@code required} не пишется - бит выставляет валидатор.
+     */
+    public static final int EXACT_DIVIDE_SQRT = 1 << 5;
 
     /**
      * Возможность по имени из {@code required} ядра.
@@ -35,6 +41,7 @@ public final class Features {
             case "INT64_EXT_ATOMICS" -> INT64_EXT_ATOMICS;
             case "FP16" -> FP16;
             case "IMAGES" -> IMAGES;
+            case "EXACT_DIVIDE_SQRT" -> EXACT_DIVIDE_SQRT;
             default -> 0;
         };
     }
@@ -53,6 +60,7 @@ public final class Features {
         append(sb, mask, INT64_EXT_ATOMICS, "INT64_EXT_ATOMICS");
         append(sb, mask, FP16, "FP16");
         append(sb, mask, IMAGES, "IMAGES");
+        append(sb, mask, EXACT_DIVIDE_SQRT, "EXACT_DIVIDE_SQRT");
         return sb.toString();
     }
 

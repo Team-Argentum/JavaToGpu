@@ -61,8 +61,10 @@ public final class Interpreter {
      *
      * @param workItems число исполненных work-item'ов
      * @param steps     число исполненных стейтментов (для диагностики и оценки стоимости теста)
+     * @param calls     число исполненных вызовов функций (узлов {@code call}) всеми work-item'ами: по нему тесты
+     *                  проверяют, что оптимизатор не вводит вызов на путь, где его не было
      */
-    public record Execution(long workItems, long steps) {
+    public record Execution(long workItems, long steps, long calls) {
     }
 
     /**
@@ -140,7 +142,7 @@ public final class Interpreter {
             Host.fromBuffer(m, hostType[b], hostBufs[b], hostObjects[b]);
         }
         List<Diagnostic> warnings = new ArrayList<>(report.diagnostics());
-        return new Result<>(new Execution(range.workItems(), machine.steps()), warnings);
+        return new Result<>(new Execution(range.workItems(), machine.steps(), machine.calls()), warnings);
     }
 
     private static Result<Execution> fail(String code, int function, String message) {

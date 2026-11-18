@@ -49,7 +49,8 @@ class CorpusTest {
             "PointerKernels.walk",
             "StructKernels.bodies", "StructKernels.locals", "StructKernels.step", "StructKernels.withParameter",
             "VectorKernels.byValue", "VectorKernels.floatOps", "VectorKernels.fromScalars", "VectorKernels.intOps",
-            "VectorKernels.wide");
+            "VectorKernels.wide",
+            "ExactKernels.doubles", "ExactKernels.floatsAndInts");
 
     /**
      * Пункт (д) закрытого списка 17.14-3: IR отличается только константами, которые свернул javac ({@code c /= 3} -

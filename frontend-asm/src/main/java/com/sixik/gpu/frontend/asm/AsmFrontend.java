@@ -285,7 +285,15 @@ public final class AsmFrontend {
         }
         IrModule m = built.module();
         int line = built.line();
-        if (!validate(m, options, cls, mn.name, line, diags)) {
+        // exact (18.2-S6): из ядра достижимы только побитово точные операции
+        boolean exactOk = true;
+        for (com.sixik.gpu.frontend.common.ExactCheck.Problem pr : com.sixik.gpu.frontend.common.ExactCheck.check(m)) {
+            String shown = m.debug().functionName(pr.kernel());
+            diags.add(AsmDiagnostic.of("GPU0310", cls, mn.name, line, shown != null ? shown : mn.name, pr.operation(),
+                    pr.reason()));
+            exactOk = false;
+        }
+        if (!exactOk || !validate(m, options, cls, mn.name, line, diags)) {
             return null;
         }
         if (reduction) {

@@ -134,7 +134,8 @@ public final class KernelAttributes {
         if (errors[0] != 0) {
             return null;
         }
-        return new KernelAttributes(inline, opt, props.fp, wg, req.toArray(new String[0]));
+        return new KernelAttributes(inline, opt, props.exact ? IrModule.FP_EXACT : props.fp, wg,
+                req.toArray(new String[0]));
     }
 
     private static int intValue(Map<String, Object> values, String element, int defaultValue) {

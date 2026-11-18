@@ -230,6 +230,21 @@ class DiagnosticsTest {
         assertTrue(r.diagnostics().get(1).message().contains("both"), r.diagnostics().toString());
     }
 
+    /** {@code GPU0310}: ядро {@code exact} с приближённым builtin (код общий с {@code frontend-java}, см. {@link ExactDiagnosticsTest}). */
+    @Test
+    void exactKernelWithAnApproximateBuiltinIsRejected() {
+        List<AsmDiagnostic> d = ExactDiagnosticsTest.asm("""
+                package x;
+                import com.sixik.gpu.api.Gpu;
+                import com.sixik.gpu.api.annotations.*;
+                public final class X {
+                    @Kernel(compilationProperties = "exact=true") public static void k(@Global float[] a) { a[0] = Gpu.sin(a[1]); }
+                }
+                """);
+        d.forEach(x -> covered.add(x.code()));
+        assertEquals(Set.of("GPU0310"), codes(d), d.toString());
+    }
+
     @Test
     void everyBytecodeOnlyCodeIsCovered() throws IOException {
         classWithoutLocalVariableTableIsRejected();
@@ -241,6 +256,7 @@ class DiagnosticsTest {
         badAsmJitEntriesAreReported();
         unsynthesizableLocalsAreReported();
         badBindingsAndLinksAreReported();
+        exactKernelWithAnApproximateBuiltinIsRejected();
         Set<String> table = Diag.codes().stream().filter(c -> c.startsWith("GPU03"))
                 .collect(Collectors.toCollection(TreeSet::new));
         assertFalse(table.isEmpty());

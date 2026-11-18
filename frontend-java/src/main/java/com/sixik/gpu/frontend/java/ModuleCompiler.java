@@ -135,7 +135,15 @@ final class ModuleCompiler {
             return null;
         }
         IrModule m = b.build();
-        if (!validate(m, cache.get(kernel).path(), kernel.getSimpleName().toString())) {
+        // exact (18.2-S6): из ядра достижимы только побитово точные операции
+        boolean exactOk = true;
+        for (com.sixik.gpu.frontend.common.ExactCheck.Problem pr : com.sixik.gpu.frontend.common.ExactCheck.check(m)) {
+            String shown = m.debug().functionName(pr.kernel());
+            rep.report(cache.get(kernel).path(), "GPU0310", shown != null ? shown : kernel.getSimpleName().toString(),
+                    pr.operation(), pr.reason());
+            exactOk = false;
+        }
+        if (!exactOk || !validate(m, cache.get(kernel).path(), kernel.getSimpleName().toString())) {
             return null;
         }
         return new Compiled(m, IrBinary.kernelId(m), IrBinary.write(m));

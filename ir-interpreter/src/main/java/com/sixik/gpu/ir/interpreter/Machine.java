@@ -86,6 +86,23 @@ final class Machine {
     private static final int B_ATOMIC_XCHG = 22;
     /** barrier/barrierGlobal: в IR это узел {@code barrier}, intrinsic с таким id валидатор отвергает ({@code IR-S08}). */
     private static final int B_SYNC = 23;
+    // JDK-интринсики (флаг jdk): семантика - ровно у одноимённого метода JDK, им же и исполняются
+    private static final int B_FLOOR = 24;
+    private static final int B_CEIL = 25;
+    private static final int B_RINT = 26;
+    private static final int B_ABS = 27;
+    private static final int B_COPY_SIGN = 28;
+    private static final int B_NEXT_AFTER = 29;
+    private static final int B_SIGNUM = 30;
+    private static final int B_FLOOR_DIV = 31;
+    private static final int B_FLOOR_MOD = 32;
+    private static final int B_ROTATE_LEFT = 33;
+    private static final int B_ROTATE_RIGHT = 34;
+    private static final int B_NLZ = 35;
+    private static final int B_NTZ = 36;
+    private static final int B_BIT_COUNT = 37;
+    private static final int B_COMPARE_UNSIGNED = 38;
+    private static final int B_MULTIPLY_HIGH = 39;
 
     /** Соответствие «id builtin -> код исполнения»; {@link #B_NONE}, если интерпретатор builtin не знает. */
     private static final int[] BUILTIN_CODE;
@@ -120,6 +137,22 @@ final class Machine {
                 case "atomicXor" -> B_ATOMIC_XOR;
                 case "atomicXchg" -> B_ATOMIC_XCHG;
                 case "barrier", "barrierGlobal" -> B_SYNC;
+                case "floor" -> B_FLOOR;
+                case "ceil" -> B_CEIL;
+                case "rint" -> B_RINT;
+                case "abs" -> B_ABS;
+                case "copySign" -> B_COPY_SIGN;
+                case "nextAfter" -> B_NEXT_AFTER;
+                case "signum" -> B_SIGNUM;
+                case "floorDiv" -> B_FLOOR_DIV;
+                case "floorMod" -> B_FLOOR_MOD;
+                case "rotateLeft" -> B_ROTATE_LEFT;
+                case "rotateRight" -> B_ROTATE_RIGHT;
+                case "numberOfLeadingZeros" -> B_NLZ;
+                case "numberOfTrailingZeros" -> B_NTZ;
+                case "bitCount" -> B_BIT_COUNT;
+                case "compareUnsigned" -> B_COMPARE_UNSIGNED;
+                case "multiplyHigh" -> B_MULTIPLY_HIGH;
                 default -> B_NONE;
             };
         }
@@ -167,6 +200,8 @@ final class Machine {
     private Coop coop;                          // планировщик группы, если в модуле есть barrier
     private int itemIndex;                      // номер work-item-а в группе (для Coop)
     private long totalSteps;                    // шаги work-item-ов групп, исполненных сопрограммами
+    private long calls;                         // исполненные узлы call (тест неспекулятивности оптимизатора)
+    private long totalCalls;                    // то же у work-item-ов, исполненных сопрограммами
 
     // ---- геометрия запуска ------------------------------------------------------------------------
     private final int workDim;
@@ -324,6 +359,11 @@ final class Machine {
     /** @return число выполненных стейтментов */
     long steps() {
         return steps + totalSteps;
+    }
+
+    /** @return число исполненных вызовов функций (узлов {@code call}) */
+    long calls() {
+        return calls + totalCalls;
     }
 
     private boolean faulted() {
@@ -532,6 +572,7 @@ final class Machine {
             }
             for (Machine item : items) {
                 totalSteps += item.steps;
+                totalCalls += item.calls;
             }
         }
         return result;
@@ -1146,6 +1187,7 @@ final class Machine {
         int off = m.b(n);
         int argc = m.c(n);
         int nb = top;
+        calls++;
         top = nb + frameSize[f];
         ensureStack(top);
         for (int k = 0; k < argc; k++) {
@@ -1252,9 +1294,102 @@ final class Machine {
                 store(n, p, atomicApply(code, t, old, v));
                 return old;
             }
+            case B_FLOOR:
+            case B_CEIL:
+            case B_RINT:
+            case B_ABS:
+            case B_COPY_SIGN:
+            case B_NEXT_AFTER:
+            case B_SIGNUM:
+            case B_FLOOR_DIV:
+            case B_FLOOR_MOD:
+            case B_ROTATE_LEFT:
+            case B_ROTATE_RIGHT:
+            case B_NLZ:
+            case B_NTZ:
+            case B_BIT_COUNT:
+            case B_COMPARE_UNSIGNED:
+            case B_MULTIPLY_HIGH: {
+                int at = m.type(m.list(off));
+                long a = eval(m.list(off));
+                long b = argc > 1 ? eval(m.list(off + 1)) : 0;
+                if (faulted()) {
+                    return 0;
+                }
+                if ((code == B_FLOOR_DIV || code == B_FLOOR_MOD) && b == 0) {
+                    return fault("IN-R02", n, "integer division by zero in " + Builtins.name(id));
+                }
+                return Types.isFloat(at) ? jdkFloat(code, at == Types.F32, a, b) : jdkInt(code, at == Types.I32, a, b);
+            }
             default:
                 return fault("IN-U01", n, "builtin " + Builtins.name(id) + " is not supported by the interpreter (arguments: " + argc + ")");
         }
+    }
+
+    /**
+     * JDK-интринсик над {@code f32}/{@code f64}: тот же метод {@code Math}, что и в Java-коде, поэтому результат побитово
+     * равен JVM. Для {@code float} {@code floor/ceil/rint} считаются в {@code double}: аргумент расширяется точно, а
+     * целое, не большее по модулю {@code float}-аргумента, представимо в {@code float}.
+     */
+    private static long jdkFloat(int code, boolean f32, long a, long b) {
+        if (f32) {
+            float x = Float.intBitsToFloat((int) a);
+            float y = Float.intBitsToFloat((int) b);
+            float r = switch (code) {
+                case B_FLOOR -> (float) Math.floor(x);
+                case B_CEIL -> (float) Math.ceil(x);
+                case B_RINT -> (float) Math.rint(x);
+                case B_ABS -> Math.abs(x);
+                case B_COPY_SIGN -> Math.copySign(x, y);
+                case B_NEXT_AFTER -> Math.nextAfter(x, y);
+                default -> Math.signum(x);
+            };
+            return Float.floatToRawIntBits(r);
+        }
+        double x = Double.longBitsToDouble(a);
+        double y = Double.longBitsToDouble(b);
+        double r = switch (code) {
+            case B_FLOOR -> Math.floor(x);
+            case B_CEIL -> Math.ceil(x);
+            case B_RINT -> Math.rint(x);
+            case B_ABS -> Math.abs(x);
+            case B_COPY_SIGN -> Math.copySign(x, y);
+            case B_NEXT_AFTER -> Math.nextAfter(x, y);
+            default -> Math.signum(x);
+        };
+        return Double.doubleToRawLongBits(r);
+    }
+
+    /** JDK-интринсик над {@code i32}/{@code i64}: методы {@code Math}, {@code Integer}, {@code Long}. */
+    private static long jdkInt(int code, boolean i32, long a, long b) {
+        if (i32) {
+            int x = (int) a;
+            int y = (int) b;
+            return switch (code) {
+                case B_ABS -> Math.abs(x);
+                case B_FLOOR_DIV -> Math.floorDiv(x, y);
+                case B_FLOOR_MOD -> Math.floorMod(x, y);
+                case B_ROTATE_LEFT -> Integer.rotateLeft(x, y);
+                case B_ROTATE_RIGHT -> Integer.rotateRight(x, y);
+                case B_NLZ -> Integer.numberOfLeadingZeros(x);
+                case B_NTZ -> Integer.numberOfTrailingZeros(x);
+                case B_BIT_COUNT -> Integer.bitCount(x);
+                case B_COMPARE_UNSIGNED -> Integer.compareUnsigned(x, y);
+                default -> (int) (((long) x * y) >> 32);
+            };
+        }
+        return switch (code) {
+            case B_ABS -> Math.abs(a);
+            case B_FLOOR_DIV -> Math.floorDiv(a, b);
+            case B_FLOOR_MOD -> Math.floorMod(a, b);
+            case B_ROTATE_LEFT -> Long.rotateLeft(a, (int) b);
+            case B_ROTATE_RIGHT -> Long.rotateRight(a, (int) b);
+            case B_NLZ -> Long.numberOfLeadingZeros(a);
+            case B_NTZ -> Long.numberOfTrailingZeros(a);
+            case B_BIT_COUNT -> Long.bitCount(a);
+            case B_COMPARE_UNSIGNED -> Long.compareUnsigned(a, b);
+            default -> Math.multiplyHigh(a, b);
+        };
     }
 
     /**

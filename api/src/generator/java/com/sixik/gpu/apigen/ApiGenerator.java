@@ -380,6 +380,9 @@ public final class ApiGenerator {
     private static String genGpu(Def def, List<String> skipped) {
         StringBuilder methods = new StringBuilder();
         for (Builtin b : def.builtins()) {
+            if (b.flags().contains("jdk")) {
+                continue; // JDK-интринсик: вызывается как метод JDK, в Gpu его нет
+            }
             String reason = unsupportedReason(b);
             if (reason != null) {
                 skipped.add(b.name());

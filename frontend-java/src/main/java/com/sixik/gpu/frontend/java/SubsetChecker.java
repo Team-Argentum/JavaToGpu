@@ -995,6 +995,9 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             }
             return;
         }
+        if (isStatic && Descriptors.jdkIntrinsic(callee) != null) {
+            return; // JDK-интринсик (18.2-S6): побитово точная операция JDK
+        }
         if (callee.getAnnotation(com.sixik.gpu.api.annotations.Extern.class) != null) {
             rep.report(p, "GPU0309", shown, "frontend-java does not link @Extern stubs");
             return;

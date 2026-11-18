@@ -140,6 +140,8 @@ public final class Validator {
         private final boolean[] funcShapeOk;
         private final Validator.FunctionInfo[] infos;
         private final boolean[] divergentInside;
+        /** Функция (с вызываемыми) делит {@code float} или берёт {@code sqrt(float)}: для ядер {@code exact}. */
+        private final boolean[] divideSqrtInside;
 
         Run(IrModule m, Options opts) {
             this.m = m;
@@ -163,6 +165,7 @@ public final class Validator {
             funcShapeOk = new boolean[funcCount];
             infos = new Validator.FunctionInfo[funcCount];
             divergentInside = new boolean[funcCount];
+            divideSqrtInside = new boolean[funcCount];
             java.util.Arrays.fill(owner, -1);
             java.util.Arrays.fill(parentOf, -1);
         }
@@ -419,9 +422,12 @@ public final class Validator {
                     err("IR-F04", f, -1, "function f" + f + ": optimization level " + opt + " outside 0..3");
                 }
                 int fp = m.fFp(f);
-                if ((fp & ~IrModule.FP_ALL) != 0) {
+                if ((fp & ~(IrModule.FP_ALL | IrModule.FP_EXACT)) != 0) {
                     err("IR-F04", f, -1, "function f" + f + ": unknown floating-point mode bits 0x"
-                            + Integer.toHexString(fp & ~IrModule.FP_ALL));
+                            + Integer.toHexString(fp & ~(IrModule.FP_ALL | IrModule.FP_EXACT)));
+                } else if ((fp & IrModule.FP_EXACT) != 0 && (fp & IrModule.FP_ALL) != 0) {
+                    err("IR-F04", f, -1, "function f" + f + ": exact floating-point mode does not allow relaxation bits 0x"
+                            + Integer.toHexString(fp & IrModule.FP_ALL));
                 }
                 int bodyKind = m.fBodyKind(f);
                 if (bodyKind != IrModule.BODY_IR && bodyKind != IrModule.BODY_NATIVE) {
@@ -1169,6 +1175,7 @@ public final class Validator {
                 boolean effects = false;
                 boolean reads = false;
                 boolean divergent = false;
+                boolean divideSqrt = false;
                 boolean shape = funcShapeOk[f];
                 int pc = shape ? Math.max(0, m.fParamCount(f)) : 0;
                 int[] access = new int[pc];
@@ -1196,6 +1203,11 @@ public final class Validator {
                     int op = m.op(n);
                     if (typeInRange(m.type(n)) && usesF64[m.type(n)]) {
                         features |= Features.FP64;
+                    }
+                    if ((op == Op.DIV || op == Op.INTRINSIC && Builtins.isValid(m.a(n))
+                            && Builtins.name(m.a(n)).equals("sqrt")) && typeInRange(m.type(n))
+                            && Types.scalarOf(m, m.type(n)) == Types.F32) {
+                        divideSqrt = true;
                     }
                     switch (op) {
                         case Op.STORE -> {
@@ -1249,6 +1261,7 @@ public final class Validator {
                                     effects |= gi.effects();
                                     reads |= gi.readsMemory();
                                     divergent |= divergentInside[g];
+                                    divideSqrt |= divideSqrtInside[g];
                                     for (int i = 0; i < m.c(n) && i < gi.paramAccess().length; i++) {
                                         markAccess(access, m.list(m.b(n) + i), gi.paramAccess()[i]);
                                     }
@@ -1260,6 +1273,10 @@ public final class Validator {
                     }
                 }
                 divergentInside[f] = divergent;
+                divideSqrtInside[f] = divideSqrt;
+                if (divideSqrt && shape && m.fKind(f) == IrModule.KERNEL && (m.fFp(f) & IrModule.FP_EXACT) != 0) {
+                    features |= Features.EXACT_DIVIDE_SQRT;
+                }
                 infos[f] = new Validator.FunctionInfo(features, sync, access, effects, reads);
             }
         }

@@ -92,7 +92,9 @@ class DeviceTest {
         for (int i = 0; i < m.fParamCount(f); i++) {
             floats |= Types.isFloat(SampleArgs.scalarOf(m, m.fParamType(f, i)));
         }
-        check(label, m, range, SampleArgs.random(m, f, 4242), floats ? 4 : 0);
+        // ядро exact (18.2-S6) сверяется побитово: допуск builtins к нему не относится
+        boolean exact = (m.fFp(f) & IrModule.FP_EXACT) != 0;
+        check(label, m, range, SampleArgs.random(m, f, 4242), floats && !exact ? 4 : 0);
     }
 
     // =============================================================================================

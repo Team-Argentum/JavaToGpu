@@ -172,7 +172,7 @@ class DiagnosticsTest {
                     """),
             new Case("GPU0112", """
                     @Kernel public static void k(@Global float[] a) {
-                        a[0] = (float) Math.sqrt(a[1]); // <-
+                        a[0] = (float) Math.sin(a[1]); // <-
                     }
                     """),
             new Case("GPU0113", """

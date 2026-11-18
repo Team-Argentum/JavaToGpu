@@ -87,6 +87,13 @@ public final class IrModule {
     public static final int FP_NATIVE = 1 << 4;
     /** Все известные биты маски. */
     public static final int FP_ALL = FP_CONTRACT | FP_RECIPROCAL | FP_FINITE | FP_NO_SIGNED_ZERO | FP_NATIVE;
+    /**
+     * Ядро {@code exact} (FRONTEND_ASM_RUNTIME.md, S6-1): результат побитово равен JVM. Не разрешает преобразований и
+     * несовместим с битами {@link #FP_ALL} ({@code IR-F04}); фронтенд проверяет, что достижимы только точные операции
+     * ({@code GPU0310}), а валидатор добавляет ядру {@link Features#EXACT_DIVIDE_SQRT}, если оно делит {@code float}
+     * или берёт {@code sqrt(float)}.
+     */
+    public static final int FP_EXACT = 1 << 5;
 
     /** Тип тела функции: IR. */
     public static final int BODY_IR = 0;

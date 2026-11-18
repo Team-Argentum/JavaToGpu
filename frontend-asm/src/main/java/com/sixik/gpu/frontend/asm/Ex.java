@@ -67,6 +67,8 @@ final class Ex {
     static final int NEW_OBJ = 26;
     /** Начальное значение ссылки {@code new FloatPtr(v)}: {@code kids[0]} - значение ячейки. */
     static final int NEW_PTR = 27;
+    /** Переинтерпретация битов JDK-интринсиком ({@code Double.doubleToRawLongBits}, ...): {@code kids[0]} - значение. */
+    static final int BITCAST = 28;
 
     final int op;
     /** Вид Java результата ({@link Kinds}). */

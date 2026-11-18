@@ -944,11 +944,27 @@ final class FunctionLowerer {
             out.add(at(mit, b.barrier(callee.getSimpleName().contentEquals("barrierGlobal") ? 3 : 1)));
             return null;
         }
+        com.sixik.gpu.frontend.common.JdkIntrinsics.Intrinsic jdk = isBuiltin ? null : Descriptors.jdkIntrinsic(callee);
         if (isBuiltin) {
             int id = Builtins.idOf(callee.getSimpleName().toString());
             node = b.intrinsic(id, args);
             effectful = Builtins.has(id, Builtins.EFFECT);
             open = anyOpen || Builtins.has(id, Builtins.READS);
+        } else if (jdk != null) {
+            // JDK-интринсик (18.2-S6): один builtin jdk (у nextUp/nextDown - с константой ±inf) либо bitcast
+            if (jdk.isBitcast()) {
+                node = b.bitcast(jdk.bitcast(), args[0]);
+            } else if (jdk.extra() != com.sixik.gpu.frontend.common.JdkIntrinsics.EXTRA_NONE) {
+                boolean positive = jdk.extra() == com.sixik.gpu.frontend.common.JdkIntrinsics.EXTRA_POSITIVE_INFINITY;
+                int inf = csig.paramKinds()[0] == JavaTypes.K_FLOAT
+                        ? b.constF32(positive ? Float.POSITIVE_INFINITY : Float.NEGATIVE_INFINITY)
+                        : b.constF64(positive ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY);
+                node = b.intrinsic(jdk.builtin(), args[0], inf);
+            } else {
+                node = b.intrinsic(jdk.builtin(), args);
+            }
+            effectful = false;
+            open = anyOpen;
         } else {
             FnInfo info = fns.get(callee);
             if (info == null) {
@@ -1603,6 +1619,8 @@ final class FunctionLowerer {
                 } else if (el instanceof ExecutableElement ee && ee.getEnclosingElement() instanceof TypeElement te
                         && Aggregates.isAggregate(te.asType())) {
                     pureBuiltin = true; // методы вектора и copy() struct не имеют эффектов
+                } else if (el instanceof ExecutableElement ee && Descriptors.jdkIntrinsic(ee) != null) {
+                    pureBuiltin = true; // JDK-интринсик (18.2-S6)
                 }
                 if (!pureBuiltin) {
                     pure[0] = false;

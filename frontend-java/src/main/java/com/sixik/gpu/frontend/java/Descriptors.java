@@ -49,6 +49,27 @@ final class Descriptors {
         };
     }
 
+    /**
+     * Запись таблицы JDK-интринсиков (18.2-S6) для метода: ключ тот же, что у {@code frontend-asm} в байткоде.
+     *
+     * @param e вызываемый метод
+     * @return запись либо {@code null}, если метод не интринсик (или это не метод JDK)
+     */
+    static com.sixik.gpu.frontend.common.JdkIntrinsics.Intrinsic jdkIntrinsic(ExecutableElement e) {
+        if (!(e.getEnclosingElement() instanceof TypeElement owner)
+                || !owner.getQualifiedName().toString().startsWith("java.")) {
+            return null;
+        }
+        String desc;
+        try {
+            desc = descriptor(e);
+        } catch (IllegalArgumentException ex) {
+            return null; // обобщённые и прочие сигнатуры без дескриптора ядра: точно не интринсик
+        }
+        return com.sixik.gpu.frontend.common.JdkIntrinsics.find(binaryName(owner).replace('.', '/'),
+                e.getSimpleName().toString(), desc);
+    }
+
     /** Двоичное имя класса: вложенные классы разделяются {@code $}. */
     private static String binaryName(TypeElement te) {
         Element owner = te.getEnclosingElement();

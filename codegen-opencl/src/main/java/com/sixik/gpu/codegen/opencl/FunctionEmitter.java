@@ -1235,8 +1235,69 @@ final class FunctionEmitter {
                         P_ATOM);
             }
             default:
+                if (Builtins.has(id, Builtins.JDK)) {
+                    return jdkIntrinsic(n, name);
+                }
                 throw new IllegalStateException("builtin " + name + " is not supported by the emitter");
         }
+    }
+
+    /**
+     * JDK-интринсик (FRONTEND_ASM_RUNTIME.md, S6-2): точный эквивалент метода JDK. Функции OpenCL C {@code floor, ceil,
+     * rint, fabs, copysign, nextafter, rotate, clz, popcount, mul_hi} по спецификации точны; где семантика OpenCL
+     * расходится с Java ({@code sign} для NaN, {@code ctz} только в 2.0, деление {@code MIN / -1}), печатается
+     * вспомогательная функция преамбулы: аргументы вычисляются ровно один раз.
+     */
+    private Ex jdkIntrinsic(int n, String name) {
+        int x = Operands.get(m, n, 0);
+        int at = m.type(x);
+        String a = expr(x).s();
+        String b = Operands.count(m, n) > 1 ? expr(Operands.get(m, n, 1)).s() : null;
+        boolean wide = at == Types.F64 || at == Types.I64;
+        String c = switch (at) {
+            case Types.F32 -> "float";
+            case Types.F64 -> "double";
+            case Types.I32 -> "int";
+            default -> "long";
+        };
+        String u = wide ? "ulong" : "uint";
+        String sfx = (Types.isFloat(at) ? "f" : "i") + (wide ? "64" : "32");
+        int bits = wide ? 63 : 31;
+        String call = switch (name) {
+            case "floor", "ceil", "rint" -> name + "(" + a + ")";
+            case "abs" -> Types.isFloat(at) ? "fabs(" + a + ")" : "(" + c + ")abs(" + a + ")";
+            case "copySign" -> "copysign(" + a + ", " + b + ")";
+            case "nextAfter" -> "nextafter(" + a + ", " + b + ")";
+            case "rotateLeft" -> "rotate(" + a + ", (" + c + ")((" + u + ")(" + b + ") & " + bits + "u))";
+            case "rotateRight" -> "rotate(" + a + ", (" + c + ")((0u - (uint)(" + b + ")) & " + bits + "u))";
+            case "numberOfLeadingZeros" -> "(int)clz(" + a + ")";
+            case "bitCount" -> "(int)popcount(" + a + ")";
+            case "multiplyHigh" -> "mul_hi(" + a + ", " + b + ")";
+            case "signum" -> helper("gpu_signum_" + sfx, "static inline " + c + " gpu_signum_" + sfx + "(" + c
+                    + " x) { return x > 0 ? (" + c + ")1 : x < 0 ? (" + c + ")-1 : x; }") + "(" + a + ")";
+            case "numberOfTrailingZeros" -> helper("gpu_ntz_" + sfx, "static inline int gpu_ntz_" + sfx + "(" + c
+                    + " x) { return (int)popcount(~(" + u + ")x & ((" + u + ")x - 1)); }") + "(" + a + ")";
+            case "compareUnsigned" -> helper("gpu_cmpu_" + sfx, "static inline int gpu_cmpu_" + sfx + "(" + c + " a, "
+                    + c + " b) { return a == b ? 0 : (" + u + ")a < (" + u + ")b ? -1 : 1; }") + "(" + a + ", " + b + ")";
+            case "floorDiv" -> {
+                String div = helpers.use(wide ? Helpers.DIV_I64 : Helpers.DIV_I32);
+                yield helper("gpu_floordiv_" + sfx, "static inline " + c + " gpu_floordiv_" + sfx + "(" + c + " a, " + c
+                        + " b) { " + c + " q = " + div + "(a, b); return (a ^ b) < 0 && (" + c + ")((" + u + ")q * (" + u
+                        + ")b) != a ? q - 1 : q; }") + "(" + a + ", " + b + ")";
+            }
+            case "floorMod" -> {
+                String rem = helpers.use(wide ? Helpers.REM_I64 : Helpers.REM_I32);
+                yield helper("gpu_floormod_" + sfx, "static inline " + c + " gpu_floormod_" + sfx + "(" + c + " a, " + c
+                        + " b) { " + c + " r = " + rem + "(a, b); return (a ^ b) < 0 && r != 0 ? (" + c + ")((" + u
+                        + ")r + (" + u + ")b) : r; }") + "(" + a + ", " + b + ")";
+            }
+            default -> throw new IllegalStateException("JDK intrinsic " + name + " is not supported by the emitter");
+        };
+        return new Ex(call, call.startsWith("(") ? P_UNARY : P_ATOM);
+    }
+
+    private String helper(String fn, String text) {
+        return helpers.dynamic(fn, () -> text);
     }
 
     // ---- вывод -------------------------------------------------------------------------------

@@ -370,7 +370,35 @@ class ValidatorSemanticsTest {
     void f04_unknownFloatingPointBits() {
         IrBuilder b = new IrBuilder();
         b.beginFunction(IrModule.KERNEL, Types.VOID);
-        b.fpMode(IrModule.FP_ALL + 1);
+        b.fpMode(1 << 6);
+        b.endFunction(b.block());
+        expect(b.build(), "IR-F04");
+    }
+
+    /** Ядро {@code exact}, делящее {@code float} в вызываемой функции, требует {@code EXACT_DIVIDE_SQRT}; строгое - нет. */
+    @Test
+    void exactKernelWithFloatDivisionRequiresExactDivideSqrt() {
+        for (int fp : new int[]{IrModule.FP_EXACT, 0}) {
+            IrBuilder b = new IrBuilder();
+            int half = b.beginFunction(IrModule.DEVICE, Types.F32, Types.F32);
+            b.endFunction(b.block(b.returnStmt(b.binary(Op.DIV, b.param(0), b.constF32(3f)))));
+            b.beginFunction(IrModule.KERNEL, Types.VOID);
+            b.fpMode(fp);
+            int x = b.declareLocal(Types.F32);
+            b.endFunction(b.block(b.localDecl(x, b.call(half, b.constF32(1f)))));
+            Validator.Report r = Validator.validate(b.build());
+            assertFalse(r.hasErrors(), r.diagnostics().toString());
+            int need = r.functions()[1].requiredFeatures() & Features.EXACT_DIVIDE_SQRT;
+            assertEquals(fp == 0 ? 0 : Features.EXACT_DIVIDE_SQRT, need, "fp=" + fp);
+            assertEquals(0, r.functions()[0].requiredFeatures() & Features.EXACT_DIVIDE_SQRT, "device function");
+        }
+    }
+
+    @Test
+    void f04_exactWithRelaxationBits() {
+        IrBuilder b = new IrBuilder();
+        b.beginFunction(IrModule.KERNEL, Types.VOID);
+        b.fpMode(IrModule.FP_EXACT | IrModule.FP_CONTRACT);
         b.endFunction(b.block());
         expect(b.build(), "IR-F04");
     }

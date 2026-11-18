@@ -26,7 +26,7 @@ import java.util.List;
  * @param maxConstantBuffer наибольший размер одного буфера {@code __constant}, байт ({@code CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE})
  * @param maxConstantArgs число аргументов ядра в {@code __constant} ({@code CL_DEVICE_MAX_CONSTANT_ARGS})
  * @param extensions      строка расширений, разделённых пробелами
- * @param features        маска {@link Features}, которую устройство поддерживает (по расширениям)
+ * @param features        маска {@link Features}, которую устройство поддерживает (по расширениям и {@code singleFpConfig})
  * @param singleFpConfig  {@code CL_DEVICE_SINGLE_FP_CONFIG}: возможности {@code float} (биты {@code CL_FP_*})
  * @param doubleFpConfig  {@code CL_DEVICE_DOUBLE_FP_CONFIG}: возможности {@code double}; 0 - нет данных или нет
  *                        {@code double}
@@ -56,6 +56,10 @@ public record DeviceInfo(int index, long platform, long handle, String platformN
 
     private static DeviceInfo query(DeviceApi api, int index, long platform, String platformName, long device) {
         String extensions = api.deviceString(device, DeviceApi.DEVICE_EXTENSIONS);
+        long single = optionalLong(api, device, DeviceApi.DEVICE_SINGLE_FP_CONFIG);
+        // ядру exact с float-делением или sqrt нужны корректно округлённые операции (18.2-S6)
+        int features = featuresOf(extensions)
+                | ((single & DeviceApi.FP_CORRECTLY_ROUNDED_DIVIDE_SQRT) != 0 ? Features.EXACT_DIVIDE_SQRT : 0);
         return new DeviceInfo(index, platform, device, platformName,
                 api.deviceString(device, DeviceApi.DEVICE_NAME).strip(),
                 api.deviceString(device, DeviceApi.DEVICE_VENDOR).strip(),
@@ -69,8 +73,7 @@ public record DeviceInfo(int index, long platform, long handle, String platformN
                 api.deviceLong(device, DeviceApi.DEVICE_LOCAL_MEM_SIZE),
                 api.deviceLong(device, DeviceApi.DEVICE_MAX_CONSTANT_BUFFER_SIZE),
                 (int) api.deviceLong(device, DeviceApi.DEVICE_MAX_CONSTANT_ARGS),
-                extensions, featuresOf(extensions),
-                optionalLong(api, device, DeviceApi.DEVICE_SINGLE_FP_CONFIG),
+                extensions, features, single,
                 optionalLong(api, device, DeviceApi.DEVICE_DOUBLE_FP_CONFIG));
     }
 

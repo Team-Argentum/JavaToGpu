@@ -32,6 +32,11 @@ public final class Builtins {
     public static final int SYNC = 1 << 6;
     /** Флаг: атомарная операция из «расширенного» набора (min, max, and, or, xor); для 64 бит нужна {@link Features#INT64_EXT_ATOMICS}. */
     public static final int EXT = 1 << 7;
+    /**
+     * Флаг: JDK-интринсик (FRONTEND_ASM_RUNTIME.md, S6-2). Побитово точная операция, которую фронтенды строят из
+     * вызова {@code Math.*}, {@code Integer.*}, ... по таблице {@code JdkIntrinsics}; в {@code Gpu} метода нет.
+     */
+    public static final int JDK = 1 << 8;
 
     // Кодирование токенов сигнатуры.
     private static final int TOK_BIND = 100;   // 100 + класс: связывает T
@@ -41,6 +46,9 @@ public final class Builtins {
     private static final int CLASS_FLOAT = 0;
     private static final int CLASS_INT = 1;
     private static final int CLASS_NUM = 2;
+    private static final int CLASS_SCALAR_FLOAT = 3;
+    private static final int CLASS_SCALAR_INT = 4;
+    private static final int CLASS_SCALAR_NUM = 5;
 
     /** Версия таблицы builtins, по которой собирается и проверяется IR. */
     public static final int VERSION;
@@ -150,6 +158,7 @@ public final class Builtins {
             case "atomic" -> ATOMIC;
             case "sync" -> SYNC;
             case "ext" -> EXT;
+            case "jdk" -> JDK;
             default -> throw new IllegalStateException("builtins.def: unknown flag '" + f + "' for id " + id);
         };
     }
@@ -159,6 +168,9 @@ public final class Builtins {
             case "genf" -> CLASS_FLOAT;
             case "geni" -> CLASS_INT;
             case "genn" -> CLASS_NUM;
+            case "sf" -> CLASS_SCALAR_FLOAT;
+            case "si" -> CLASS_SCALAR_INT;
+            case "sn" -> CLASS_SCALAR_NUM;
             default -> throw new IllegalStateException("builtins.def: unknown class '" + name + "' for id " + id);
         };
     }
@@ -279,6 +291,10 @@ public final class Builtins {
         return switch (cls) {
             case CLASS_FLOAT -> Types.isFloat(scalar);
             case CLASS_INT -> Types.isInt32or64(scalar);
+            case CLASS_SCALAR_FLOAT -> scalar == Types.F32 || scalar == Types.F64;
+            case CLASS_SCALAR_INT -> scalar == Types.I32 || scalar == Types.I64;
+            case CLASS_SCALAR_NUM -> scalar == Types.F32 || scalar == Types.F64 || scalar == Types.I32
+                    || scalar == Types.I64;
             default -> Types.isArith(scalar);
         };
     }
@@ -325,7 +341,8 @@ public final class Builtins {
                 }
             } else if (tok >= TOK_BIND) {
                 int s = Types.scalarOf(m, t);
-                if (s < 0 || !inClass(s, tok - TOK_BIND)) {
+                int cls = tok - TOK_BIND;
+                if (s < 0 || !inClass(s, cls) || cls >= CLASS_SCALAR_FLOAT && s != t) {
                     return -1;
                 }
                 if (bound == -1) {

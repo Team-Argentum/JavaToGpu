@@ -11,7 +11,7 @@ class FeaturesTest {
     @Test
     void everyKnownNameMapsToItsOwnBit() {
         int all = 0;
-        for (String name : new String[]{"FP64", "INT64_ATOMICS", "INT64_EXT_ATOMICS", "FP16", "IMAGES"}) {
+        for (String name : new String[]{"FP64", "INT64_ATOMICS", "INT64_EXT_ATOMICS", "FP16", "IMAGES", "EXACT_DIVIDE_SQRT"}) {
             int bit = Features.fromName(name);
             assertNotEquals(0, bit, name);
             assertEquals(1, Integer.bitCount(bit), name + " is exactly one bit");
