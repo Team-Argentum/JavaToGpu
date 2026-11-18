@@ -311,6 +311,8 @@ final class Structurer {
         nodes.add(new Node(i, x.jumpCond((JumpInsnNode) b0.last), b0.target, i + 1, null));
         int line = x.lineOf(b0.last);
         int k = i;
+        // состояние исполнителя до каждого втянутого блока: откат цепочки, которая не сворачивается
+        List<MethodLowerer.Snap> snaps = new ArrayList<>();
         while (k + 1 < to) {
             int y = k + 1;
             Cfg.Block yb = g.get(y);
@@ -335,15 +337,29 @@ final class Structurer {
             boolean stackOk = x.sameStack(base);
             boolean pure = pre.isEmpty();
             boolean sameLine = x.lineOf(firstOpcode(yb)) == line;
-            if (!stackOk || !(y <= forceTo || crossing || sameLine)) {
+            // `a && b` на одной строке: второе условие ведёт на уже существующий выход цепочки. Вложенный if/?: на той
+            // же строке вводит новый выход (свою ветку else) - это не часть условия
+            boolean sharesExit = exits.contains(yb.target);
+            if (!stackOk || !(y <= forceTo || crossing || sameLine && sharesExit)) {
                 x.restore(s);
                 break;
             }
             nodes.add(new Node(y, cy, yb.target, y + 1, pure ? null : pre));
+            snaps.add(s);
             k = y;
         }
         int t = k + 1;
         Node m = merge(nodes, t);
+        // Втягивание по строке жадное: условный блок на той же строке может оказаться вложенным if
+        // (`if (a) { x = ...; if (b) ... } else ...` в одну строку, позиции-узлы генератора, 18.2-S7). Цепочка, которая
+        // не сворачивается в одно условие с выходом на «then», укорачивается: остаток - обычный вложенный регион.
+        while (nodes.size() > 1 && (m == null || m.t() != t && m.f() != t)) {
+            x.restore(snaps.remove(snaps.size() - 1));
+            nodes.remove(nodes.size() - 1);
+            k = nodes.get(nodes.size() - 1).block();
+            t = k + 1;
+            m = merge(nodes, t);
+        }
         if (m == null) {
             x.fail("GPU0304", x.name());
         }

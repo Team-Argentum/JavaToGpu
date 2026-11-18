@@ -1,5 +1,19 @@
 description = 'Bytecode frontend: reads class files (ASM tree API) and builds the same IR as frontend-java.'
 
+// Версия ASM. Загрузчики модов дают свою (решение 18.6-7: NeoForge/Fabric - 9.7+), поэтому нижняя граница
+// проверяется прогоном тестов с -PasmVersion=9.7: версия задаётся принудительно для всех конфигураций модуля,
+// включая ASM, который приходит транзитивно (weaver в тестах).
+def asmVersion = findProperty('asmVersion') ?: '9.11.1'
+if (findProperty('asmVersion') != null) {
+    configurations.configureEach {
+        resolutionStrategy.eachDependency { d ->
+            if (d.requested.group == 'org.ow2.asm') {
+                d.useVersion(asmVersion)
+            }
+        }
+    }
+}
+
 dependencies {
     // типы публичного API (IrModule, KernelResources.IndexEntry в AsmFrontend.Kernel) - api, а не implementation
     api project(':ir')
@@ -7,8 +21,8 @@ dependencies {
     implementation project(':ir-optimizer')
     // compilationProperties, атрибуты ядра, таблица диагностик, формат ресурсов - общий код с frontend-java (17.2)
     api project(':frontend-common')
-    implementation 'org.ow2.asm:asm:9.11.1'
-    implementation 'org.ow2.asm:asm-tree:9.11.1'
+    implementation "org.ow2.asm:asm:${asmVersion}"
+    implementation "org.ow2.asm:asm-tree:${asmVersion}"
 
     // Только тесты: корпус образцов (class-файлы с IR от frontend-java в ресурсах), дамп IR и интерпретатор для
     // сравнения IR_asm с IR_java по тексту и по поведению (критерий 17.14).
@@ -30,6 +44,15 @@ tasks.named('test') {
     // classpath образцов задаётся явно, а не берётся из java.class.path воркера (как в frontend-java)
     systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
     systemProperty 'gpu.examples.dir', rootProject.file('examples').absolutePath
+    // замер масштаба B0 (ScaleProbeTest): -Dprobe.scale=true прогоняет всю шкалу
+    System.properties.findAll { it.key.toString().startsWith('probe.') }.each { k, v -> systemProperty k.toString(), v }
+    // профиль замера: -Dprobe.jfr=<файл.jfr>
+    if (System.getProperty('probe.jfr') != null) {
+        jvmArgs "-XX:StartFlightRecording=filename=${System.getProperty('probe.jfr')},settings=profile"
+    }
+    testLogging {
+        showStandardStreams = Boolean.getBoolean('probe.scale') || System.getProperty('probe.sizes') != null
+    }
     inputs.dir(rootProject.file('examples/tour/src/main/java'))
     inputs.dir(rootProject.file('examples/standalone/src/main/java'))
 }
