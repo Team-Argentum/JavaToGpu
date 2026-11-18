@@ -7,7 +7,27 @@ group = 'io.github.deussixik'
 version = '0.2.0-SNAPSHOT'
 
 def JAVA_VERSION = 25
+// Модули, которые встраиваются в приложения на Java 17+ (Minecraft 1.18-1.21.x): их main собирается с --release 17,
+// тесты и бенчмарки - как остальные, под 25. Java 17 и 21 не знают FFM, поэтому runtime держит драйвер за SPI
+// DeviceApiProvider, а реализации - в runtime-opencl-ffm (25) и runtime-opencl-lwjgl (17).
+def JAVA_17_MODULES = ['api', 'ir', 'ir-optimizer', 'codegen-opencl', 'frontend-common', 'frontend-asm',
+                       'runtime', 'runtime-opencl-lwjgl']
+// Эталонный интерпретатор нужен только тестам и инструментам (runtime от него не зависит): Java 21 ради виртуальных
+// потоков, на которых он исполняет work-item-ы групп с барьерами.
+def JAVA_21_MODULES = ['ir-interpreter']
 def JUNIT_BOM = 'org.junit:junit-bom:6.1.3'
+
+// Версия ядра LWJGL, с которым собран бэкенд runtime-opencl-lwjgl: та, что у Minecraft 1.21.1, и классификатор
+// нативов текущей ОС. Общие для бэкенда и для device-тестов runtime через LWJGL (deviceTestLwjgl).
+ext.LWJGL_VERSION = '3.3.3'
+ext.LWJGL_NATIVES = {
+    def os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+    def arch = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+    def arm = arch.contains('aarch64') || arch.contains('arm64')
+    if (os.contains('win')) return arm ? 'natives-windows-arm64' : 'natives-windows'
+    if (os.contains('mac')) return arm ? 'natives-macos-arm64' : 'natives-macos'
+    return arm ? 'natives-linux-arm64' : 'natives-linux'
+}()
 
 subprojects {
     apply plugin: 'java-library'
@@ -31,6 +51,14 @@ subprojects {
         options.compilerArgs += ['-parameters', '-Xlint:all']
     }
 
+    // release задаёт и байткод, и атрибут org.gradle.jvm.version опубликованного варианта
+    def mainRelease = JAVA_17_MODULES.contains(project.name) ? 17 : JAVA_21_MODULES.contains(project.name) ? 21 : null
+    if (mainRelease != null) {
+        tasks.named('compileJava', JavaCompile) {
+            options.release = mainRelease
+        }
+    }
+
     tasks.withType(Javadoc).configureEach {
         options.encoding = 'UTF-8'
     }
@@ -43,7 +71,7 @@ subprojects {
 
     tasks.withType(Test).configureEach {
         useJUnitPlatform()
-        // FFM (java.lang.foreign) в runtime требует доступа к нативному коду.
+        // бэкенды драйвера (FFM и JNI LWJGL) требуют доступа к нативному коду.
         jvmArgs '--enable-native-access=ALL-UNNAMED'
     }
 }
@@ -61,6 +89,9 @@ def allowedProjectDeps = [
         'ir-optimizer'  : ['ir'],
         'codegen-opencl': ['ir'],
         'runtime'       : ['api', 'ir', 'ir-optimizer', 'codegen-opencl'],
+        // бэкенды драйвера: только DeviceApi ядра рантайма
+        'runtime-opencl-ffm'  : ['runtime'],
+        'runtime-opencl-lwjgl': ['runtime'],
         // ir-optimizer: шаблон @Reduction проверяется при компиляции тем же кодом, которым рантайм строит ядро
         // общий код фронтендов (REWORK_ARCHITECTURE.md, 17.2): не знает ни javac, ни ASM, ни api
         'frontend-common': ['ir'],
@@ -71,8 +102,8 @@ def allowedProjectDeps = [
         // frontend-asm: режим gpu { frontend = 'asm' } - IR из class-файлов в doLast компиляции (17.3)
         'gradle-plugin' : ['weaver', 'frontend-asm'],
         'test-support'  : ['api', 'ir', 'ir-interpreter', 'runtime'],
-        'tools'         : ['ir', 'codegen-opencl', 'ir-interpreter', 'runtime'],
-        'app'           : ['api', 'runtime', 'frontend-java'],
+        'tools'         : ['ir', 'codegen-opencl', 'ir-interpreter', 'runtime', 'runtime-opencl-ffm'],
+        'app'           : ['api', 'runtime', 'runtime-opencl-ffm', 'frontend-java'],
 ]
 
 // Внешние библиотеки (production-конфигурации). Всё остальное запрещено.
@@ -80,6 +111,7 @@ def allowedExternalGroups = [
         'weaver'       : ['org.ow2.asm'],
         'frontend-asm' : ['org.ow2.asm'],
         'test-support' : ['org.junit'],
+        'runtime-opencl-lwjgl': ['org.lwjgl'],
 ]
 
 // Модули «чистого ядра»: данные и чистые функции, без файлового ввода-вывода и нативов.
@@ -94,6 +126,10 @@ def forbiddenInCore = [
 def forbiddenInPureCore = ['java.nio.file', 'java.io.File', 'java.net.']
 // Запреты отдельных модулей вне ядра (REWORK_ARCHITECTURE.md, 17.2).
 def forbiddenByModule = [
+        // ядро рантайма - Java 17: FFM только в runtime-opencl-ffm, LWJGL - только в runtime-opencl-lwjgl
+        'runtime'     : ['java.lang.foreign', 'org.lwjgl.', 'com.sixik.gpu.runtime.ffm', 'com.sixik.gpu.runtime.lwjgl'],
+        'runtime-opencl-lwjgl': ['java.lang.foreign', 'com.sixik.gpu.runtime.ffm'],
+        'runtime-opencl-ffm'  : ['org.lwjgl.', 'com.sixik.gpu.runtime.lwjgl'],
         'frontend-asm': ['com.sun.', 'javax.annotation.processing', 'javax.lang.model', 'javax.tools', 'java.lang.foreign',
                          'com.sixik.gpu.api', 'com.sixik.gpu.frontend.java', 'com.sixik.gpu.runtime',
                          'com.sixik.gpu.weaver'],

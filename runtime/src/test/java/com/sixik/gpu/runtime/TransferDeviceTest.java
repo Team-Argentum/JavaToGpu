@@ -2,12 +2,13 @@ package com.sixik.gpu.runtime;
 
 import com.sixik.gpu.runtime.device.DeviceApi;
 import com.sixik.gpu.runtime.device.DeviceInfo;
-import com.sixik.gpu.runtime.device.OpenClApi;
+import com.sixik.gpu.runtime.ffm.OpenClApi;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import com.sixik.gpu.runtime.ffm.FfmMemory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -68,6 +69,7 @@ class TransferDeviceTest {
                 MemorySegment pageable = arena.allocate(bytes, 64);
                 DeviceApi.Pinned pinned = api.createPinned(ctx, q, bytes);
                 Assumptions.assumeTrue(pinned != null, "pinned memory is not supported");
+                MemorySegment pinnedSeg = FfmMemory.segment(pinned.memory());
                 try {
                     long[] wPage = new long[RUNS];
                     long[] rPage = new long[RUNS];
@@ -80,16 +82,16 @@ class TransferDeviceTest {
                         MemorySegment.copy(host, 0, pageable, ValueLayout.JAVA_FLOAT, 0, n);
                         toNative[r] = System.nanoTime() - t;
                         t = System.nanoTime();
-                        api.writeBuffer(q, buf, 0, bytes, pageable);
+                        api.writeBuffer(q, buf, 0, bytes, FfmMemory.wrap(pageable));
                         wPage[r] = System.nanoTime() - t;
                         t = System.nanoTime();
-                        api.readBuffer(q, buf, 0, bytes, pageable);
+                        api.readBuffer(q, buf, 0, bytes, FfmMemory.wrap(pageable));
                         rPage[r] = System.nanoTime() - t;
                         t = System.nanoTime();
                         MemorySegment.copy(pageable, ValueLayout.JAVA_FLOAT, 0, back, 0, n);
                         fromNative[r] = System.nanoTime() - t;
 
-                        MemorySegment.copy(host, 0, pinned.memory(), ValueLayout.JAVA_FLOAT, 0, n);
+                        MemorySegment.copy(host, 0, pinnedSeg, ValueLayout.JAVA_FLOAT, 0, n);
                         t = System.nanoTime();
                         api.writeBuffer(q, buf, 0, bytes, pinned.memory());
                         wPin[r] = System.nanoTime() - t;
@@ -104,13 +106,13 @@ class TransferDeviceTest {
                     for (int r = 0; r < RUNS; r++) {
                         Arrays.fill(back, 0);
                         long t = System.nanoTime();
-                        parallelCopy(pinned.memory(), back, parts);
+                        parallelCopy(pinnedSeg, back, parts);
                         parCopy[r] = System.nanoTime() - t;
                         assertArrayEquals(host, back);
                         Arrays.fill(back, 0);
                         t = System.nanoTime();
                         api.readBuffer(q, buf, 0, bytes, pinned.memory());
-                        parallelCopy(pinned.memory(), back, parts);
+                        parallelCopy(pinnedSeg, back, parts);
                         chunked[r] = System.nanoTime() - t;
                         assertArrayEquals(host, back);
                     }
@@ -137,7 +139,7 @@ class TransferDeviceTest {
                         tiny[r] = System.nanoTime() - t;
                     }
                     System.out.printf(Locale.ROOT, "  blocking 64 B read latency %.1f us%n", median(tiny) / 1e3);
-                    MemorySegment.copy(pinned.memory(), ValueLayout.JAVA_FLOAT, 0, back, 0, n);
+                    MemorySegment.copy(pinnedSeg, ValueLayout.JAVA_FLOAT, 0, back, 0, n);
                     assertArrayEquals(host, back);
                     System.out.println("device " + d.describe() + ", " + bytes / 1e6 + " MB");
                     System.out.println("  write pageable " + gbps(bytes, median(wPage)));

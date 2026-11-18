@@ -1,0 +1,5 @@
+description = 'OpenCL backend of the runtime over FFM (java.lang.foreign, Java 25): libOpenCL without native dependencies.'
+
+dependencies {
+    api project(':runtime')
+}

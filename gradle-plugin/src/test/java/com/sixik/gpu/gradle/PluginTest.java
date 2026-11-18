@@ -346,6 +346,29 @@ class PluginTest {
         BuildResult r = runner(dir, "inspect", "-q").build();
         assertTrue(r.getOutput().contains("JAVA true"), r.getOutput());
         assertTrue(r.getOutput().contains("EXT true"));
+        assertTrue(r.getOutput().contains("[api, codegen-opencl, ir, ir-optimizer, runtime, runtime-opencl-ffm]"),
+                r.getOutput());
+    }
+
+    @Test
+    void backendSelectsTheDriverModuleOrNone(@TempDir Path dir) throws IOException {
+        project(dir, "backend = 'none'");
+        write(dir.resolve("build.gradle"), Files.readString(dir.resolve("build.gradle")) + """
+
+                tasks.register('inspect') {
+                    doLast {
+                        println 'DEPS ' + configurations.implementation.dependencies.collect { it.name }.sort()
+                    }
+                }
+                """);
+        BuildResult r = runner(dir, "inspect", "-q").build();
         assertTrue(r.getOutput().contains("[api, codegen-opencl, ir, ir-optimizer, runtime]"), r.getOutput());
+    }
+
+    @Test
+    void unknownBackendIsAConfigurationError(@TempDir Path dir) throws IOException {
+        project(dir, "backend = 'jni'");
+        BuildResult r = runner(dir, "classes").buildAndFail();
+        assertTrue(r.getOutput().contains("gpu.backend = 'jni'"), r.getOutput());
     }
 }

@@ -140,7 +140,6 @@ public final class TerrainNoise {
      * @return плотность одного образца
      */
     @DeviceFunction
-    @Kernel
     public static float sample(int index, @Global int[] chunkX, @Global int[] chunkZ,
                                int horizontal, int vertical, int stepXZ, int stepY, int seed, int octaves) {
         int perChunk = horizontal * horizontal * vertical;

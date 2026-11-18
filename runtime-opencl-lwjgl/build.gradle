@@ -1,0 +1,41 @@
+description = 'OpenCL backend of the runtime over LWJGL (lwjgl-opencl, Java 17). The application provides LWJGL core and its natives.'
+
+// Версия ядра LWJGL (LWJGL_VERSION в корневом build.gradle) - та, что у Minecraft 1.21.1. lwjgl-opencl должен
+// совпадать с ядром приложения по версии, поэтому ядро - compileOnly (его даёт приложение), а lwjgl-opencl - обычная
+// зависимость, которую мод может заменить своей версией.
+def LWJGL_VERSION = rootProject.ext.LWJGL_VERSION
+def lwjglNatives = rootProject.ext.LWJGL_NATIVES
+
+dependencies {
+    api project(':runtime')
+    compileOnly "org.lwjgl:lwjgl:${LWJGL_VERSION}"
+    implementation "org.lwjgl:lwjgl-opencl:${LWJGL_VERSION}"
+
+    // тестам нужно само ядро LWJGL с нативами (в Minecraft его даёт игра)
+    testImplementation "org.lwjgl:lwjgl:${LWJGL_VERSION}"
+    testRuntimeOnly "org.lwjgl:lwjgl:${LWJGL_VERSION}:${lwjglNatives}"
+    testImplementation testFixtures(project(':ir'))
+    testImplementation testFixtures(project(':ir-interpreter'))
+    testImplementation project(':ir-interpreter')
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'device'
+    }
+}
+
+// Тесты на настоящем OpenCL-устройстве через LWJGL. Без драйвера пропускаются (Assumptions).
+tasks.register('deviceTest', Test) {
+    group = 'verification'
+    description = 'Runtime tests on a real OpenCL device through the LWJGL backend (tag device).'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'device'
+    }
+    testLogging {
+        showStandardStreams = true
+    }
+    shouldRunAfter tasks.named('test')
+}

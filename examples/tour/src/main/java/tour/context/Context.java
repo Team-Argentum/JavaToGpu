@@ -11,7 +11,7 @@ import com.sixik.gpu.runtime.JavaToGpu;
 import com.sixik.gpu.runtime.device.DeviceApi;
 import com.sixik.gpu.runtime.device.DeviceInfo;
 import com.sixik.gpu.runtime.device.DevicePolicy;
-import com.sixik.gpu.runtime.device.OpenClApi;
+import com.sixik.gpu.runtime.ffm.OpenClApi;
 import tour.Show;
 
 import java.util.List;

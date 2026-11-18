@@ -118,7 +118,9 @@ Benchmark/AutoTune, вендорная адаптация кодгена, `@GpuN
 | `ir`             | SoA-таблицы, типы, builder, валидатор, сериализация, hash, ABI-layout              | —                                                   | —                    |
 | `ir-interpreter` | эталонный CPU-интерпретатор IR                                                     | `ir`                                                | —                    |
 | `codegen-opencl` | IR → OpenCL C, чистая функция                                                      | `ir`                                                | —                    |
-| `runtime`        | `GpuContext`, устройства (FFM), `GpuBuffer`, кэш, запуск, JVM-fallback, хост-фасад | `api`, `ir`, `codegen-opencl`                       | —                    |
+| `runtime`        | `GpuContext`, устройства (SPI `DeviceApiProvider`), `GpuBuffer`, кэш, запуск, JVM-fallback, хост-фасад; Java 17 | `api`, `ir`, `ir-optimizer`, `codegen-opencl` | —      |
+| `runtime-opencl-ffm`   | драйвер OpenCL через FFM, Java 25 (по умолчанию)                             | `runtime`                                           | —                    |
+| `runtime-opencl-lwjgl` | драйвер OpenCL через `lwjgl-opencl`, Java 17 (Minecraft 1.18–1.21.x)         | `runtime`                                           | `org.lwjgl`          |
 | `frontend-common`| общий код фронтендов: атрибуты ядра, таблица диагностик, формат ресурсов           | `ir`                                                | —                    |
 | `frontend-java`  | annotation processor → IR, subset-валидатор, диагностики                           | `api`, `ir`, `ir-optimizer`, `frontend-common`      | — (javac API из JDK) |
 | `frontend-asm`   | class-файлы → тот же IR (`gpu { frontend = 'asm' }`), device-функции из jar        | `ir`, `ir-optimizer`, `frontend-common`             | `org.ow2.asm`        |

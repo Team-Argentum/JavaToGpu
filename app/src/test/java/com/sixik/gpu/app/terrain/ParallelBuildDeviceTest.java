@@ -5,7 +5,7 @@ import com.sixik.gpu.ir.Result;
 import com.sixik.gpu.runtime.GpuContext;
 import com.sixik.gpu.runtime.JavaToGpu;
 import com.sixik.gpu.runtime.device.DeviceApi;
-import com.sixik.gpu.runtime.device.OpenClApi;
+import com.sixik.gpu.runtime.ffm.OpenClApi;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

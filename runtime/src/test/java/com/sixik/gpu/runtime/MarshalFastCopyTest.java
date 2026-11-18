@@ -2,8 +2,9 @@ package com.sixik.gpu.runtime;
 
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
+import com.sixik.gpu.runtime.device.HeapMemory;
+import com.sixik.gpu.runtime.device.HostArena;
+import com.sixik.gpu.runtime.device.HostMemory;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -15,8 +16,8 @@ class MarshalFastCopyTest {
     private static final int N = (int) (Marshal.PARALLEL_COPY_BYTES / 2) + 12_345;
 
     private static void roundTrip(Object src, Object dst) {
-        try (Arena a = Arena.ofShared()) {
-            MemorySegment seg = a.allocate(Math.max(Marshal.byteSize(src), 8), 8);
+        try (HostArena a = HeapMemory.arena(HostArena.Kind.SHARED)) {
+            HostMemory seg = a.allocate(Math.max(Marshal.byteSize(src), 8), 8);
             Marshal.copyToNativeFast(src, seg);
             Object check = java.lang.reflect.Array.newInstance(src.getClass().getComponentType(), Marshal.length(src));
             Marshal.fromNative(seg, check); // эталонное однопоточное чтение
@@ -100,8 +101,8 @@ class MarshalFastCopyTest {
         int[] src = new int[N];
         java.util.Arrays.fill(src, 7);
         int[] dst = new int[N];
-        try (Arena a = Arena.ofConfined()) {
-            MemorySegment seg = a.allocate(Marshal.byteSize(src), 8);
+        try (HostArena a = HeapMemory.arena(HostArena.Kind.CONFINED)) {
+            HostMemory seg = a.allocate(Marshal.byteSize(src), 8);
             Marshal.copyToNativeFast(src, seg);
             Marshal.fromNativeFast(seg, dst);
         }

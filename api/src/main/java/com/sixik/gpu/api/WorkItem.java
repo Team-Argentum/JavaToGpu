@@ -6,12 +6,13 @@ package com.sixik.gpu.api;
  * и др.) узнают положение текущего work-item.
  *
  * <p>Привязка действует только внутри {@link #run(WorkItemContext, Runnable)} и снимается автоматически, в том
- * числе при исключении (на {@code ScopedValue}); вложенный запуск временно заменяет контекст внешнего. Чтение
+ * числе при исключении; вложенный запуск временно заменяет контекст внешнего. Модуль собирается под Java 17,
+ * где {@code ScopedValue} нет (в Java 21 он ещё preview), поэтому привязка - {@code ThreadLocal} с восстановлением прежнего значения. Чтение
  * вне запуска - ошибка программиста: результат «по умолчанию» молча скрыл бы вызов device-кода вне ядра.</p>
  */
 public final class WorkItem {
 
-    private static final ScopedValue<WorkItemContext> CURRENT = ScopedValue.newInstance();
+    private static final ThreadLocal<WorkItemContext> CURRENT = new ThreadLocal<>();
 
     private WorkItem() {
     }
@@ -24,7 +25,17 @@ public final class WorkItem {
      * @param body выполняемое действие
      */
     public static void run(WorkItemContext ctx, Runnable body) {
-        ScopedValue.where(CURRENT, ctx).run(body);
+        WorkItemContext outer = CURRENT.get();
+        CURRENT.set(ctx);
+        try {
+            body.run();
+        } finally {
+            if (outer == null) {
+                CURRENT.remove();
+            } else {
+                CURRENT.set(outer);
+            }
+        }
     }
 
     /**
@@ -33,7 +44,7 @@ public final class WorkItem {
      * @return {@code true}, если поток выполняется внутри {@link #run}
      */
     public static boolean isBound() {
-        return CURRENT.isBound();
+        return CURRENT.get() != null;
     }
 
     /**
@@ -43,11 +54,12 @@ public final class WorkItem {
      * @throws IllegalStateException если вызвано вне {@link #run}
      */
     public static WorkItemContext current() {
-        if (!CURRENT.isBound()) {
+        WorkItemContext ctx = CURRENT.get();
+        if (ctx == null) {
             throw new IllegalStateException(
                     "id builtin called outside a kernel launch: no work-item context (WorkItem.run)");
         }
-        return CURRENT.get();
+        return ctx;
     }
 
     static int globalId(int dim) {

@@ -20,7 +20,9 @@
 | `ir-interpreter` | эталонный CPU-интерпретатор IR |
 | `ir-optimizer` | оптимизатор IR: мёртвый код, математика, CSE/LICM под бюджетом регистров, оценка давления, разбиение ядер |
 | `codegen-opencl` | IR → OpenCL C |
-| `runtime` | `GpuContext`, устройства (FFM), `GpuBuffer`, кэш, запуск, JVM-fallback |
+| `runtime` | `GpuContext`, устройства (SPI `DeviceApi`), `GpuBuffer`, кэш, запуск, JVM-fallback; Java 17 |
+| `runtime-opencl-ffm` | бэкенд драйвера OpenCL через FFM (Java 25, по умолчанию) |
+| `runtime-opencl-lwjgl` | бэкенд драйвера OpenCL через LWJGL (Java 17, Minecraft 1.18–1.21.x) |
 | `frontend-common` | общий код фронтендов: `compilationProperties`, атрибуты ядра, таблица диагностик, формат ресурсов |
 | `frontend-java` | annotation processor (javac Tree API) → IR |
 | `weaver` | подмена тела `@Kernel`-метода (ASM) |

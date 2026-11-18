@@ -421,11 +421,16 @@ final class LazyProducers {
     private GpuArray snapshot(Object host) {
         ArrayDeque<GpuArray> free = pool.get(poolKey(host));
         GpuArray s = free == null || free.isEmpty() ? newArray(host) : free.pop();
-        switch (s) {
-            case GpuFloatArray x -> x.copyFrom((float[]) host);
-            case GpuIntArray x -> x.copyFrom((int[]) host);
-            case GpuLongArray x -> x.copyFrom((long[]) host);
-            case GpuDoubleArray x -> x.copyFrom((double[]) host);
+        if (s instanceof GpuFloatArray x) {
+            x.copyFrom((float[]) host);
+        } else if (s instanceof GpuIntArray x) {
+            x.copyFrom((int[]) host);
+        } else if (s instanceof GpuLongArray x) {
+            x.copyFrom((long[]) host);
+        } else if (s instanceof GpuDoubleArray x) {
+            x.copyFrom((double[]) host);
+        } else {
+            throw new IllegalStateException("unexpected resident array " + s.getClass().getName());
         }
         return s;
     }
@@ -436,12 +441,15 @@ final class LazyProducers {
 
     private static GpuArray newArray(Object host) {
         int n = java.lang.reflect.Array.getLength(host);
-        return switch (host) {
-            case float[] a -> new GpuFloatArray(n);
-            case int[] a -> new GpuIntArray(n);
-            case long[] a -> new GpuLongArray(n);
-            case double[] a -> new GpuDoubleArray(n);
-            default -> throw new IllegalStateException("unexpected host array " + Arrays.toString(new Object[]{host}));
-        };
+        if (host instanceof float[]) {
+            return new GpuFloatArray(n);
+        } else if (host instanceof int[]) {
+            return new GpuIntArray(n);
+        } else if (host instanceof long[]) {
+            return new GpuLongArray(n);
+        } else if (host instanceof double[]) {
+            return new GpuDoubleArray(n);
+        }
+        throw new IllegalStateException("unexpected host array " + Arrays.toString(new Object[]{host}));
     }
 }

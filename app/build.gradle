@@ -26,6 +26,7 @@ def asmLibJar = tasks.register('asmLibJar', Jar) {
 dependencies {
     implementation project(':api')
     implementation project(':runtime')
+    implementation project(':runtime-opencl-ffm')
     annotationProcessor project(':frontend-java')
     testAnnotationProcessor project(':frontend-java')
 
@@ -35,6 +36,7 @@ dependencies {
     asmLibImplementation project(':api')
     asmExampleImplementation project(':api')
     asmExampleImplementation project(':runtime')
+    asmExampleImplementation project(':runtime-opencl-ffm')
     asmExampleImplementation files(asmLibJar)
     testImplementation project(':test-support')
     testImplementation testFixtures(project(':runtime'))

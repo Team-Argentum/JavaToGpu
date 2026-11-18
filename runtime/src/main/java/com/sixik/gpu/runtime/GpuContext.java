@@ -22,10 +22,10 @@ import com.sixik.gpu.runtime.device.DeviceApi;
 import com.sixik.gpu.runtime.device.DeviceApiException;
 import com.sixik.gpu.runtime.device.DeviceInfo;
 import com.sixik.gpu.runtime.device.DevicePolicy;
-import com.sixik.gpu.runtime.device.OpenClApi;
+import com.sixik.gpu.runtime.device.DeviceApis;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
+import com.sixik.gpu.runtime.device.HostArena;
+import com.sixik.gpu.runtime.device.HostMemory;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -172,7 +172,7 @@ public final class GpuContext implements AutoCloseable {
      * ничего не нужно читать, не ждёт своего завершения; загрузка устаревшей копии {@code GpuArray} ставится в очередь
      * без ожидания, а её промежуточная память держится здесь до ближайшей точки синхронизации. Всё - под {@link #lock}.
      */
-    private final List<MemorySegment> pendingStaging = new ArrayList<>();
+    private final List<HostMemory> pendingStaging = new ArrayList<>();
     /** Байт промежуточной памяти, ожидающей синхронизации. */
     private long pendingBytes;
     /** Запусков, поставленных без ожидания с последней синхронизации. */
@@ -542,10 +542,12 @@ public final class GpuContext implements AutoCloseable {
             DeviceApi a = api;
             boolean owns = false;
             if (a == null) {
-                a = OpenClApi.load();
+                a = DeviceApis.load();
                 owns = true;
                 if (a == null) {
-                    return failure("RT-D01", "OpenCL library not found: no devices");
+                    return failure("RT-D01", DeviceApis.providers().isEmpty()
+                            ? "no OpenCL backend on the classpath (add runtime-opencl-ffm or runtime-opencl-lwjgl): no devices"
+                            : "OpenCL library not found: no devices");
                 }
             }
             try {
@@ -907,7 +909,7 @@ public final class GpuContext implements AutoCloseable {
      * @param bytes размер передачи
      * @return память не короче {@code bytes} либо {@code null} (мелкая или слишком крупная передача, драйвер не умеет)
      */
-    private MemorySegment pinnedStaging(long bytes) {
+    private HostMemory pinnedStaging(long bytes) {
         if (bytes < PreparedLauncher.PINNED_BYTES || bytes > TRANSFER_POOL_MAX_BYTES) {
             return null;
         }
@@ -927,8 +929,8 @@ public final class GpuContext implements AutoCloseable {
     }
 
     /** Блокирующая запись примитивного массива через закреплённую память, если она есть. */
-    private void upload(long handle, Object array, long bytes, Arena arena) {
-        MemorySegment pin = pinnedStaging(bytes);
+    private void upload(long handle, Object array, long bytes, HostArena arena) {
+        HostMemory pin = pinnedStaging(bytes);
         if (pin != null) {
             Marshal.copyToNativeFast(array, pin);
             api.writeBuffer(queue, handle, 0, bytes, pin);
@@ -939,9 +941,9 @@ public final class GpuContext implements AutoCloseable {
     }
 
     /** Блокирующее чтение в примитивный массив через закреплённую память, если она есть. */
-    private void download(long handle, Object array, long bytes, Arena arena) {
-        MemorySegment pin = pinnedStaging(bytes);
-        MemorySegment dst = pin != null ? pin : arena.allocate(Math.max(bytes, 8), 8);
+    private void download(long handle, Object array, long bytes, HostArena arena) {
+        HostMemory pin = pinnedStaging(bytes);
+        HostMemory dst = pin != null ? pin : arena.allocate(Math.max(bytes, 8), 8);
         api.readBuffer(queue, handle, 0, bytes, dst);
         afterSync(); // блокирующее чтение in-order очереди: всё до него выполнено
         Marshal.fromNativeFast(dst, array);
@@ -1551,7 +1553,7 @@ public final class GpuContext implements AutoCloseable {
         checkTransfer(b, array);
         long bytes = Marshal.byteSize(array);
         lock.lock();
-        try (Arena a = Arena.ofConfined()) { // крупные массивы - через общий закреплённый буфер
+        try (HostArena a = api.arena(HostArena.Kind.CONFINED)) { // крупные массивы - через общий закреплённый буфер
             requireOpen();
             long t0 = System.nanoTime();
             if (bytes > 0) {
@@ -1569,7 +1571,7 @@ public final class GpuContext implements AutoCloseable {
         checkTransfer(b, array);
         long bytes = Marshal.byteSize(array);
         lock.lock();
-        try (Arena a = Arena.ofConfined()) { // крупные массивы - через общий закреплённый буфер
+        try (HostArena a = api.arena(HostArena.Kind.CONFINED)) { // крупные массивы - через общий закреплённый буфер
             requireOpen();
             long t0 = System.nanoTime();
             if (bytes > 0) {
@@ -1839,12 +1841,12 @@ public final class GpuContext implements AutoCloseable {
      * @param b буфер
      * @return вид только для чтения
      */
-    MemorySegment readView(GpuBuffer b) {
+    HostMemory readView(GpuBuffer b) {
         lock.lock();
         try {
             requireViewable(b);
             long bytes = b.byteSize();
-            MemorySegment mem = b.viewMemory(api, contextHandle, queue);
+            HostMemory mem = b.viewMemory(api, contextHandle, queue);
             long t0 = System.nanoTime();
             if (bytes > 0) {
                 api.readBuffer(queue, b.handle(), 0, bytes, mem);
@@ -1865,7 +1867,7 @@ public final class GpuContext implements AutoCloseable {
      * @param b буфер
      * @return изменяемый вид
      */
-    MemorySegment writeView(GpuBuffer b) {
+    HostMemory writeView(GpuBuffer b) {
         lock.lock();
         try {
             requireViewable(b);
@@ -1884,7 +1886,7 @@ public final class GpuContext implements AutoCloseable {
         lock.lock();
         try {
             requireViewable(b);
-            MemorySegment mem = b.existingView();
+            HostMemory mem = b.existingView();
             if (mem == null) {
                 throw new GpuException(List.of(error("RT-A02",
                         "the buffer has no view to commit; call writeView() and fill it first")));
@@ -2076,7 +2078,7 @@ public final class GpuContext implements AutoCloseable {
         long t0 = System.nanoTime();
         // auto-арена: закрывать не нужно (это дорого для shared), память освободит GC, когда ссылка уйдёт после
         // ближайшей синхронизации
-        MemorySegment seg = Arena.ofAuto().allocate(Math.max(bytes, 8), 8);
+        HostMemory seg = api.arena(HostArena.Kind.AUTO).allocate(Math.max(bytes, 8), 8);
         Marshal.copyToNativeFast(array, seg);
         api.writeBufferAsync(queue, b.handle(), 0, bytes, seg);
         pendingStaging.add(seg);
@@ -2319,7 +2321,7 @@ public final class GpuContext implements AutoCloseable {
      * @param lengths длины массивов по номеру параметра
      * @param arena   владелец временной памяти для значений-агрегатов
      */
-    void setKernelArgs(CompiledKernel k, Object[] args, long[] handles, long[] lengths, Arena arena) {
+    void setKernelArgs(CompiledKernel k, Object[] args, long[] handles, long[] lengths, HostArena arena) {
         k.boundTo = null;
         for (int i = 0; i < k.artifact().args().size(); i++) {
             setKernelArg(k, i, args, handles, lengths, arena);
@@ -2330,7 +2332,7 @@ public final class GpuContext implements AutoCloseable {
      * Выставляет один аргумент {@code cl_kernel} (номер - в списке аргументов артефакта). Вызывается под замком.
      * Вызывающий отвечает за {@code boundTo}: после частичной установки он обязан быть {@code null}.
      */
-    void setKernelArg(CompiledKernel k, int i, Object[] args, long[] handles, long[] lengths, Arena arena) {
+    void setKernelArg(CompiledKernel k, int i, Object[] args, long[] handles, long[] lengths, HostArena arena) {
         IrModule m = k.module();
         KernelArg ka = k.artifact().args().get(i);
         switch (ka.kind()) {
@@ -2436,7 +2438,7 @@ public final class GpuContext implements AutoCloseable {
      * @return время работы (либо постановки в очередь), нс
      */
     long dispatchKernel(CompiledKernel k, LaunchConfig cfg, long[] local, Object[] args, long[] handles, long[] lengths,
-                        Arena arena, boolean defer) {
+                        HostArena arena, boolean defer) {
         CompiledKernel.SplitPlan p = splitFor(k, cfg, local);
         if (p == null) {
             setKernelArgs(k, args, handles, lengths, arena);
@@ -2465,7 +2467,7 @@ public final class GpuContext implements AutoCloseable {
      * быстрее целого ядра больше чем на 5%. Под замком.
      */
     private long trialDispatch(CompiledKernel k, CompiledKernel.SplitPlan p, LaunchConfig cfg, long[] local,
-                               Object[] args, long[] handles, long[] lengths, Arena arena) {
+                               Object[] args, long[] handles, long[] lengths, HostArena arena) {
         int n = k.trialLaunches++;
         boolean stagesArm = n % 2 == 1;
         synchronizeQueue(); // в замер не должна попасть чужая работа очереди
@@ -2505,7 +2507,7 @@ public final class GpuContext implements AutoCloseable {
 
     /** Выставляет аргументы стадий (с промежуточными буферами) и ставит стадии в очередь подряд. Под замком. */
     private void enqueueStages(CompiledKernel k, CompiledKernel.SplitPlan p, LaunchConfig cfg, long[] local,
-                               Object[] args, long[] handles, long[] lengths, Arena arena) {
+                               Object[] args, long[] handles, long[] lengths, HostArena arena) {
         long[] global = new long[cfg.dim()];
         long items = 1;
         for (int d = 0; d < global.length; d++) {
@@ -2570,7 +2572,7 @@ public final class GpuContext implements AutoCloseable {
         }
         // confined: закрытие shared-арены дорого (рукопожатие со всеми потоками) и стоило бы на каждом запуске;
         // крупные массивы и так идут через общий закреплённый буфер контекста, доступный потокам копирования
-        try (Arena arena = Arena.ofConfined()) {
+        try (HostArena arena = api.arena(HostArena.Kind.CONFINED)) {
             long t0 = System.nanoTime();
             for (int i = 0; i < n; i++) {
                 if (m.typeKind(m.fParamType(f, i)) != Types.KIND_ARRAY) {
@@ -2627,7 +2629,7 @@ public final class GpuContext implements AutoCloseable {
                 long bytes = objects ? Marshal.byteSize(m, elemType, (Object[]) e.getKey()) : Marshal.byteSize(e.getKey());
                 if (bytes > 0) {
                     if (objects) {
-                        MemorySegment dst = arena.allocate(Math.max(bytes, 8), 8);
+                        HostMemory dst = arena.allocate(Math.max(bytes, 8), 8);
                         api.readBuffer(queue, e.getValue()[0], 0, bytes, dst);
                         Marshal.fromNative(dst, m, elemType, (Object[]) e.getKey());
                     } else {

@@ -1,7 +1,8 @@
 package com.sixik.gpu.app.terrain;
 
 import com.sixik.gpu.runtime.device.DeviceApi;
-import com.sixik.gpu.runtime.device.OpenClApi;
+import com.sixik.gpu.runtime.ffm.OpenClApi;
+import com.sixik.gpu.runtime.ffm.FfmMemory;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -113,7 +114,7 @@ class CseEffectDeviceTest {
             }
             long in = api.createBuffer(context, N * 4L);
             long out = api.createBuffer(context, N * 4L);
-            api.writeBuffer(queue, in, 0, N * 4L, arena.allocateFrom(ValueLayout.JAVA_FLOAT, input));
+            api.writeBuffer(queue, in, 0, N * 4L, FfmMemory.wrap(arena.allocateFrom(ValueLayout.JAVA_FLOAT, input)));
             long[] programs = new long[2];
             long[] kernels = new long[2];
             String[] regs = new String[2];
@@ -140,7 +141,7 @@ class CseEffectDeviceTest {
                         times[v][r - 5] = System.nanoTime() - t;
                     }
                     if (r == 0) {
-                        api.readBuffer(queue, out, 0, N * 4L, host);
+                        api.readBuffer(queue, out, 0, N * 4L, FfmMemory.wrap(host));
                         float[] result = host.toArray(ValueLayout.JAVA_FLOAT);
                         if (reference == null) {
                             reference = result;

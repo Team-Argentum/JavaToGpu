@@ -21,8 +21,36 @@
 
 Потребителю нужны JDK 25 для приложения и **JDK 25 для запуска Gradle с плагином**. Сам репозиторий библиотеки
 можно собирать Gradle на 21+ с установленным toolchain 25. Плагин подключает `api`, `ir`, `ir-optimizer`, `codegen-opencl`,
-`runtime`, processor `frontend-java` и подменяет тела `@Kernel` после javac. Для `Test` и `JavaExec` он добавляет
-`--enable-native-access=ALL-UNNAMED`; в `applicationDefaultJvmArgs` для скриптов `installDist` этот флаг задаётся отдельно.
+`runtime`, бэкенд драйвера, processor `frontend-java` и подменяет тела `@Kernel` после javac. Для `Test` и `JavaExec` он
+добавляет `--enable-native-access=ALL-UNNAMED`; в `applicationDefaultJvmArgs` для скриптов `installDist` этот флаг задаётся отдельно.
+
+### Бэкенд драйвера и Java 17
+
+Ядро рантайма (`runtime`) и компиляторная часть (`api`, `ir`, `ir-optimizer`, `codegen-opencl`, `frontend-common`,
+`frontend-asm`) собраны под **Java 17**: их можно встраивать в приложения на Java 17 и новее (Minecraft 1.18–1.21.x).
+Эталонный интерпретатор `ir-interpreter` нужен только тестам и инструментам и собран под Java 21. Вызовы OpenCL
+вынесены в отдельный модуль-бэкенд:
+
+| Модуль | Java | Как вызывает OpenCL |
+|---|---|---|
+| `runtime-opencl-ffm` | 25 | FFM (`java.lang.foreign`), без сторонних нативов. По умолчанию |
+| `runtime-opencl-lwjgl` | 17 | `lwjgl-opencl` 3.3.3; ядро LWJGL с нативами даёт приложение (например, Minecraft) |
+
+```groovy
+gpu {
+    backend = 'lwjgl'   // 'ffm' (по умолчанию), 'lwjgl' или 'none' - бэкенд добавит сама сборка
+}
+```
+
+Бэкенд находится через `ServiceLoader` (`DeviceApiProvider`). Если на classpath оба, выбирается FFM, когда JVM 25+, иначе
+LWJGL; явно — `-Djavatogpu.backend=ffm|lwjgl` или `JAVATOGPU_BACKEND`. Бэкенд, классы которого не грузятся в этой JVM,
+пропускается. Для мода на Minecraft подключайте `runtime-opencl-lwjgl` (ядро LWJGL — `compileOnly`, его даёт игра),
+при переходе мода на Java 25 достаточно заменить его на `runtime-opencl-ffm`: код мода не меняется. Бэкенд собран с
+LWJGL 3.3.3 (как у Minecraft 1.21.1); версии игры до 1.20.5 дают более старое ядро LWJGL, и совместимость с ним пока
+не проверена.
+
+Память хоста в API рантайма — `HostMemory` (не `MemorySegment`): виды `GpuBuffer.readView()/writeView()` читаются
+`view.getFloat(4L * i)`. С FFM-бэкендом тот же вид доступен как сегмент: `FfmMemory.segment(view)`.
 
 ### Фронтенд байткода
 

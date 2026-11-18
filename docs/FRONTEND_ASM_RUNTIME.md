@@ -47,8 +47,8 @@ GpuEmitter GA2 (ASM, ClassNode в памяти) ─┐
 библиотека GA2 в jar (javac -g)          ─┼─► frontend-asm (в памяти) ─► IR (много точек входа)
 привязки констант, таблица связей        ─┘        ─► ir-optimizer ─► codegen-opencl ─► OpenCL C + ABI ядер
                                                                               │
-                                                             рантайм GA2 (LWJGL) — этап 1
-                                                             рантайм JavaToGpu — позже (18.6-1)
+                                     runtime (Java 17) + runtime-opencl-lwjgl — Minecraft 1.18–1.21.x
+                                     runtime + runtime-opencl-ffm (Java 25)    — Minecraft 26.x
 ```
 
 **Что это даёт GA2.** Остаётся один обходчик `Node` вместо двух. Сырой OpenCL становится Java, которая тестируется на
@@ -60,7 +60,6 @@ JVM и проверяется `ir-interpreter`. Оптимизации, учёт
 - байткод CPU-пути GA2 (`CompiledProgram`: поля-объекты, `NoiseSpec`, интерфейсные `compute`) — он не GPU-подмножество;
   для GPU генератор выпускает отдельный байткод;
 - замена `BytecodeLifter` GA2 (подъём модовых DF в `Node`) — он остаётся (будущее — 18.9);
-- рантайм JavaToGpu внутри Minecraft на этапе 1 (18.2, S8);
 - «произвольный байткод». Подмножество задаёт контракт 18.3.
 
 ## 18.2 Сценарии
@@ -124,8 +123,8 @@ public final class RouterLinks {
      флагов всех точек входа, которые её достигают (правило уже есть для device-функций).
   3. **inline-политика** начинает работать: `INLINE_NEVER` → `__attribute__((noinline))`, `INLINE_ALWAYS` → оптимизатор
      встраивает сам. В `api`: `@DeviceFunction(inline = Inline.NEVER)`. `frontend-java` читает тот же элемент.
-  4. **Рантайм** (этап 2): `GpuContext.compileProgram(IrModule) → CompiledProgram { CompiledKernel kernel(String) }`.
-     На этапе 1 не нужен (S8).
+  4. **Рантайм:** `GpuContext.compileProgram(IrModule) → CompiledProgram { CompiledKernel kernel(String) }` — одна
+     сборка драйвером на все точки входа, общий дисковый кэш.
 
 ### S5. Состояние work-item: контекст, memo, RNG
 
@@ -178,15 +177,34 @@ public final class RouterLinks {
 
 ### S8. Встраивание в Minecraft 1.21.1 (Java 21)
 
-- **Факт:** Minecraft 1.21.1 требует Java 21. FFM финальный только с Java 22, а рантайм JavaToGpu собран под 25.
-- **Проверено 2026-11-18:** `ir`, `ir-optimizer`, `codegen-opencl`, `frontend-common` полностью собираются
-  `javac 21 --release 21`. `frontend-asm` разбирается без ошибок языка; линковка не проверялась (не было jar ASM).
-- **Проект — «компиляторный» артефакт `javatogpu-compiler`:** `ir`, `ir-optimizer`, `codegen-opencl`,
-  `frontend-common`, `frontend-asm` с `options.release = 21` (отдельная конфигурация, CI собирает и тестирует на JDK 21).
-  `runtime`, `weaver` и плагин остаются на 25. Наружу отдаётся
+- **Факт:** Minecraft 1.21.1 требует Java 21. FFM финальный только с Java 22, а рантайм JavaToGpu был собран под 25.
+- **Сделано 2026-11-18 — бэкенды драйвера (решение 18.6-1 принято):**
+
+  | Модуль | Java | Содержание |
+  |---|---|---|
+  | `runtime` | `--release 17` | `GpuContext`, кэш, запуск, fallback; память хоста — `HostMemory`/`HostArena`, драйвер — SPI `DeviceApiProvider` |
+  | `runtime-opencl-ffm` | 25 | прежний `OpenClApi` (FFM), `FfmMemory` (мост `HostMemory` ↔ `MemorySegment`) |
+  | `runtime-opencl-lwjgl` | `--release 17` | `LwjglOpenClApi` поверх `lwjgl-opencl` 3.3.3 (`ncl*` с адресами), `NativeMemory` на `MemoryUtil` |
+
+  Компиляторная часть (`api`, `ir`, `ir-optimizer`, `codegen-opencl`, `frontend-common`, `frontend-asm`) тоже
+  собирается с `--release 17`; `ScopedValue` в `api.WorkItem` заменён `ThreadLocal` (JMH `ApiBenchmarks`: не медленнее —
+  `fallbackLoop` 13.9 против 15.0 нс/op). `ir-interpreter` (только тесты и инструменты) — `--release 21` ради
+  виртуальных потоков групп с барьерами.
+- **2026-11-18 — нижняя граница опущена с 21 до 17** (Minecraft 1.18–1.20.4 тоже на Java 17). Мешали только switch по
+  шаблонам в `runtime` и бэкенде LWJGL (заменены цепочками `instanceof`) и `Thread.ofPlatform()` в `JavaToGpu.warmUp`.
+  Проверено: сборка и все тесты; device-тесты на RTX 5070 через FFM и LWJGL совпадают (`:runtime:deviceTestLwjgl`);
+  ядро на JVM 17 (Zulu 17.0.20): выбран LWJGL, FFM-jar на classpath пропущен, `computeSine`, передачи 16 МБ и виды
+  памяти работают. Не проверено: ядро LWJGL из игр до 1.20.5 (старше 3.3.3).
+  Выбор бэкенда — `ServiceLoader`, по убыванию приоритета (FFM 200 на JVM 25+, LWJGL 100), явно —
+  `-Djavatogpu.backend` / `JAVATOGPU_BACKEND`; бэкенд, чьи классы не грузятся в этой JVM, пропускается. Плагин:
+  `gpu { backend = 'ffm' | 'lwjgl' | 'none' }`. Мод выбирает модуль при сборке под свою версию Minecraft: сканер классов
+  загрузчика на 1.21.1 может упасть на class-файлах версии 69, поэтому оба бэкенда в один jar мода не кладутся.
+- **Проверено** (pocl 5.0, CPU OpenCL): тесты `runtime` на фейке и на устройстве — с FFM на JDK 25 и с LWJGL на JDK 21 —
+  дают тот же результат, что до разделения; расходится с интерпретатором одно и то же ядро (`IndexKernels.ids`, особенность
+  pocl) на обоих бэкендах.
+- **Компиляторный выход для чужого рантайма** остаётся полезным (GA2 может сначала оставить свой `ClApi`):
   `OpenClCodegen.program(IrModule, EmitOptions) → ClProgram(String source, String buildOptions, List<KernelAbi> kernels)`,
-  где `KernelAbi(name, params[i] = {kind: BUFFER|SCALAR|LOCAL, elem, space, access, size})`. По этой таблице GA2
-  выставляет аргументы через свой `ClApi`.
+  где `KernelAbi(name, params[i] = {kind: BUFFER|SCALAR|LOCAL, elem, space, access, size})`.
 - **ASM в загрузчике мода (решение 18.6-7):** `compileOnly` на ASM, используется ASM загрузчика (NeoForge/Fabric
   поставляют 9.7+). Только API `Opcodes.ASM9` и tree API. Если загрузчик дал ASM старше 9.7 — `GPU0306` с версией.
 
@@ -328,9 +346,9 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 
 ## 18.6 Решения (предложены)
 
-1. **Этап 1 — только компилятор:** JavaToGpu выдаёт OpenCL C и ABI, а рантайм GA2 (LWJGL, кэш, `ProgramParts`) остаётся.
-   *Альтернатива:* SPI драйвера в `runtime` с LWJGL-реализацией и сборкой под 21. Это нужно для CUDA через рантайм
-   JavaToGpu, но объём большой и снова упирается в Java 21.
+1. **[DECIDED 2026-11-18] Рантайм JavaToGpu сразу, через бэкенды драйвера** (S8): `runtime` под Java 17 (было 21, опущено 2026-11-18) +
+   `runtime-opencl-lwjgl` для Minecraft 1.21.x, `runtime-opencl-ffm` для Java 25. *Отклонено:* «только компилятор» —
+   GA2 держал бы свою копию запуска, кэша и ABI; свой JNI вместо LWJGL — нативы под 6 платформ без выигрыша в скорости.
 2. **Контекст:** этап 1 — развёрнутые параметры (S5), `@Ref` — только по итогам замера B8. *Альтернатива:* сразу `@Ref`.
 3. **Библиотека перепонижается из байткода при каждой сборке** (стоимость мала, результат кэшируется по хэшу).
    *Альтернатива:* предсобранный IR библиотеки в ресурсах и линковщик `IrLinker`.
@@ -347,13 +365,13 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 
 | Шаг | Содержание | Готово, когда |
 |---|---|---|
-| **B0** | Замеры до кода: размер узлов и методов роутеров vanilla, Terralith и Tectonic в форме контракта (генератор-прототип вне репозитория); время и глубина рекурсии `Cfg/Structurer/Scopes`; проверка `frontend-asm --release 21` с ASM 9.7 | цифры и найденные рекурсии записаны в 18.8; решения 18.6 приняты |
+| **B0** | Замеры до кода: размер узлов и методов роутеров vanilla, Terralith и Tectonic в форме контракта (генератор-прототип вне репозитория); время и глубина рекурсии `Cfg/Structurer/Scopes`; проверка `frontend-asm --release 17` с ASM 9.7 | цифры и найденные рекурсии записаны в 18.8; решения 18.6 приняты |
 | **B1** | `AsmJit`, `Unit`, вход `ClassNode`, `ClassSource.chain/ofNodes`, явные `entries` | корпус 17.14 через `AsmJit` даёт тот же IR, что `compile` |
 | **B2** | `LvtSynth` (`SYNTHESIZE`), `GPU0307`, позиции-узлы | корпус со стёртыми LVT и строками: то же поведение; IR — с пунктами (а)(г) 17.14-3 |
 | **B3** | `Bindings` (константы), `Links`, `@Extern`, `GPU0308/0309` | тесты на `ClassWriter`: свёртка флага убирает ветку; библиотека ↔ сгенерированное в обе стороны |
 | **B4** | Модуль с многими точками входа: IR, валидатор, `IrBinary`, кодоген, `F_INLINE`, `@DeviceFunction(inline)` | модуль из 3 ядер с общей функцией: одна копия функции в исходнике; `noinline` в выводе; `kernelId` одиночного ядра не изменился |
 | **B5** | `exact`, JDK-интринсики (общие с `frontend-java`), тест неспекулятивности оптимизатора, `GPU0310` | F64-образцы: интерпретатор = JVM побитово на `opt=0..3`; `Math.sin` в `exact` даёт `GPU0310` |
-| **B6** | Компиляторный артефакт `--release 21`, `ClProgram`/`KernelAbi`, CI на JDK 21 | jar загружается в dev-клиенте NeoForge 1.21.1 и Fabric; `ClProgram` пилота собирается через LWJGL |
+| **B6** | ✅ частично: `runtime` и компиляторная часть под `--release 17`, бэкенды `runtime-opencl-ffm/-lwjgl`, `:runtime:deviceTestLwjgl`. Осталось: CI на JDK 17, `ClProgram`/`KernelAbi`, проверка в dev-клиенте | моды NeoForge 1.21.1, Fabric и версия на Java 17 (1.20.1) запускают ядро через `runtime-opencl-lwjgl` |
 | **B7** | Масштаб: итеративные алгоритмы, `budget`, детерминизм | роутер B0 укладывается в бюджет; два прогона дают одинаковый `moduleId` |
 | **B8** | **Пилот GA2:** `DfNoise`, `DfSpline`, `Jm` на Java; `GpuEmitter` для `FLAT`, `HOIST`, `CORNER` в F64; ядра `k_flat`, `k_hoist`, `k_corner` | критерии 18.8 |
 | **B9** | Остальные контексты, аквифер, жилы, биомы, упаковка, certified F32; затем `SurfaceSpec`, `LightProgram`; удаление `ClEmitter` | `GpuVerify` GA2 зелёный без `ClEmitter` |

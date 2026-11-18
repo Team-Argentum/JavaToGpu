@@ -54,6 +54,9 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
     /** Значения {@code gpu.frontend}. */
     static final String FRONTEND_JAVA = "java";
     static final String FRONTEND_ASM = "asm";
+    /** Значения {@code gpu.backend}: имя бэкенда - суффикс модуля {@code runtime-opencl-<имя>}. */
+    static final List<String> BACKENDS = List.of("ffm", "lwjgl");
+    static final String BACKEND_NONE = "none";
 
     /** Модули processor path. */
     static final List<String> PROCESSOR_MODULES = List.of("frontend-java", "frontend-common", "api", "ir", "ir-optimizer");
@@ -69,6 +72,7 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
         ext.getStrictBarriers().convention(false);
         ext.getExtraJvmArgs().convention(List.of());
         ext.getFrontend().convention(FRONTEND_JAVA);
+        ext.getBackend().convention(BACKENDS.get(0));
 
         project.afterEvaluate(p -> {
             boolean asm = asm(ext);
@@ -128,6 +132,13 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
         String suffix = ":" + ext.getVersion().get();
         for (String module : RUNTIME_MODULES) {
             project.getDependencies().add("implementation", prefix + module + suffix);
+        }
+        String backend = ext.getBackend().get();
+        if (BACKENDS.contains(backend)) {
+            project.getDependencies().add("implementation", prefix + "runtime-opencl-" + backend + suffix);
+        } else if (!backend.equals(BACKEND_NONE)) {
+            throw new GradleException("gpu.backend = '" + backend + "': expected one of " + BACKENDS + " or '"
+                    + BACKEND_NONE + "'");
         }
         if (asm) {
             return; // IR строит шаг сборки: annotation processor не нужен

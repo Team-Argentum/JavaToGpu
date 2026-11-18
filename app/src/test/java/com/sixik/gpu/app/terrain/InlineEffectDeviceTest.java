@@ -5,7 +5,8 @@ import com.sixik.gpu.ir.Result;
 import com.sixik.gpu.runtime.GpuContext;
 import com.sixik.gpu.runtime.JavaToGpu;
 import com.sixik.gpu.runtime.device.DeviceApi;
-import com.sixik.gpu.runtime.device.OpenClApi;
+import com.sixik.gpu.runtime.ffm.OpenClApi;
+import com.sixik.gpu.runtime.ffm.FfmMemory;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -112,7 +113,7 @@ class InlineEffectDeviceTest {
                             times[v][r - 5] = System.nanoTime() - t;
                         }
                         if (r == 0) {
-                            api.readBuffer(queue, out, 0, n * 4L, host);
+                            api.readBuffer(queue, out, 0, n * 4L, FfmMemory.wrap(host));
                             float[] result = host.toArray(ValueLayout.JAVA_FLOAT);
                             if (reference == null) {
                                 reference = result;
@@ -142,7 +143,7 @@ class InlineEffectDeviceTest {
 
     private static long upload(DeviceApi api, long context, long queue, Arena arena, int[] data) {
         long b = api.createBuffer(context, Math.max(4L, data.length * 4L));
-        api.writeBuffer(queue, b, 0, data.length * 4L, arena.allocateFrom(ValueLayout.JAVA_INT, data));
+        api.writeBuffer(queue, b, 0, data.length * 4L, FfmMemory.wrap(arena.allocateFrom(ValueLayout.JAVA_INT, data)));
         return b;
     }
 

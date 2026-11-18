@@ -1,7 +1,5 @@
 package com.sixik.gpu.runtime.device;
 
-import java.lang.foreign.MemorySegment;
-
 /**
  * Тонкий слой над OpenCL: почти 1:1 список функций C API (REWORK_ARCHITECTURE.md, 9.2). Это граница портирования
  * рантайма на Rust и точка подмены в тестах без железа (фейковая реализация).
@@ -13,8 +11,14 @@ import java.lang.foreign.MemorySegment;
  *   <li>любая ошибка драйвера - {@link DeviceApiException} с кодом OpenCL и именем функции; слой не принимает решений
  *       и не логирует;</li>
  *   <li>слой <b>не потокобезопасен</b>: сериализацию вызовов делает {@code GpuContext} (9.1);</li>
- *   <li>передача данных синхронная (блокирующая): когда метод вернулся, память хоста можно использовать повторно.</li>
+ *   <li>передача данных синхронная (блокирующая): когда метод вернулся, память хоста можно использовать повторно;</li>
+ *   <li>память хоста - {@link HostMemory} из {@link #arena} этого же слоя: тогда драйвер получает её адрес без копии.
+ *       Память другой реализации (например, {@link HeapMemory}) слой обязан принять, скопировав её.</li>
  * </ul>
+ *
+ * <p>Ядро рантайма собирается под Java 17 и FFM не использует. Реализации для настоящего драйвера лежат в отдельных
+ * модулях и находятся через {@link DeviceApiProvider}: {@code runtime-opencl-ffm} (Java 25, FFM) и
+ * {@code runtime-opencl-lwjgl} (Java 17, LWJGL).</p>
  */
 public interface DeviceApi extends AutoCloseable {
 
@@ -97,6 +101,19 @@ public interface DeviceApi extends AutoCloseable {
         }
     }
 
+    // ---- память хоста ----------------------------------------------------------------------------
+
+    /**
+     * Арена памяти хоста этого слоя. По умолчанию - память кучи ({@link HeapMemory}): так работает фейковый слой.
+     * Нативный бэкенд возвращает нативную память, адрес которой можно передать драйверу без копии.
+     *
+     * @param kind вид арены
+     * @return арена
+     */
+    default HostArena arena(HostArena.Kind kind) {
+        return HeapMemory.arena(kind);
+    }
+
     // ---- платформы и устройства -----------------------------------------------------------------
 
     /** @return платформы; пустой массив, если драйверов нет */
@@ -163,7 +180,7 @@ public interface DeviceApi extends AutoCloseable {
      * @param size   число байт
      * @param src    память хоста, не короче {@code size}
      */
-    void writeBuffer(long queue, long buffer, long offset, long size, MemorySegment src);
+    void writeBuffer(long queue, long buffer, long offset, long size, HostMemory src);
 
     /**
      * Блокирующее чтение с устройства на хост.
@@ -174,7 +191,7 @@ public interface DeviceApi extends AutoCloseable {
      * @param size   число байт
      * @param dst    память хоста, не короче {@code size}
      */
-    void readBuffer(long queue, long buffer, long offset, long size, MemorySegment dst);
+    void readBuffer(long queue, long buffer, long offset, long size, HostMemory dst);
 
     // ---- программа и ядро ------------------------------------------------------------------------
 
@@ -242,7 +259,7 @@ public interface DeviceApi extends AutoCloseable {
      * @param size   байты
      * @param src    источник
      */
-    default void writeBufferAsync(long queue, long buffer, long offset, long size, MemorySegment src) {
+    default void writeBufferAsync(long queue, long buffer, long offset, long size, HostMemory src) {
         writeBuffer(queue, buffer, offset, size, src);
     }
 
@@ -256,7 +273,7 @@ public interface DeviceApi extends AutoCloseable {
      * @param buffer дескриптор буфера драйвера (освобождается через {@link #releasePinned})
      * @param memory отображённая память размера буфера
      */
-    record Pinned(long buffer, MemorySegment memory) {
+    record Pinned(long buffer, HostMemory memory) {
     }
 
     /**
@@ -318,7 +335,7 @@ public interface DeviceApi extends AutoCloseable {
      * @param value  байты значения (память хоста, не короче {@code size})
      * @param size   размер значения в байтах
      */
-    void setArgBytes(long kernel, int index, MemorySegment value, long size);
+    void setArgBytes(long kernel, int index, HostMemory value, long size);
 
     /**
      * Ставит ядро в очередь (не ждёт завершения).

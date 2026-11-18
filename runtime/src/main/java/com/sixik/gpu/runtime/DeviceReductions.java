@@ -157,13 +157,18 @@ final class DeviceReductions {
     static Object assemble(IrModule module, int type, Class<?> resultClass, Object[] values) {
         long[] leaves = new long[values.length];
         for (int j = 0; j < values.length; j++) {
-            leaves[j] = switch (values[j]) {
-                case Integer v -> v;
-                case Long v -> v;
-                case Float v -> Float.floatToRawIntBits(v);
-                case Double v -> Double.doubleToRawLongBits(v);
-                default -> throw new IllegalStateException("unexpected accumulator value " + values[j]);
-            };
+            Object value = values[j];
+            if (value instanceof Integer v) {
+                leaves[j] = v;
+            } else if (value instanceof Long v) {
+                leaves[j] = v;
+            } else if (value instanceof Float v) {
+                leaves[j] = Float.floatToRawIntBits(v);
+            } else if (value instanceof Double v) {
+                leaves[j] = Double.doubleToRawLongBits(v);
+            } else {
+                throw new IllegalStateException("unexpected accumulator value " + value);
+            }
         }
         return com.sixik.gpu.ir.HostObjects.rebuild(module, type, resultClass, null, leaves, 0);
     }

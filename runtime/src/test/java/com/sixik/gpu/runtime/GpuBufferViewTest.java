@@ -4,8 +4,7 @@ import com.sixik.gpu.ir.Types;
 import com.sixik.gpu.runtime.device.FakeDeviceApi;
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
+import com.sixik.gpu.runtime.device.HostMemory;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,14 +31,14 @@ class GpuBufferViewTest {
                 data[i] = i * 0.5f;
             }
             b.write(data);
-            MemorySegment v = b.readView();
+            HostMemory v = b.readView();
             assertEquals(4000, v.byteSize());
             assertTrue(v.isReadOnly());
             for (int i = 0; i < data.length; i++) {
-                assertEquals(data[i], v.getAtIndex(ValueLayout.JAVA_FLOAT, i));
+                assertEquals(data[i], v.getFloat(4L * i));
             }
             // запись в read-only сегмент: IllegalArgumentException (так бросает FFM)
-            assertThrows(IllegalArgumentException.class, () -> v.setAtIndex(ValueLayout.JAVA_FLOAT, 0, 1f));
+            assertThrows(IllegalArgumentException.class, () -> v.setFloat(4L * 0, 1f));
             assertEquals(1, fake.livePinned());
         }
         assertEquals(0, fake.livePinned(), "the view memory is released with the buffer");
@@ -50,12 +49,12 @@ class GpuBufferViewTest {
         FakeDeviceApi fake = FakeDeviceApi.withGpu();
         try (GpuContext ctx = open(fake); GpuBuffer b = ctx.allocate(Types.I32, 4)) {
             b.write(new int[]{1, 2, 3, 4});
-            MemorySegment first = b.readView();
+            HostMemory first = b.readView();
             b.write(new int[]{5, 6, 7, 8});
-            MemorySegment second = b.readView();
+            HostMemory second = b.readView();
             assertEquals(first.address(), second.address(), "the same pinned memory is reused");
-            assertEquals(8, second.getAtIndex(ValueLayout.JAVA_INT, 3));
-            assertEquals(8, first.getAtIndex(ValueLayout.JAVA_INT, 3), "an older view sees the latest read");
+            assertEquals(8, second.getInt(4L * 3));
+            assertEquals(8, first.getInt(4L * 3), "an older view sees the latest read");
             assertEquals(1, fake.livePinned());
         }
     }
@@ -65,9 +64,9 @@ class GpuBufferViewTest {
         FakeDeviceApi fake = FakeDeviceApi.withGpu();
         try (GpuContext ctx = open(fake)) {
             GpuBuffer b = ctx.allocate(Types.F32, 16);
-            MemorySegment v = b.readView();
+            HostMemory v = b.readView();
             b.close();
-            assertThrows(IllegalStateException.class, () -> v.getAtIndex(ValueLayout.JAVA_FLOAT, 0),
+            assertThrows(IllegalStateException.class, () -> v.getFloat(4L * 0),
                     "a closed view must fail instead of touching freed memory");
             assertThrows(GpuException.class, b::readView);
             assertEquals(0, fake.livePinned());
@@ -77,12 +76,12 @@ class GpuBufferViewTest {
     @Test
     void closingTheContextInvalidatesViews() {
         FakeDeviceApi fake = FakeDeviceApi.withGpu();
-        MemorySegment v;
+        HostMemory v;
         try (GpuContext ctx = open(fake)) {
             GpuBuffer b = ctx.allocate(Types.F32, 16);
             v = b.readView();
         }
-        assertThrows(IllegalStateException.class, () -> v.getAtIndex(ValueLayout.JAVA_FLOAT, 0));
+        assertThrows(IllegalStateException.class, () -> v.getFloat(4L * 0));
         assertEquals(0, fake.livePinned());
     }
 
@@ -90,11 +89,11 @@ class GpuBufferViewTest {
     void writeViewIsFilledInPlaceAndCommittedWithoutAHostArray() {
         FakeDeviceApi fake = FakeDeviceApi.withGpu();
         try (GpuContext ctx = open(fake); GpuBuffer b = ctx.allocate(Types.F32, 1000)) {
-            MemorySegment w = b.writeView();
+            HostMemory w = b.writeView();
             assertEquals(4000, w.byteSize());
             assertFalse(w.isReadOnly());
             for (int i = 0; i < 1000; i++) {
-                w.setAtIndex(ValueLayout.JAVA_FLOAT, i, i * 0.25f);
+                w.setFloat(4L * i, i * 0.25f);
             }
             b.commitView();
             float[] back = new float[1000];
@@ -112,12 +111,12 @@ class GpuBufferViewTest {
     void committedDataIsACopyAndTheViewCanBeRefilled() {
         FakeDeviceApi fake = FakeDeviceApi.withGpu();
         try (GpuContext ctx = open(fake); GpuBuffer b = ctx.allocate(Types.I32, 3)) {
-            MemorySegment w = b.writeView();
-            w.setAtIndex(ValueLayout.JAVA_INT, 0, 1);
-            w.setAtIndex(ValueLayout.JAVA_INT, 1, 2);
-            w.setAtIndex(ValueLayout.JAVA_INT, 2, 3);
+            HostMemory w = b.writeView();
+            w.setInt(4L * 0, 1);
+            w.setInt(4L * 1, 2);
+            w.setInt(4L * 2, 3);
             b.commitView();
-            w.setAtIndex(ValueLayout.JAVA_INT, 0, 99); // не зафиксировано
+            w.setInt(4L * 0, 99); // не зафиксировано
             int[] back = new int[3];
             b.read(back);
             assertArrayEquals(new int[]{1, 2, 3}, back);
@@ -132,9 +131,9 @@ class GpuBufferViewTest {
         FakeDeviceApi fake = FakeDeviceApi.withGpu();
         try (GpuContext ctx = open(fake); GpuBuffer b = ctx.upload(new int[]{10, 20, 30})) {
             b.readView();
-            MemorySegment w = b.writeView();
-            assertEquals(20, w.getAtIndex(ValueLayout.JAVA_INT, 1), "the write view holds the last read content");
-            w.setAtIndex(ValueLayout.JAVA_INT, 1, 21);
+            HostMemory w = b.writeView();
+            assertEquals(20, w.getInt(4L * 1), "the write view holds the last read content");
+            w.setInt(4L * 1, 21);
             b.commitView();
             int[] back = new int[3];
             b.read(back);
@@ -149,11 +148,11 @@ class GpuBufferViewTest {
             GpuBuffer b = ctx.allocate(Types.F32, 8);
             GpuException noView = assertThrows(GpuException.class, b::commitView);
             assertTrue(noView.getMessage().contains("writeView"), noView.getMessage());
-            MemorySegment w = b.writeView();
+            HostMemory w = b.writeView();
             b.close();
             assertThrows(GpuException.class, b::writeView);
             assertThrows(GpuException.class, b::commitView);
-            assertThrows(IllegalStateException.class, () -> w.setAtIndex(ValueLayout.JAVA_FLOAT, 0, 1f),
+            assertThrows(IllegalStateException.class, () -> w.setFloat(4L * 0, 1f),
                     "a closed write view must fail instead of touching freed memory");
             GpuBuffer foreign = other.allocate(Types.F32, 8);
             assertThrows(GpuException.class, () -> ctx.writeView(foreign));

@@ -21,6 +21,7 @@ dependencies {
     testImplementation project(':frontend-java')
     // A5: примеры (examples/) - часть корпуса 17.14-1; их исходники обращаются к рантайму (JavaToGpu, GpuContext)
     testImplementation project(':runtime')
+    testRuntimeOnly project(':runtime-opencl-ffm')
     // A6: файловая обёртка проверяется вместе с weaver'ом (второй проход по сплетённым классам)
     testImplementation project(':weaver')
 }

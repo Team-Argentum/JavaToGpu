@@ -129,7 +129,7 @@ class OptimizerEffectDeviceTest {
                     long[] copy = new long[RUNS];
                     long[] view = new long[RUNS];
                     float[] host = new float[batch.output.length];
-                    java.lang.foreign.MemorySegment v = null;
+                    com.sixik.gpu.runtime.device.HostMemory v = null;
                     for (int i = 0; i < RUNS + 3; i++) {
                         p.run(cfg);
                         long t = System.nanoTime();
@@ -144,7 +144,7 @@ class OptimizerEffectDeviceTest {
                         }
                     }
                     for (int i = 0; i < host.length; i += 997) {
-                        assertTrue(host[i] == v.getAtIndex(java.lang.foreign.ValueLayout.JAVA_FLOAT, i), "i=" + i);
+                        assertTrue(host[i] == v.getFloat(4L * i), "i=" + i);
                     }
                     Arrays.sort(copy);
                     Arrays.sort(view);
@@ -177,7 +177,7 @@ class OptimizerEffectDeviceTest {
             long[] commit = new long[RUNS];
             long[] fillWrite = new long[RUNS];
             long[] fillCommit = new long[RUNS];
-            java.lang.foreign.MemorySegment w = in.writeView();
+            com.sixik.gpu.runtime.device.HostMemory w = in.writeView();
             for (int i = 0; i < RUNS + 3; i++) {
                 long t = System.nanoTime();
                 in.write(host);
@@ -193,7 +193,7 @@ class OptimizerEffectDeviceTest {
                 long tfw = System.nanoTime() - t;
                 t = System.nanoTime();
                 for (int j = 0; j < n; j++) {
-                    w.setAtIndex(java.lang.foreign.ValueLayout.JAVA_FLOAT, j, j * 0.5f);
+                    w.setFloat(4L * j, j * 0.5f);
                 }
                 in.commitView();
                 long tf = System.nanoTime() - t;

@@ -5,9 +5,8 @@ import com.sixik.gpu.ir.HostObjects;
 import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Types;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
+import com.sixik.gpu.runtime.device.HostArena;
+import com.sixik.gpu.runtime.device.HostMemory;
 
 /**
  * Соответствие значений хоста типам IR и упаковка массивов в память устройства (то же соответствие, что у
@@ -31,17 +30,25 @@ final class Marshal {
      * @return {@code I8, U8 (boolean[]), I16, U16 (char[]), I32, I64, F32, F64} либо {@code -1}, если это не поддержанный массив
      */
     static int elementTypeOf(Object array) {
-        return switch (array) {
-            case byte[] x -> Types.I8;
-            case boolean[] x -> Types.U8;
-            case short[] x -> Types.I16;
-            case char[] x -> Types.U16;
-            case int[] x -> Types.I32;
-            case long[] x -> Types.I64;
-            case float[] x -> Types.F32;
-            case double[] x -> Types.F64;
-            case null, default -> -1;
-        };
+        // цепочка instanceof, а не switch по шаблонам: модуль собирается под Java 17
+        if (array instanceof byte[]) {
+            return Types.I8;
+        } else if (array instanceof boolean[]) {
+            return Types.U8;
+        } else if (array instanceof short[]) {
+            return Types.I16;
+        } else if (array instanceof char[]) {
+            return Types.U16;
+        } else if (array instanceof int[]) {
+            return Types.I32;
+        } else if (array instanceof long[]) {
+            return Types.I64;
+        } else if (array instanceof float[]) {
+            return Types.F32;
+        } else if (array instanceof double[]) {
+            return Types.F64;
+        }
+        return -1;
     }
 
     /**
@@ -113,13 +120,16 @@ final class Marshal {
      * @return его биты (для 4-байтных - младшие 32)
      */
     static long scalarBits(Object value) {
-        return switch (value) {
-            case Integer x -> x;
-            case Long x -> x;
-            case Float x -> Float.floatToRawIntBits(x);
-            case Double x -> Double.doubleToRawLongBits(x);
-            default -> throw new IllegalArgumentException("not a scalar: " + value);
-        };
+        if (value instanceof Integer x) {
+            return x;
+        } else if (value instanceof Long x) {
+            return x;
+        } else if (value instanceof Float x) {
+            return Float.floatToRawIntBits(x);
+        } else if (value instanceof Double x) {
+            return Double.doubleToRawLongBits(x);
+        }
+        throw new IllegalArgumentException("not a scalar: " + value);
     }
 
     /**
@@ -145,15 +155,11 @@ final class Marshal {
      * @param array источник
      * @return сегмент ровно {@code byteSize(array)} байт (для пустого массива - 8 байт запаса не раскрывается)
      */
-    static MemorySegment toNative(Arena arena, Object array) {
-        MemorySegment seg = arena.allocate(Math.max(byteSize(array), 8), 8);
+    static HostMemory toNative(HostArena arena, Object array) {
+        HostMemory seg = arena.allocate(Math.max(byteSize(array), 8), 8);
         copyToNativeFast(array, seg);
         return seg;
     }
-
-    /** Поток-«зонд»: никогда не запускается, нужен лишь, чтобы узнать, доступна ли память чужим потокам. */
-    private static final Thread PROBE = new Thread(() -> {
-    });
 
     /**
      * Копирует массив в уже выделенную нативную память (для повторных запусков без новых аллокаций).
@@ -178,7 +184,7 @@ final class Marshal {
      * @param array примитивный массив
      * @param seg   приёмник (не короче содержимого массива)
      */
-    static void copyToNativeFast(Object array, MemorySegment seg) {
+    static void copyToNativeFast(Object array, HostMemory seg) {
         copyFast(array, seg, true);
     }
 
@@ -188,15 +194,15 @@ final class Marshal {
      * @param seg   источник
      * @param array примитивный массив
      */
-    static void fromNativeFast(MemorySegment seg, Object array) {
+    static void fromNativeFast(HostMemory seg, Object array) {
         copyFast(array, seg, false);
     }
 
-    private static void copyFast(Object array, MemorySegment seg, boolean toNative) {
+    private static void copyFast(Object array, HostMemory seg, boolean toNative) {
         int n = length(array);
         long bytes = byteSize(array);
         // память confined-арены доступна только своему потоку: делить копирование нельзя
-        boolean shared = seg.isAccessibleBy(PROBE);
+        boolean shared = seg.isShared();
         if (!shared || bytes < PARALLEL_COPY_BYTES || COPY_PARTS == 1 || array instanceof boolean[]) {
             if (toNative) {
                 copyToNative(array, seg);
@@ -222,77 +228,76 @@ final class Marshal {
      * @param count    число элементов
      * @param toNative направление: в нативную память либо из неё
      */
-    private static void copyRange(Object array, MemorySegment seg, int from, int count, boolean toNative) {
-        switch (array) {
-            case byte[] x -> {
-                if (toNative) {
-                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_BYTE, from, count);
-                } else {
-                    MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, from, x, from, count);
-                }
+    private static void copyRange(Object array, HostMemory seg, int from, int count, boolean toNative) {
+        if (array instanceof byte[] x) {
+            if (toNative) {
+                seg.copyFrom(x, from, from, count);
+            } else {
+                seg.copyTo(from, x, from, count);
             }
-            case short[] x -> {
-                if (toNative) {
-                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_SHORT, 2L * from, count);
-                } else {
-                    MemorySegment.copy(seg, ValueLayout.JAVA_SHORT, 2L * from, x, from, count);
-                }
+        } else if (array instanceof short[] x) {
+            if (toNative) {
+                seg.copyFrom(x, from, 2L * from, count);
+            } else {
+                seg.copyTo(2L * from, x, from, count);
             }
-            case char[] x -> {
-                if (toNative) {
-                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_CHAR, 2L * from, count);
-                } else {
-                    MemorySegment.copy(seg, ValueLayout.JAVA_CHAR, 2L * from, x, from, count);
-                }
+        } else if (array instanceof char[] x) {
+            if (toNative) {
+                seg.copyFrom(x, from, 2L * from, count);
+            } else {
+                seg.copyTo(2L * from, x, from, count);
             }
-            case int[] x -> {
-                if (toNative) {
-                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_INT, 4L * from, count);
-                } else {
-                    MemorySegment.copy(seg, ValueLayout.JAVA_INT, 4L * from, x, from, count);
-                }
+        } else if (array instanceof int[] x) {
+            if (toNative) {
+                seg.copyFrom(x, from, 4L * from, count);
+            } else {
+                seg.copyTo(4L * from, x, from, count);
             }
-            case long[] x -> {
-                if (toNative) {
-                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_LONG, 8L * from, count);
-                } else {
-                    MemorySegment.copy(seg, ValueLayout.JAVA_LONG, 8L * from, x, from, count);
-                }
+        } else if (array instanceof long[] x) {
+            if (toNative) {
+                seg.copyFrom(x, from, 8L * from, count);
+            } else {
+                seg.copyTo(8L * from, x, from, count);
             }
-            case float[] x -> {
-                if (toNative) {
-                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_FLOAT, 4L * from, count);
-                } else {
-                    MemorySegment.copy(seg, ValueLayout.JAVA_FLOAT, 4L * from, x, from, count);
-                }
+        } else if (array instanceof float[] x) {
+            if (toNative) {
+                seg.copyFrom(x, from, 4L * from, count);
+            } else {
+                seg.copyTo(4L * from, x, from, count);
             }
-            case double[] x -> {
-                if (toNative) {
-                    MemorySegment.copy(x, from, seg, ValueLayout.JAVA_DOUBLE, 8L * from, count);
-                } else {
-                    MemorySegment.copy(seg, ValueLayout.JAVA_DOUBLE, 8L * from, x, from, count);
-                }
+        } else if (array instanceof double[] x) {
+            if (toNative) {
+                seg.copyFrom(x, from, 8L * from, count);
+            } else {
+                seg.copyTo(8L * from, x, from, count);
             }
-            default -> throw new IllegalArgumentException("unsupported array " + array.getClass());
+        } else {
+            throw new IllegalArgumentException("unsupported array " + array.getClass());
         }
     }
 
-    static void copyToNative(Object array, MemorySegment seg) {
+    static void copyToNative(Object array, HostMemory seg) {
         int n = length(array);
-        switch (array) {
-            case byte[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_BYTE, 0, n);
-            case boolean[] x -> {
-                for (int i = 0; i < n; i++) {
-                    seg.set(ValueLayout.JAVA_BYTE, i, (byte) (x[i] ? 1 : 0));
-                }
+        if (array instanceof byte[] x) {
+            seg.copyFrom(x, 0, 0, n);
+        } else if (array instanceof boolean[] x) {
+            for (int i = 0; i < n; i++) {
+                seg.setByte(i, (byte) (x[i] ? 1 : 0));
             }
-            case short[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_SHORT, 0, n);
-            case char[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_CHAR, 0, n);
-            case int[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_INT, 0, n);
-            case long[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_LONG, 0, n);
-            case float[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_FLOAT, 0, n);
-            case double[] x -> MemorySegment.copy(x, 0, seg, ValueLayout.JAVA_DOUBLE, 0, n);
-            default -> throw new IllegalArgumentException("unsupported array " + array.getClass());
+        } else if (array instanceof short[] x) {
+            seg.copyFrom(x, 0, 0, n);
+        } else if (array instanceof char[] x) {
+            seg.copyFrom(x, 0, 0, n);
+        } else if (array instanceof int[] x) {
+            seg.copyFrom(x, 0, 0, n);
+        } else if (array instanceof long[] x) {
+            seg.copyFrom(x, 0, 0, n);
+        } else if (array instanceof float[] x) {
+            seg.copyFrom(x, 0, 0, n);
+        } else if (array instanceof double[] x) {
+            seg.copyFrom(x, 0, 0, n);
+        } else {
+            throw new IllegalArgumentException("unsupported array " + array.getClass());
         }
     }
 
@@ -302,22 +307,28 @@ final class Marshal {
      * @param seg   источник (не короче содержимого массива)
      * @param array приёмник
      */
-    static void fromNative(MemorySegment seg, Object array) {
+    static void fromNative(HostMemory seg, Object array) {
         int n = length(array);
-        switch (array) {
-            case byte[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, 0, x, 0, n);
-            case boolean[] x -> {
-                for (int i = 0; i < n; i++) {
-                    x[i] = seg.get(ValueLayout.JAVA_BYTE, i) != 0;
-                }
+        if (array instanceof byte[] x) {
+            seg.copyTo(0, x, 0, n);
+        } else if (array instanceof boolean[] x) {
+            for (int i = 0; i < n; i++) {
+                x[i] = seg.getByte(i) != 0;
             }
-            case short[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_SHORT, 0, x, 0, n);
-            case char[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_CHAR, 0, x, 0, n);
-            case int[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_INT, 0, x, 0, n);
-            case long[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_LONG, 0, x, 0, n);
-            case float[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_FLOAT, 0, x, 0, n);
-            case double[] x -> MemorySegment.copy(seg, ValueLayout.JAVA_DOUBLE, 0, x, 0, n);
-            default -> throw new IllegalArgumentException("unsupported array " + array.getClass());
+        } else if (array instanceof short[] x) {
+            seg.copyTo(0, x, 0, n);
+        } else if (array instanceof char[] x) {
+            seg.copyTo(0, x, 0, n);
+        } else if (array instanceof int[] x) {
+            seg.copyTo(0, x, 0, n);
+        } else if (array instanceof long[] x) {
+            seg.copyTo(0, x, 0, n);
+        } else if (array instanceof float[] x) {
+            seg.copyTo(0, x, 0, n);
+        } else if (array instanceof double[] x) {
+            seg.copyTo(0, x, 0, n);
+        } else {
+            throw new IllegalArgumentException("unsupported array " + array.getClass());
         }
     }
 
@@ -362,8 +373,8 @@ final class Marshal {
      * @param a     массив непустых объектов
      * @return память по смещениям листьев, нулевые байты в выравнивающих промежутках
      */
-    static MemorySegment toNative(Arena arena, IrModule m, int elem, Object[] a) {
-        MemorySegment seg = arena.allocate(Math.max((long) a.length * AbiLayout.sizeOf(m, elem), 8), 8);
+    static HostMemory toNative(HostArena arena, IrModule m, int elem, Object[] a) {
+        HostMemory seg = arena.allocate(Math.max((long) a.length * AbiLayout.sizeOf(m, elem), 8), 8);
         copyToNative(m, elem, a, seg);
         return seg;
     }
@@ -373,7 +384,7 @@ final class Marshal {
      *
      * @param seg приёмник не короче {@code a.length * sizeOf(elem)} байт
      */
-    static void copyToNative(IrModule m, int elem, Object[] a, MemorySegment seg) {
+    static void copyToNative(IrModule m, int elem, Object[] a, HostMemory seg) {
         int stride = AbiLayout.sizeOf(m, elem);
         int[] types = HostObjects.leafTypes(m, elem);
         int[] offsets = HostObjects.leafOffsets(m, elem);
@@ -387,7 +398,7 @@ final class Marshal {
     }
 
     /** Обратная операция: обновляет struct на месте, заменяет векторы новыми объектами. */
-    static void fromNative(MemorySegment seg, IrModule m, int elem, Object[] a) {
+    static void fromNative(HostMemory seg, IrModule m, int elem, Object[] a) {
         int stride = AbiLayout.sizeOf(m, elem);
         int[] types = HostObjects.leafTypes(m, elem);
         int[] offsets = HostObjects.leafOffsets(m, elem);
@@ -406,8 +417,8 @@ final class Marshal {
      *
      * @return память размером {@code AbiLayout.sizeOf}
      */
-    static MemorySegment valueToNative(Arena arena, IrModule m, int type, Object value) {
-        MemorySegment seg = arena.allocate(Math.max(AbiLayout.sizeOf(m, type), 8), 8);
+    static HostMemory valueToNative(HostArena arena, IrModule m, int type, Object value) {
+        HostMemory seg = arena.allocate(Math.max(AbiLayout.sizeOf(m, type), 8), 8);
         int[] types = HostObjects.leafTypes(m, type);
         int[] offsets = HostObjects.leafOffsets(m, type);
         long[] leaves = new long[types.length];
@@ -418,21 +429,21 @@ final class Marshal {
         return seg;
     }
 
-    private static void putLeaf(MemorySegment seg, long offset, int type, long canon) {
+    private static void putLeaf(HostMemory seg, long offset, int type, long canon) {
         switch (Types.bits(type) == 0 ? 8 : Types.bits(type)) {
-            case 8 -> seg.set(ValueLayout.JAVA_BYTE, offset, (byte) canon);
-            case 16 -> seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, (short) canon);
-            case 32 -> seg.set(ValueLayout.JAVA_INT_UNALIGNED, offset, (int) canon);
-            default -> seg.set(ValueLayout.JAVA_LONG_UNALIGNED, offset, canon);
+            case 8 -> seg.setByte(offset, (byte) canon);
+            case 16 -> seg.setShort(offset, (short) canon);
+            case 32 -> seg.setInt(offset, (int) canon);
+            default -> seg.setLong(offset, canon);
         }
     }
 
-    private static long getLeaf(MemorySegment seg, long offset, int type) {
+    private static long getLeaf(HostMemory seg, long offset, int type) {
         long bits = switch (Types.bits(type) == 0 ? 8 : Types.bits(type)) {
-            case 8 -> seg.get(ValueLayout.JAVA_BYTE, offset);
-            case 16 -> seg.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);
-            case 32 -> seg.get(ValueLayout.JAVA_INT_UNALIGNED, offset);
-            default -> seg.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+            case 8 -> seg.getByte(offset);
+            case 16 -> seg.getShort(offset);
+            case 32 -> seg.getInt(offset);
+            default -> seg.getLong(offset);
         };
         return HostObjects.canon(type, bits);
     }

@@ -7,10 +7,12 @@ include 'ir'               // плоский IR (SoA), типы, сериали�
 include 'ir-optimizer'     // оптимизатор IR: DCE, математика, давление на регистры, разбиение ядер. Зависит только от ir.
 include 'ir-interpreter'   // эталонный CPU-интерпретатор IR (для тестов и конформанса).
 include 'codegen-opencl'   // IR -> OpenCL C. Чистая функция.
-include 'runtime'          // GpuContext, устройства, буферы, кэш, запуск, JVM-fallback. FFM (Panama).
+include 'runtime'          // GpuContext, устройства, буферы, кэш, запуск, JVM-fallback. Java 17, без FFM.
+include 'runtime-opencl-ffm'   // бэкенд драйвера OpenCL через FFM (Java 25).
+include 'runtime-opencl-lwjgl' // бэкенд драйвера OpenCL через LWJGL (Java 17, Minecraft 1.18-1.21.x).
 include 'frontend-common'  // общий код фронтендов: атрибуты ядра, таблица диагностик, формат ресурсов.
-include 'frontend-java'
-include 'frontend-asm'     // байткод (ASM tree API) -> тот же IR, что у frontend-java (раздел 17).    // javac Tree API + annotation processor -> пишет IR.
+include 'frontend-java'    // javac Tree API + annotation processor -> пишет IR.
+include 'frontend-asm'     // байткод (ASM tree API) -> тот же IR, что у frontend-java (раздел 17).
 include 'weaver'           // подмена тела @Kernel-метода (ASM, post-compile).
 include 'gradle-plugin'    // тонкая обёртка над weaver для Gradle.
 include 'test-support'     // JUnit 5/6: GpuAssert, @GPUTest, KernelSample.

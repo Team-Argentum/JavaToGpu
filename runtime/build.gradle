@@ -3,7 +3,7 @@ plugins {
     id 'java-test-fixtures'
 }
 
-description = 'GpuContext, devices (FFM to libOpenCL), GpuBuffer, cache, launch, JVM fallback.'
+description = 'GpuContext, devices (DeviceApi SPI; backends runtime-opencl-ffm/-lwjgl), GpuBuffer, cache, launch, JVM fallback. Java 17.'
 
 dependencies {
     api project(':api')
@@ -17,6 +17,8 @@ dependencies {
     testImplementation project(':ir-interpreter')
     testImplementation testFixtures(project(':ir-interpreter'))
     testFixturesApi project(':ir')
+    // тестам на настоящем устройстве нужен бэкенд драйвера (под JDK 25 сборки - FFM)
+    testImplementation project(':runtime-opencl-ffm')
 
     // E2E фасада: исходник -> javac с процессором frontend-java -> weaver -> загрузка класса -> обычный вызов.
     testImplementation project(':frontend-java')
@@ -59,4 +61,36 @@ tasks.register('deviceTest', Test) {
         showStandardStreams = true
     }
     shouldRunAfter tasks.named('test')
+}
+
+// Те же device-тесты через бэкенд LWJGL (-Djavatogpu.backend=lwjgl): списки расхождений FFM и LWJGL обязаны совпадать.
+// Тесты, которые обращаются к ffm.OpenClApi напрямую (RuntimeDeviceTest, SmallTypesTest, TransferDeviceTest),
+// остаются на FFM.
+configurations {
+    lwjglBackend
+}
+
+dependencies {
+    lwjglBackend project(':runtime-opencl-lwjgl')
+    lwjglBackend "org.lwjgl:lwjgl:${rootProject.ext.LWJGL_VERSION}"
+    lwjglBackend "org.lwjgl:lwjgl:${rootProject.ext.LWJGL_VERSION}:${rootProject.ext.LWJGL_NATIVES}"
+}
+
+tasks.register('deviceTestLwjgl', Test) {
+    group = 'verification'
+    description = 'Runtime tests on a real OpenCL device through the LWJGL backend (tag device).'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath + configurations.lwjglBackend
+    systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
+    systemProperty 'javatogpu.backend', 'lwjgl'
+    environment 'CUDA_CACHE_DISABLE', '1'
+    // отдельный каталог отчётов, чтобы сравнивать с deviceTest (FFM)
+    reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/deviceTestLwjgl')
+    useJUnitPlatform {
+        includeTags 'device'
+    }
+    testLogging {
+        showStandardStreams = true
+    }
+    shouldRunAfter tasks.named('deviceTest')
 }

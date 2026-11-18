@@ -3,9 +3,8 @@ package com.sixik.gpu.runtime;
 import com.sixik.gpu.codegen.opencl.Target;
 import com.sixik.gpu.runtime.device.DeviceApi;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
+import com.sixik.gpu.runtime.device.HostArena;
+import com.sixik.gpu.runtime.device.HostMemory;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
@@ -151,7 +150,7 @@ public record NativeMath(int mask, double sinError, double cosError, double sqrt
         long bt = 0;
         long bs = 0;
         long bo = 0;
-        try (Arena arena = Arena.ofConfined()) {
+        try (HostArena arena = api.arena(HostArena.Kind.CONFINED)) {
             program = api.createProgram(context, SOURCE);
             DeviceApi.BuildOutcome b = api.build(program, device, "");
             if (b.status() != 0) {
@@ -160,9 +159,11 @@ public record NativeMath(int mask, double sinError, double cosError, double sqrt
             kernel = api.createKernel(program, KERNEL);
             long in = 4L * N;
             long outBytes = 3 * in;
-            MemorySegment ht = arena.allocateFrom(ValueLayout.JAVA_FLOAT, t);
-            MemorySegment hs = arena.allocateFrom(ValueLayout.JAVA_FLOAT, s);
-            MemorySegment ho = arena.allocate(outBytes);
+            HostMemory ht = arena.allocate(in, 8);
+            ht.copyFrom(t, 0, 0, N);
+            HostMemory hs = arena.allocate(in, 8);
+            hs.copyFrom(s, 0, 0, N);
+            HostMemory ho = arena.allocate(outBytes, 8);
             bt = api.createBuffer(context, in);
             bs = api.createBuffer(context, in);
             bo = api.createBuffer(context, outBytes);
@@ -174,7 +175,9 @@ public record NativeMath(int mask, double sinError, double cosError, double sqrt
             api.enqueue(queue, kernel, 1, new long[]{N}, null);
             api.readBuffer(queue, bo, 0, outBytes, ho);
             api.finish(queue);
-            return evaluate(t, s, ho.toArray(ValueLayout.JAVA_FLOAT));
+            float[] out = new float[3 * N];
+            ho.copyTo(0, out, 0, out.length);
+            return evaluate(t, s, out);
         } finally {
             release(api, DeviceApi.HandleKind.BUFFER, bo);
             release(api, DeviceApi.HandleKind.BUFFER, bs);

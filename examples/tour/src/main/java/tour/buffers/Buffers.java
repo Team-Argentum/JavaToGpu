@@ -5,6 +5,7 @@ import com.sixik.gpu.api.annotations.Global;
 import com.sixik.gpu.api.annotations.Kernel;
 import com.sixik.gpu.ir.Result;
 import com.sixik.gpu.ir.Types;
+import com.sixik.gpu.runtime.device.HostMemory;
 import com.sixik.gpu.runtime.CompiledKernel;
 import com.sixik.gpu.runtime.GpuBuffer;
 import com.sixik.gpu.runtime.GpuContext;
@@ -14,8 +15,6 @@ import com.sixik.gpu.runtime.LaunchStats;
 import com.sixik.gpu.runtime.PreparedLauncher;
 import tour.Show;
 
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.util.Locale;
 
 /**
@@ -96,16 +95,16 @@ public final class Buffers {
                 }
 
                 Show.section("views: read and write buffer memory without a float[]");
-                MemorySegment view = b.readView();                // b = 10a + 1
-                System.out.println("b[3] via readView = " + view.getAtIndex(ValueLayout.JAVA_FLOAT, 3));
-                MemorySegment w = a.writeView();
+                HostMemory view = b.readView();                // b = 10a + 1
+                System.out.println("b[3] via readView = " + view.getFloat(4L * 3));
+                HostMemory w = a.writeView();
                 for (int i = 0; i < n; i++) {
-                    w.setAtIndex(ValueLayout.JAVA_FLOAT, i, 1f);  // заполнить вход прямо в закреплённой памяти
+                    w.setFloat(4L * i, 1f);  // заполнить вход прямо в закреплённой памяти
                 }
                 a.commitView();
                 ctx.launch(k, LaunchConfig.of1D(n), a, b, 7f);
-                System.out.println("b[0] after commitView + launch = " + b.readView().getAtIndex(ValueLayout.JAVA_FLOAT, 0));
-                Show.check(b.readView().getAtIndex(ValueLayout.JAVA_FLOAT, 0) == 8f, "views");
+                System.out.println("b[0] after commitView + launch = " + b.readView().getFloat(4L * 0));
+                Show.check(b.readView().getFloat(4L * 0) == 8f, "views");
             }
         }
     }

@@ -14,6 +14,7 @@ import org.gradle.api.provider.Property;
  *     weave = true               // подменять тела @Kernel-методов после компиляции
  *     strictBarriers = false     // true: barrier под расходящимся управлением - ошибка компиляции (GPU0131), а не предупреждение
  *     frontend = 'java'          // 'java' - annotation processor; 'asm' - IR из class-файлов после компиляции
+ *     backend = 'ffm'            // драйвер: 'ffm' (Java 25), 'lwjgl' (Java 17, LWJGL приложения), 'none' - добавит сборка
  * }
  * }</pre>
  */
@@ -43,6 +44,13 @@ public abstract class JavaToGpuExtension {
      *         (device-функции из jar без исходников, байткод не только javac; REWORK_ARCHITECTURE.md, раздел 17)
      */
     public abstract Property<String> getFrontend();
+
+    /**
+     * @return бэкенд драйвера OpenCL, который подключается вместе с {@code runtime}: {@code 'ffm'} (по умолчанию) -
+     *         {@code runtime-opencl-ffm} (FFM, Java 25); {@code 'lwjgl'} - {@code runtime-opencl-lwjgl} (Java 17, ядро LWJGL
+     *         и его нативы даёт приложение, например Minecraft); {@code 'none'} - без бэкенда (его добавляет сборка)
+     */
+    public abstract Property<String> getBackend();
 
     /** @return дополнительные аргументы JVM для задач {@code test} и {@code run} (помимо {@code --enable-native-access}) */
     public abstract ListProperty<String> getExtraJvmArgs();

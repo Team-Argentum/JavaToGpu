@@ -1,4 +1,10 @@
-package com.sixik.gpu.runtime.device;
+package com.sixik.gpu.runtime.ffm;
+
+import com.sixik.gpu.runtime.device.AttachedMemory;
+import com.sixik.gpu.runtime.device.DeviceApi;
+import com.sixik.gpu.runtime.device.DeviceApiException;
+import com.sixik.gpu.runtime.device.HostArena;
+import com.sixik.gpu.runtime.device.HostMemory;
 
 import java.lang.foreign.AddressLayout;
 import java.lang.foreign.Arena;
@@ -21,6 +27,9 @@ import java.util.List;
  *
  * <p>Используется очередь {@code clCreateCommandQueue} (OpenCL 1.x): она экспортируется и драйверами 2.x/3.0, а
  * v1 не нуждается в свойствах очереди из 2.0.</p>
+ *
+ * <p>Модуль {@code runtime-opencl-ffm} (Java 25). Память хоста - арены FFM ({@link #arena}); память другой реализации
+ * ({@code HeapMemory}) копируется во временную нативную. Бэкенд для Java 17 - {@code runtime-opencl-lwjgl}.</p>
  */
 @SuppressWarnings("restricted") // FFM-вызовы нативного кода - суть класса; доступ включает --enable-native-access
 public final class OpenClApi implements DeviceApi {
@@ -261,7 +270,52 @@ public final class OpenClApi implements DeviceApi {
     }
 
     @Override
-    public void writeBuffer(long queue, long buffer, long offset, long size, MemorySegment src) {
+    public HostArena arena(HostArena.Kind kind) {
+        return FfmMemory.arena(kind);
+    }
+
+    /** @return нативный сегмент памяти либо {@code null}, если память в куче (тогда её нужно скопировать) */
+    private static MemorySegment nativeSegment(HostMemory m) {
+        while (m instanceof AttachedMemory a) {
+            m = a.unwrap();
+        }
+        if (m instanceof SegmentMemory s) {
+            return s.seg;
+        }
+        if (m.address() != 0) {
+            @SuppressWarnings("restricted")
+            MemorySegment seg = MemorySegment.ofAddress(m.address()).reinterpret(m.byteSize());
+            return seg;
+        }
+        return null;
+    }
+
+    /** Копия памяти кучи в нативную память арены. */
+    private static MemorySegment copyOf(HostMemory m, long size, Arena a) {
+        MemorySegment seg = a.allocate(Math.max(size, 1), 8);
+        byte[] chunk = new byte[(int) Math.min(size, 1 << 16)];
+        for (long done = 0; done < size; ) {
+            int n = (int) Math.min(chunk.length, size - done);
+            m.copyTo(done, chunk, 0, n);
+            MemorySegment.copy(chunk, 0, seg, ValueLayout.JAVA_BYTE, done, n);
+            done += n;
+        }
+        return seg;
+    }
+
+    @Override
+    public void writeBuffer(long queue, long buffer, long offset, long size, HostMemory memory) {
+        MemorySegment src = nativeSegment(memory);
+        if (src == null) {
+            try (Arena a = Arena.ofConfined()) {
+                writeBlocking(queue, buffer, offset, size, copyOf(memory, size, a));
+            }
+            return;
+        }
+        writeBlocking(queue, buffer, offset, size, src);
+    }
+
+    private void writeBlocking(long queue, long buffer, long offset, long size, MemorySegment src) {
         try {
             check((int) writeBuffer.invoke(handle(queue), handle(buffer), 1, offset, size, src, 0, MemorySegment.NULL,
                     MemorySegment.NULL), "clEnqueueWriteBuffer");
@@ -271,7 +325,13 @@ public final class OpenClApi implements DeviceApi {
     }
 
     @Override
-    public void writeBufferAsync(long queue, long buffer, long offset, long size, MemorySegment src) {
+    public void writeBufferAsync(long queue, long buffer, long offset, long size, HostMemory memory) {
+        MemorySegment src = nativeSegment(memory);
+        if (src == null) {
+            // временную копию нельзя освободить, пока запись не выполнена: такая запись - блокирующая
+            writeBuffer(queue, buffer, offset, size, memory);
+            return;
+        }
         try {
             check((int) writeBuffer.invoke(handle(queue), handle(buffer), 0 /* CL_FALSE */, offset, size, src, 0,
                     MemorySegment.NULL, MemorySegment.NULL), "clEnqueueWriteBuffer");
@@ -281,7 +341,26 @@ public final class OpenClApi implements DeviceApi {
     }
 
     @Override
-    public void readBuffer(long queue, long buffer, long offset, long size, MemorySegment dst) {
+    public void readBuffer(long queue, long buffer, long offset, long size, HostMemory memory) {
+        MemorySegment dst = nativeSegment(memory);
+        if (dst == null) {
+            try (Arena a = Arena.ofConfined()) {
+                MemorySegment tmp = a.allocate(Math.max(size, 1), 8);
+                readInto(queue, buffer, offset, size, tmp);
+                byte[] chunk = new byte[(int) Math.min(size, 1 << 16)];
+                for (long done = 0; done < size; ) {
+                    int n = (int) Math.min(chunk.length, size - done);
+                    MemorySegment.copy(tmp, ValueLayout.JAVA_BYTE, done, chunk, 0, n);
+                    memory.copyFrom(chunk, 0, done, n);
+                    done += n;
+                }
+            }
+            return;
+        }
+        readInto(queue, buffer, offset, size, dst);
+    }
+
+    private void readInto(long queue, long buffer, long offset, long size, MemorySegment dst) {
         try {
             check((int) readBuffer.invoke(handle(queue), handle(buffer), 1, offset, size, dst, 0, MemorySegment.NULL,
                     MemorySegment.NULL), "clEnqueueReadBuffer");
@@ -302,7 +381,7 @@ public final class OpenClApi implements DeviceApi {
             MemorySegment p = (MemorySegment) mapBuffer.invoke(handle(queue), b, 1 /* blocking */,
                     3L /* CL_MAP_READ | CL_MAP_WRITE */, 0L, size, 0, MemorySegment.NULL, MemorySegment.NULL, err);
             check(err.get(INT, 0), "clEnqueueMapBuffer");
-            return new Pinned(buffer, p.reinterpret(size));
+            return new Pinned(buffer, new SegmentMemory(p.reinterpret(size)));
         } catch (Throwable t) {
             if (buffer != 0) {
                 release(HandleKind.BUFFER, buffer);
@@ -314,7 +393,7 @@ public final class OpenClApi implements DeviceApi {
     @Override
     public void releasePinned(long queue, Pinned pinned) {
         try {
-            check((int) unmap.invoke(handle(queue), handle(pinned.buffer()), pinned.memory(), 0, MemorySegment.NULL,
+            check((int) unmap.invoke(handle(queue), handle(pinned.buffer()), handle(pinned.memory().address()), 0, MemorySegment.NULL,
                     MemorySegment.NULL), "clEnqueueUnmapMemObject");
             check((int) finish.invoke(handle(queue)), "clFinish");
         } catch (Throwable t) {
@@ -487,8 +566,12 @@ public final class OpenClApi implements DeviceApi {
     }
 
     @Override
-    public void setArgBytes(long kernel, int index, MemorySegment value, long size) {
-        try {
+    public void setArgBytes(long kernel, int index, HostMemory memory, long size) {
+        MemorySegment value = nativeSegment(memory);
+        try (Arena a = Arena.ofConfined()) {
+            if (value == null) {
+                value = copyOf(memory, size, a); // драйвер копирует значение аргумента сразу
+            }
             check((int) setKernelArg.invoke(handle(kernel), index, size, value), "clSetKernelArg");
         } catch (Throwable t) {
             throw unexpected("clSetKernelArg", t);

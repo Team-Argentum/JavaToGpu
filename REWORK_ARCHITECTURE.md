@@ -1997,7 +1997,9 @@ tokens, evidence/preflight-отчёты, `*Cli` в production-артефакте
 api            — аннотации, типы (vec/ptr/struct), GPU builtins. Без нативных зависимостей.
 ir             — плоский IR (арена + регионы), типы, сериализация, валидатор. 0 зависимостей.
 codegen-opencl — IR -> OpenCL C. Чистая функция. Зависит только от ir.
-runtime        — устройства (FFM, 9.2), память, кэш, launch, JVM-fallback.
+runtime        — устройства (SPI DeviceApiProvider), память хоста HostMemory, кэш, launch, JVM-fallback. Java 17, без FFM.
+runtime-opencl-ffm   — драйвер OpenCL через FFM (9.2), Java 25. Зависит только от runtime.
+runtime-opencl-lwjgl — драйвер OpenCL через lwjgl-opencl, Java 17 (Minecraft 1.18–1.21.x). Зависит только от runtime.
 frontend-common — общий код фронтендов: compilationProperties, атрибуты ядра, таблица диагностик, формат ресурсов. Зависит от ir.
 frontend-java  — javac Tree API + annotation processor -> пишет IR. Зависит от api, ir, ir-optimizer (проверка @Reduction),
                  frontend-common.
@@ -2702,3 +2704,22 @@ frontend-asm yet» с номером шага; новые коды `GPU0301/0302
   каталог образцов `SampleDeviceTest` на IR_asm. Для этого `GpuAssert.sameResult` получил перегрузку с готовым
   `IrModule`. На RTX 5070 сходятся все 35 образцов.
 - **Не сделано (17.14-7):** ручная мутационная проверка — отдельный проход по списку 17.14-7.
+
+### 17.23 Продолжение: сгенерированный байткод и рантайм на Java 17 (2026-11-18)
+
+Раздел 18 вынесен в [docs/FRONTEND_ASM_RUNTIME.md](docs/FRONTEND_ASM_RUNTIME.md): `frontend-asm` как компилятор
+байткода, который программа генерирует во время работы (первый потребитель — Generator Accelerator 2), и план B0–B9.
+Сделано по шагу B6 (решение 18.6-1):
+
+- `runtime` и компиляторная часть (`api`, `ir`, `ir-optimizer`, `codegen-opencl`, `frontend-common`, `frontend-asm`)
+  собираются с `--release 17`, `ir-interpreter` — с `--release 21` (виртуальные потоки групп с барьерами), остальное и все
+  тесты — под 25. FFM в ядре рантайма нет: память хоста — `HostMemory`/`HostArena`, драйвер — SPI `DeviceApiProvider`,
+  выбор — `DeviceApis` (`ServiceLoader`, приоритет, `-Djavatogpu.backend`).
+- Бэкенды: `runtime-opencl-ffm` (Java 25, приоритет 200) и `runtime-opencl-lwjgl` (Java 17, LWJGL 3.3.3, приоритет 100).
+  Плагин: `gpu { backend = 'ffm' | 'lwjgl' | 'none' }`.
+- Ломает API: `GpuBuffer.readView()/writeView()` возвращают `HostMemory`; сегмент FFM — `FfmMemory.segment(view)`.
+- `api.WorkItem`: `ScopedValue` → `ThreadLocal` (JMH `ApiBenchmarks` не медленнее).
+- Проверено: вся сборка и тесты; device-тесты на RTX 5070 через FFM (`:runtime:deviceTest`) и LWJGL
+  (`:runtime:deviceTestLwjgl`) совпадают; ядро на JVM 17 выбирает LWJGL и пропускает FFM-jar на classpath.
+- Осталось по B6: CI на JDK 17, `ClProgram`/`KernelAbi`, проверка в dev-клиенте Minecraft (в том числе старое ядро LWJGL
+  у версий до 1.20.5).

@@ -11,8 +11,8 @@ import com.sixik.gpu.ir.Validator;
 import com.sixik.gpu.runtime.device.DeviceApi;
 import com.sixik.gpu.runtime.device.DeviceApiException;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
+import com.sixik.gpu.runtime.device.HostArena;
+import com.sixik.gpu.runtime.device.HostMemory;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
@@ -60,7 +60,7 @@ public final class PreparedLauncher implements AutoCloseable {
         final int length;
         final long bytes;
         final long handle;
-        final MemorySegment staging;
+        final HostMemory staging;
         /** Закреплённый буфер, которому принадлежит {@link #staging}, либо {@code null} для обычной памяти. */
         final DeviceApi.Pinned pinned;
         int access;
@@ -68,7 +68,7 @@ public final class PreparedLauncher implements AutoCloseable {
         int[] params = new int[4];
         int paramCount;
 
-        Slot(Object array, int elemType, boolean objects, int length, long bytes, long handle, MemorySegment staging,
+        Slot(Object array, int elemType, boolean objects, int length, long bytes, long handle, HostMemory staging,
              DeviceApi.Pinned pinned) {
             this.pinned = pinned;
             this.array = array;
@@ -99,11 +99,11 @@ public final class PreparedLauncher implements AutoCloseable {
     /** По параметру - массив {@code GpuArray}, переданный в нём, либо {@code null}. */
     private final GpuArray[] residents;
     private final boolean hasValueAggregates;
-    private final Arena staging;
+    private final HostArena staging;
     private boolean closed;
 
     private PreparedLauncher(GpuContext ctx, CompiledKernel kernel, Object[] args, Slot[] slotOf, Slot[] slots,
-                             long[] handles, long[] lengths, Arena staging, GpuArray[] residents) {
+                             long[] handles, long[] lengths, HostArena staging, GpuArray[] residents) {
         this.ctx = ctx;
         this.kernel = kernel;
         this.module = kernel.module();
@@ -147,7 +147,7 @@ public final class PreparedLauncher implements AutoCloseable {
         List<Slot> slots = new ArrayList<>();
         long[] handles = new long[n];
         long[] lengths = new long[n];
-        Arena staging = Arena.ofShared();
+        HostArena staging = ctx.api.arena(HostArena.Kind.SHARED);
         ctx.lock.lock();
         try {
             if (ctx.closed) {
@@ -432,7 +432,7 @@ public final class PreparedLauncher implements AutoCloseable {
             kernelNanos = ctx.dispatch(kernel, config, local, defer);
         } else {
             // по стадиям: у каждой стадии свой cl_kernel, аргументы выставляются заново
-            try (Arena temp = Arena.ofConfined()) {
+            try (HostArena temp = ctx.api.arena(HostArena.Kind.CONFINED)) {
                 kernelNanos = ctx.dispatchKernel(kernel, config, local, args, handles, lengths, temp, defer);
             }
         }
@@ -459,7 +459,7 @@ public final class PreparedLauncher implements AutoCloseable {
     private void bindArguments() {
         boolean all = kernel.boundTo != this;
         kernel.boundTo = null;
-        Arena temp = hasValueAggregates ? Arena.ofConfined() : null;
+        HostArena temp = hasValueAggregates ? ctx.api.arena(HostArena.Kind.CONFINED) : null;
         try {
             List<KernelArg> list = kernel.artifact().args();
             for (int i = 0; i < list.size(); i++) {

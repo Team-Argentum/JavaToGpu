@@ -4,11 +4,12 @@ import com.sixik.gpu.ir.Diagnostic;
 import com.sixik.gpu.ir.Types;
 import com.sixik.gpu.runtime.device.DeviceApi;
 import com.sixik.gpu.runtime.device.DeviceApiException;
-import com.sixik.gpu.runtime.device.OpenClApi;
+import com.sixik.gpu.runtime.ffm.OpenClApi;
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
+import com.sixik.gpu.runtime.device.HeapMemory;
+import com.sixik.gpu.runtime.device.HostArena;
+import com.sixik.gpu.runtime.device.HostMemory;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -185,9 +186,9 @@ class SmallTypesTest {
                 new float[]{-0f, Float.NaN, 1.5f}, new double[]{Double.MAX_VALUE, -0d, 0.1}};
         Object[] fresh = {new byte[4], new boolean[3], new short[3], new char[3], new int[3], new long[3],
                 new float[3], new double[3]};
-        try (Arena arena = Arena.ofConfined()) {
+        try (HostArena arena = HeapMemory.arena(HostArena.Kind.CONFINED)) {
             for (int i = 0; i < originals.length; i++) {
-                MemorySegment seg = Marshal.toNative(arena, originals[i]);
+                HostMemory seg = Marshal.toNative(arena, originals[i]);
                 Marshal.fromNative(seg, fresh[i]);
                 assertTrue(same(originals[i], fresh[i]), "kind " + i);
             }
@@ -196,15 +197,15 @@ class SmallTypesTest {
 
     @Test
     void marshalLaysOutLittleEndianDensely() {
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment seg = Marshal.toNative(arena, new short[]{0x0102, 0x0304});
+        try (HostArena arena = HeapMemory.arena(HostArena.Kind.CONFINED)) {
+            HostMemory seg = Marshal.toNative(arena, new short[]{0x0102, 0x0304});
             assertEquals(4, Marshal.byteSize(new short[2]));
-            assertEquals(0x02, seg.get(java.lang.foreign.ValueLayout.JAVA_BYTE, 0));
-            assertEquals(0x01, seg.get(java.lang.foreign.ValueLayout.JAVA_BYTE, 1));
-            assertEquals(0x04, seg.get(java.lang.foreign.ValueLayout.JAVA_BYTE, 2));
-            MemorySegment bools = Marshal.toNative(arena, new boolean[]{true, false, true});
-            assertEquals(1, bools.get(java.lang.foreign.ValueLayout.JAVA_BYTE, 0));
-            assertEquals(0, bools.get(java.lang.foreign.ValueLayout.JAVA_BYTE, 1));
+            assertEquals(0x02, seg.getByte(0));
+            assertEquals(0x01, seg.getByte(1));
+            assertEquals(0x04, seg.getByte(2));
+            HostMemory bools = Marshal.toNative(arena, new boolean[]{true, false, true});
+            assertEquals(1, bools.getByte(0));
+            assertEquals(0, bools.getByte(1));
             assertEquals(3, Marshal.byteSize(new boolean[3]));
         }
     }

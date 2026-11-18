@@ -2,8 +2,8 @@ package com.sixik.gpu.runtime;
 
 import com.sixik.gpu.runtime.device.DeviceApi;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
+import com.sixik.gpu.runtime.device.HostArena;
+import com.sixik.gpu.runtime.device.HostMemory;
 
 /**
  * Буфер в памяти устройства с явным владением и временем жизни (REWORK_ARCHITECTURE.md, 9: «первоклассный объект -
@@ -23,9 +23,9 @@ public final class GpuBuffer implements AutoCloseable {
     /** Закреплённая память вида {@link #readView()} либо {@code null} (под замком контекста). */
     private DeviceApi.Pinned viewPinned;
     /** Область жизни вида: закрывается раньше освобождения памяти, чтобы старый вид не стал висячим указателем. */
-    private Arena viewScope;
+    private HostArena viewScope;
     /** Память вида, привязанная к {@link #viewScope}. */
-    private MemorySegment view;
+    private HostMemory view;
 
     GpuBuffer(GpuContext owner, long handle, int elementType, long length) {
         this.owner = owner;
@@ -93,11 +93,12 @@ public final class GpuBuffer implements AutoCloseable {
      *
      * <p>Для крупных результатов это вдвое быстрее {@link #read}: остаётся только передача по шине (DMA из закреплённой
      * памяти), а копирование в массив, которое стоит столько же, исчезает. Значения читаются из вида напрямую, например
-     * {@code view.getAtIndex(ValueLayout.JAVA_FLOAT, i)}.</p>
+     * {@code view.getFloat(4L * i)} (смещение в байтах). В модуле {@code runtime-opencl-ffm} тот же вид
+     * доступен как {@code MemorySegment}: {@code FfmMemory.segment(view)}.</p>
      *
      * <p>Закреплённая память выделяется при первом вызове и переиспользуется. Вид:</p>
      * <ul>
-     *   <li>только для чтения ({@link MemorySegment#isReadOnly()});</li>
+     *   <li>только для чтения ({@link HostMemory#isReadOnly()});</li>
      *   <li>отражает состояние на момент вызова: следующий {@code readView()} перезаписывает ту же память;</li>
      *   <li>действителен до {@link #close()} буфера или контекста; обращение после закрытия бросает
      *       {@link IllegalStateException}, а не обращается к освобождённой памяти;</li>
@@ -107,7 +108,7 @@ public final class GpuBuffer implements AutoCloseable {
      * @return вид на содержимое буфера длиной {@link #byteSize()} байт
      * @throws GpuException если буфер или контекст закрыт либо драйвер вернул ошибку
      */
-    public MemorySegment readView() {
+    public HostMemory readView() {
         return owner.readView(this);
     }
 
@@ -117,7 +118,7 @@ public final class GpuBuffer implements AutoCloseable {
      *
      * <p>Для крупных входов это вдвое быстрее {@link #write}: копирование из массива в закреплённую память, которое стоит
      * столько же, сколько сама передача, исчезает. Значения пишутся в вид напрямую, например
-     * {@code view.setAtIndex(ValueLayout.JAVA_FLOAT, i, x)}.</p>
+     * {@code view.setFloat(4L * i, x)}.</p>
      *
      * <p>Это та же память, что у {@link #readView()} (выделяется при первом обращении к любому из видов). Поэтому:</p>
      * <ul>
@@ -131,7 +132,7 @@ public final class GpuBuffer implements AutoCloseable {
      * @return изменяемый вид длиной {@link #byteSize()} байт
      * @throws GpuException если буфер или контекст закрыт
      */
-    public MemorySegment writeView() {
+    public HostMemory writeView() {
         return owner.writeView(this);
     }
 
@@ -148,15 +149,15 @@ public final class GpuBuffer implements AutoCloseable {
     }
 
     /** @return память вида либо {@code null}, если вид ещё не создан (вызывается под замком контекста) */
-    MemorySegment existingView() {
+    HostMemory existingView() {
         return view;
     }
 
     /** @return память вида, выделяя её при первом обращении (вызывается под замком контекста) */
-    MemorySegment viewMemory(DeviceApi api, long context, long queue) {
+    HostMemory viewMemory(DeviceApi api, long context, long queue) {
         if (view == null) {
             long bytes = Math.max(byteSize(), 8);
-            Arena scope = Arena.ofShared();
+            HostArena scope = api.arena(HostArena.Kind.SHARED);
             DeviceApi.Pinned pinned = null;
             try {
                 pinned = api.createPinned(context, queue, bytes);
@@ -164,7 +165,7 @@ public final class GpuBuffer implements AutoCloseable {
                 // нет закреплённой памяти - обычная память тоже даёт вид без копирования в массив
                 pinned = null;
             }
-            view = pinned != null ? pinned.memory().reinterpret(bytes, scope, null) : scope.allocate(bytes, 64);
+            view = pinned != null ? scope.attach(pinned.memory().asSlice(0, bytes)) : scope.allocate(bytes, 64);
             viewPinned = pinned;
             viewScope = scope;
         }

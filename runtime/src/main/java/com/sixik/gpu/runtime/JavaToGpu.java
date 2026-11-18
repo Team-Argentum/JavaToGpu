@@ -472,13 +472,16 @@ public final class JavaToGpu {
         GpuContext c = chosen.get();
         Class<?>[] classes = owners.clone();
         java.util.concurrent.CompletableFuture<WarmUp> done = new java.util.concurrent.CompletableFuture<>();
-        Thread.ofPlatform().daemon().name("javatogpu-warmup").start(() -> {
+        // new Thread, а не Thread.ofPlatform(): модуль собирается под Java 17
+        Thread warmer = new Thread(() -> {
             try {
                 done.complete(warm(c, classes));
             } catch (RuntimeException | Error e) {
                 done.completeExceptionally(e);
             }
-        });
+        }, "javatogpu-warmup");
+        warmer.setDaemon(true);
+        warmer.start();
         return done;
     }
 

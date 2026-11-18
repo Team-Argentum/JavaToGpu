@@ -11,7 +11,7 @@ import com.sixik.gpu.ir.interpreter.samples.SampleArgs;
 import com.sixik.gpu.ir.interpreter.samples.SampleKernels;
 import com.sixik.gpu.runtime.device.DeviceApi;
 import com.sixik.gpu.runtime.device.DeviceInfo;
-import com.sixik.gpu.runtime.device.OpenClApi;
+import com.sixik.gpu.runtime.ffm.OpenClApi;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;

@@ -32,7 +32,8 @@ jar {
 }
 
 // Тестовому проекту TestKit нужны jar'ы библиотек: они кладутся в flatDir (зависимости плагин добавляет сам).
-def libraryModules = ['api', 'ir', 'ir-optimizer', 'codegen-opencl', 'runtime', 'frontend-common', 'frontend-java']
+def libraryModules = ['api', 'ir', 'ir-optimizer', 'codegen-opencl', 'runtime', 'runtime-opencl-ffm', 'frontend-common',
+                      'frontend-java']
 def libraryJars = libraryModules.collect { m -> project(":${m}").tasks.named('jar') }
 def consumerModules = libraryModules + ['gradle-plugin', 'weaver', 'frontend-asm', 'ir-interpreter', 'test-support']
 tasks.named('test') {

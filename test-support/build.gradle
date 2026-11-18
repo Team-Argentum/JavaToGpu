@@ -16,6 +16,7 @@ dependencies {
     testImplementation testFixtures(project(':ir-interpreter'))
     testImplementation testFixtures(project(':ir'))
     testImplementation testFixtures(project(':runtime'))
+    testRuntimeOnly project(':runtime-opencl-ffm')
     testImplementation project(':frontend-java')
     testImplementation project(':weaver')
     // 17.14-4: те же образцы на IR frontend-asm (AsmSampleDeviceTest)

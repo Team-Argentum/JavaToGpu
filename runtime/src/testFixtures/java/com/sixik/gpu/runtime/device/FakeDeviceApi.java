@@ -1,7 +1,5 @@
 package com.sixik.gpu.runtime.device;
 
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -478,14 +476,14 @@ public final class FakeDeviceApi implements DeviceApi {
         return fresh();
     }
 
-    private final Map<Long, java.lang.foreign.Arena> livePinned = new java.util.HashMap<>();
+    private final Map<Long, HostArena> livePinned = new java.util.HashMap<>();
 
-    /** Закреплённая память фейка - обычная нативная память; отличается только учётом выделений. */
+    /** Закреплённая память фейка - обычная память кучи ({@link HeapMemory}); отличается только учётом выделений. */
     @Override
     public synchronized Pinned createPinned(long context, long queue, long size) {
         call("createPinned");
         long h = fresh();
-        java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared();
+        HostArena arena = HeapMemory.arena(HostArena.Kind.SHARED);
         livePinned.put(h, arena);
         return new Pinned(h, arena.allocate(Math.max(size, 8), 8));
     }
@@ -493,7 +491,7 @@ public final class FakeDeviceApi implements DeviceApi {
     @Override
     public synchronized void releasePinned(long queue, Pinned pinned) {
         call("releasePinned");
-        java.lang.foreign.Arena arena = livePinned.remove(pinned.buffer());
+        HostArena arena = livePinned.remove(pinned.buffer());
         if (arena == null) {
             throw new IllegalStateException("pinned buffer released twice or never created");
         }
@@ -509,17 +507,17 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public synchronized void writeBuffer(long queue, long buffer, long offset, long size, MemorySegment src) {
+    public synchronized void writeBuffer(long queue, long buffer, long offset, long size, HostMemory src) {
         call("writeBuffer");
         writes++;
-        MemorySegment.copy(src, ValueLayout.JAVA_BYTE, 0, bufferData.get(buffer), (int) offset, (int) size);
+        src.copyTo(0, bufferData.get(buffer), (int) offset, (int) size);
     }
 
     @Override
-    public synchronized void readBuffer(long queue, long buffer, long offset, long size, MemorySegment dst) {
+    public synchronized void readBuffer(long queue, long buffer, long offset, long size, HostMemory dst) {
         call("readBuffer");
         reads++;
-        MemorySegment.copy(bufferData.get(buffer), (int) offset, dst, ValueLayout.JAVA_BYTE, 0, (int) size);
+        dst.copyFrom(bufferData.get(buffer), (int) offset, 0, (int) size);
     }
 
     @Override
@@ -624,10 +622,10 @@ public final class FakeDeviceApi implements DeviceApi {
     }
 
     @Override
-    public synchronized void setArgBytes(long kernel, int index, MemorySegment value, long size) {
+    public synchronized void setArgBytes(long kernel, int index, HostMemory value, long size) {
         call("setArgBytes");
         byte[] copy = new byte[(int) size];
-        MemorySegment.copy(value, ValueLayout.JAVA_BYTE, 0, copy, 0, (int) size);
+        value.copyTo(0, copy, 0, (int) size);
         kernelArgs.get(kernel)[index] = copy;
     }
 
