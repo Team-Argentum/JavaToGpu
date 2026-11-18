@@ -83,6 +83,7 @@ GPU0303 error   Class {0} of the called method {1} is not found on the classpath
 GPU0304 error   Control flow of {0} cannot be structured (irreducible) | GPU code is compiled from the structured control flow that javac produces for the allowed Java code
 GPU0305 error   Operand stack is not empty at a join that is not a conditional expression in {0} | GPU code is compiled from the subset that javac produces for the allowed Java code
 GPU0306 error   Class file {0} cannot be read: {1} | Rebuild the class; check that its version is supported by ASM
+GPU0311 error   Entry point {0}: {1} | Entry points of AsmJit name an existing static method; give @Kernel elements either by the annotation or by the entry, not both
 
 # --- internal errors ----------------------------------------------------------------------------
 GPU0901 error   The IR of kernel {0} failed validation: {1} | Internal frontend error or an IR contract violation; report it with a code sample

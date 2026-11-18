@@ -70,6 +70,12 @@ final class ModuleBuilder {
         boolean effects;
         /** Стейтменты уже строились (повторные построения не выдают диагностик). */
         boolean lowered;
+        /**
+         * Явные элементы {@code @Kernel}/{@code @WorkGroup} точки входа {@link AsmJit} без аннотации на методе
+         * (18.4 {@code Entry}); {@code null} - атрибуты из аннотаций.
+         */
+        Map<String, Object> entryKernel;
+        Map<String, Object> entryWorkGroup;
 
         Unit(String key, ClassNode cn, MethodNode decl, MethodNode body, boolean kernel, boolean reduction) {
             this.key = key;
@@ -105,6 +111,11 @@ final class ModuleBuilder {
     private final Set<String> missing = new HashSet<>();
     private final Map<String, Unit> units = new HashMap<>();
     private final Set<String> reportedCycles = new HashSet<>();
+    /**
+     * Классы, сгенерированные программой (18.2-S1, {@link AsmJit}): это целиком GPU-код, поэтому их статические методы
+     * вызываются как device-функции и без {@code @DeviceFunction} (контракт 18.3).
+     */
+    private final Set<String> generated = new HashSet<>();
 
     ModuleBuilder(ClassSource source, List<AsmDiagnostic> diags) {
         this.source = source;
@@ -114,6 +125,44 @@ final class ModuleBuilder {
     /** Класс, уже прочитанный вызывающим ({@code compile} перечисляет ядра его методов). */
     void add(ClassNode cn) {
         classes.put(cn.name, cn);
+    }
+
+    /**
+     * Класс, сгенерированный программой: деревом, без {@code ClassReader} (18.2-S1).
+     *
+     * @param cn узел класса
+     */
+    void addGenerated(ClassNode cn) {
+        classes.put(cn.name, cn);
+        generated.add(cn.name);
+    }
+
+    /**
+     * @param internal внутреннее имя класса
+     * @return узел класса (сгенерированный, прочитанный ранее или из {@link ClassSource}) либо {@code null}
+     */
+    ClassNode find(String internal) {
+        return classNode(internal);
+    }
+
+    /**
+     * Объявляет метод без {@code @Kernel} точкой входа с явными атрибутами (18.4 {@code Entry}). Вызывается до
+     * {@link #build} этого метода.
+     *
+     * @param cn        класс
+     * @param mn        метод
+     * @param kernel    явные элементы {@code @Kernel}
+     * @param workGroup явные элементы {@code @WorkGroup} либо {@code null}
+     */
+    void declareEntry(ClassNode cn, MethodNode mn, Map<String, Object> kernel, Map<String, Object> workGroup) {
+        String key = MethodLowerer.key(cn.name, mn.name, mn.desc);
+        Unit u = units.get(key);
+        if (u == null) {
+            u = new Unit(key, cn, mn, bodyOf(cn, mn), true, false);
+            units.put(key, u);
+        }
+        u.entryKernel = kernel;
+        u.entryWorkGroup = workGroup;
     }
 
     /**
@@ -329,12 +378,14 @@ final class ModuleBuilder {
         if (u.kernel) {
             AnnotationNode k = Annotations.find(mn.invisibleAnnotations, Annotations.KERNEL);
             AnnotationNode wg = Annotations.find(mn.invisibleAnnotations, Annotations.WORK_GROUP);
-            Map<String, Object> explicit = Annotations.explicitValues(k);
+            // точка входа AsmJit без аннотации: элементы заданы явно в Entry (18.4)
+            Map<String, Object> explicit = k != null ? Annotations.explicitValues(k)
+                    : u.entryKernel != null ? u.entryKernel : Map.of();
+            Map<String, Object> group = wg != null ? Annotations.explicitValues(wg) : u.entryWorkGroup;
             if (explicit.get("fallback") instanceof String fb && !fb.isEmpty()) {
                 u.fallbackName = fb;
             }
-            u.attrs = KernelAttributes.parse(mn.name, explicit,
-                    wg == null ? null : Annotations.explicitValues(wg),
+            u.attrs = KernelAttributes.parse(mn.name, explicit, group,
                     (code, args) -> report(u, code, u.line, args));
         }
         boolean ok;
@@ -372,9 +423,12 @@ final class ModuleBuilder {
             }
             for (MethodNode m : cn.methods) {
                 if (m.name.equals(mi.name) && m.desc.equals(mi.desc)) {
-                    boolean device = Annotations.find(m.invisibleAnnotations, Annotations.DEVICE_FUNCTION) != null;
+                    // у сгенерированного класса device-функция - любой статический метод (контракт 18.3)
+                    boolean device = Annotations.find(m.invisibleAnnotations, Annotations.DEVICE_FUNCTION) != null
+                            || generated.contains(cn.name) && (m.access & Opcodes.ACC_STATIC) != 0;
                     boolean kernel = Annotations.find(m.invisibleAnnotations, Annotations.KERNEL) != null
-                            || Annotations.find(m.invisibleAnnotations, Annotations.REDUCTION) != null;
+                            || Annotations.find(m.invisibleAnnotations, Annotations.REDUCTION) != null
+                            || isDeclaredEntry(cn, m);
                     if (!device || kernel) {
                         report(caller, "GPU0113", c.line(), shown);
                         return null;
@@ -386,6 +440,12 @@ final class ModuleBuilder {
         }
         report(caller, "GPU0113", c.line(), shown);
         return null;
+    }
+
+    /** Метод объявлен точкой входа {@link #declareEntry} (вызов ядра из ядра - {@code GPU0113}, как с аннотацией). */
+    private boolean isDeclaredEntry(ClassNode cn, MethodNode m) {
+        Unit u = units.get(MethodLowerer.key(cn.name, m.name, m.desc));
+        return u != null && u.kernel && u.entryKernel != null;
     }
 
     private ClassNode classNode(String internal) {

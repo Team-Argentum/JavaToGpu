@@ -261,8 +261,11 @@ public final class AsmFrontend {
         }
     }
 
-    /** Любой сбой фронтенда на ядре - {@code GPU0902} для этого ядра, а не падение сборки. */
-    private static Kernel guarded(ModuleBuilder mb, ClassNode cn, MethodNode mn, boolean reduction, Options options,
+    /**
+     * Любой сбой фронтенда на ядре - {@code GPU0902} для этого ядра, а не падение сборки. Общий путь для
+     * {@link #compile} и {@link AsmJit#compile}: сборка модуля, валидатор, проверка шаблона {@code @Reduction}.
+     */
+    static Kernel guarded(ModuleBuilder mb, ClassNode cn, MethodNode mn, boolean reduction, Options options,
                                   List<AsmDiagnostic> diags) {
         String cls = cn.name.replace('/', '.');
         try {

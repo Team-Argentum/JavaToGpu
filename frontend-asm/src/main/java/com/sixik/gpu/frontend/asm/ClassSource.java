@@ -43,4 +43,29 @@ public interface ClassSource {
     static ClassSource of(Map<String, byte[]> classes) {
         return classes::get;
     }
+
+    /**
+     * Несколько источников по порядку: класс берётся из первого, где он есть (например, классы мода, затем
+     * загрузчик игры).
+     *
+     * @param sources источники в порядке поиска
+     * @return источник
+     */
+    static ClassSource chain(ClassSource... sources) {
+        ClassSource[] copy = sources.clone();
+        return name -> {
+            for (ClassSource s : copy) {
+                byte[] b = s.bytes(name);
+                if (b != null) {
+                    return b;
+                }
+            }
+            return null;
+        };
+    }
+
+    /** @return источник без классов */
+    static ClassSource empty() {
+        return name -> null;
+    }
 }

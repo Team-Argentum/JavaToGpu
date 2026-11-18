@@ -153,6 +153,20 @@ class DiagnosticsTest {
         assertTrue(d.get(0).message().contains("t.Missing") && d.get(0).message().contains("Missing.f"), d.toString());
     }
 
+    /** {@code GPU0311}: точка входа {@link AsmJit} без метода и с атрибутами, заданными дважды. */
+    @Test
+    void badAsmJitEntriesAreReported() throws IOException {
+        String internal = IndexKernels.class.getName().replace('.', '/');
+        AsmJit.Unit unit = new AsmJit.Unit(ClassSource.of(Map.of(internal, corpusClass(IndexKernels.class))), null,
+                List.of(AsmJit.Entry.of(internal, "noSuchKernel", "()V"),
+                        new AsmJit.Entry(internal, "sine", "([F[F)V", null, Map.of("x", 64))));
+        AsmJit.Result r = AsmJit.compile(unit, AsmJit.Options.DEFAULT);
+        r.diagnostics().forEach(d -> covered.add(d.code()));
+        assertEquals(List.of("GPU0311", "GPU0311"), r.diagnostics().stream().map(AsmDiagnostic::code).toList(),
+                r.diagnostics().toString());
+        assertTrue(r.diagnostics().get(1).message().contains("both"), r.diagnostics().toString());
+    }
+
     @Test
     void everyBytecodeOnlyCodeIsCovered() throws IOException {
         classWithoutLocalVariableTableIsRejected();
@@ -161,6 +175,7 @@ class DiagnosticsTest {
         irreducibleControlFlowIsRejected();
         valueOnTheStackAcrossALoopIsRejected();
         calleeClassMissingFromTheClasspathIsReported();
+        badAsmJitEntriesAreReported();
         Set<String> table = Diag.codes().stream().filter(c -> c.startsWith("GPU03"))
                 .collect(Collectors.toCollection(TreeSet::new));
         assertFalse(table.isEmpty());

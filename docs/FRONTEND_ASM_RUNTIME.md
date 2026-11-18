@@ -299,7 +299,7 @@ public record Result(IrModule module,                   // много KERNEL-ф�
                      List<String> entryNames,
                      List<AsmDiagnostic> diagnostics) { public boolean ok(); }
 
-// ClassSource: + chain(ClassSource...), + ofNodes(Map<String, ClassNode>)
+// ClassSource: + chain(ClassSource...), + empty(); сгенерированное - в Unit.generated (вместо ofNodes, B1)
 // Bindings:    constant(owner, field, Object boxedPrimitive), table(owner, field, Object primitiveArray)  // table — 18.6-5
 // Links:       redirect(owner, name, desc, toOwner, toName, toDesc)
 ```
@@ -310,10 +310,20 @@ public record ClProgram(String source, String buildOptions, List<KernelAbi> kern
 public static Result<ClProgram> program(IrModule module, EmitOptions options);
 ```
 
+**Сделано в B1 (2026-11-18).** `AsmJit.compile(Unit, Options)`, `Unit(classes, generated, entries)`,
+`Entry(owner, name, desc, kernel, workGroup)` (элементы `@Kernel` и `@WorkGroup` раздельно, как у аннотаций; `null` —
+из аннотации метода или по умолчанию), `Options(strictBarriers)`. До B4 `Result` — список `Kernel(entry, module, kernelId)`
+по одному модулю на точку входа; поля `Bindings`, `Links`, `Lvt`, `budget` появятся в своих шагах. Статические методы
+классов из `generated` вызываются без `@DeviceFunction` (контракт 18.3), классы из `classes` — только с ней. Ошибки
+точки входа (`GPU0306`, `GPU0311`, ошибки тела) пропускают только её. Тест `AsmJitTest`: корпус 17.14 через `ClassSource`
+и через деревья `ClassNode` даёт тот же IR и `kernelId`, что `AsmFrontend.compile`; класс без аннотаций с атрибутами
+в `Entry` совпадает с аннотированным исходником.
+
 **Новые диагностики** (группа `GPU03xx`, `diagnostics.def`):
 
 | Код | Сообщение |
 |---|---|
+| `GPU0311` | Entry point {0}: {1} (нет метода; элементы `@Kernel` заданы и аннотацией, и `Entry`) — B1 |
 | `GPU0307` | Slot {0} of {1} holds incompatible types {2} in one variable (synthesized LVT) |
 | `GPU0308` | Binding of {0} has type {1}, the field is {2} |
 | `GPU0309` | Call to {0}: no link, or the link target {1} has another descriptor |
@@ -366,7 +376,7 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 | Шаг | Содержание | Готово, когда |
 |---|---|---|
 | **B0** | ✅ частично (18.8a): масштаб фронтенда, исправление `chain`, ASM 9.7. Осталось: роутеры GA2, решения 18.6. Замеры до кода: размер узлов и методов роутеров vanilla, Terralith и Tectonic в форме контракта (генератор-прототип вне репозитория); время и глубина рекурсии `Cfg/Structurer/Scopes`; проверка `frontend-asm --release 17` с ASM 9.7 | цифры и найденные рекурсии записаны в 18.8; решения 18.6 приняты |
-| **B1** | `AsmJit`, `Unit`, вход `ClassNode`, `ClassSource.chain/ofNodes`, явные `entries` | корпус 17.14 через `AsmJit` даёт тот же IR, что `compile` |
+| **B1** | ✅ (18.4): `AsmJit`, `Unit`, вход `ClassNode`, `ClassSource.chain`, явные `entries`, `GPU0311` | корпус 17.14 через `AsmJit` даёт тот же IR, что `compile` |
 | **B2** | `LvtSynth` (`SYNTHESIZE`), `GPU0307`, позиции-узлы | корпус со стёртыми LVT и строками: то же поведение; IR — с пунктами (а)(г) 17.14-3 |
 | **B3** | `Bindings` (константы), `Links`, `@Extern`, `GPU0308/0309` | тесты на `ClassWriter`: свёртка флага убирает ветку; библиотека ↔ сгенерированное в обе стороны |
 | **B4** | Модуль с многими точками входа: IR, валидатор, `IrBinary`, кодоген, `F_INLINE`, `@DeviceFunction(inline)` | модуль из 3 ядер с общей функцией: одна копия функции в исходнике; `noinline` в выводе; `kernelId` одиночного ядра не изменился |
