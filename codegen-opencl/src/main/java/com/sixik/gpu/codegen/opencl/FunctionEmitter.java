@@ -185,6 +185,10 @@ final class FunctionEmitter {
                         + Math.max(1, z) + ")))");
             }
         }
+        if (!kernel && m.fInline(f) == IrModule.INLINE_NEVER) {
+            // @DeviceFunction(inline = NEVER): общая функция компилируется один раз, а не в каждом месте вызова (18.2-S4)
+            line("__attribute__((noinline))");
+        }
         List<String> params = new ArrayList<>();
         for (int i = 0; i < m.fParamCount(f); i++) {
             int t = m.fParamType(f, i);

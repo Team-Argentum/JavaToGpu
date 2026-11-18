@@ -73,54 +73,121 @@ public final class OpenClEmitter {
         if (kernel < 0 || kernel >= m.functionCount()) {
             return fail("CG-A00", kernel, -1, "no function in the module " + kernel);
         }
+        Result<Program> p = emitKernels(m, new int[]{kernel}, target, options);
+        if (!p.isOk()) {
+            return Result.failed(p.diagnostics());
+        }
+        Program pr = p.value();
+        Program.Kernel k = pr.kernels().get(0);
+        return new Result<>(new Artifact(pr.source(), k.entry(), k.args(), pr.requiredFeatures(), pr.buildOptions(),
+                target, options), p.diagnostics());
+    }
+
+    /**
+     * Генерирует OpenCL C для всех ядер модуля одной программой (FRONTEND_ASM_RUNTIME.md, 18.2-S4, шаг B4): каждая
+     * функция печатается один раз, все функции вида {@link IrModule#KERNEL} - {@code __kernel}. Флаги {@code fp} общей
+     * функции - пересечение флагов всех ядер, которые её достигают; {@code native_*} - так же. Для модуля с одним
+     * ядром текст совпадает с {@link #emit(IrModule, int, Target, EmitOptions)}.
+     *
+     * @param m       модуль
+     * @param target  цель
+     * @param options параметры генерации
+     * @return программа либо диагностики ({@code CG-A01}, если в модуле нет ядер)
+     */
+    public static Result<Program> emitProgram(IrModule m, Target target, EmitOptions options) {
+        if (m == null || target == null || options == null) {
+            throw new IllegalArgumentException("module, target and options are required");
+        }
+        List<Integer> ks = new ArrayList<>();
+        for (int f = 0; f < m.functionCount(); f++) {
+            if (m.fKind(f) == IrModule.KERNEL) {
+                ks.add(f);
+            }
+        }
+        if (ks.isEmpty()) {
+            Validator.Report report = Validator.validate(m);
+            if (report.hasErrors()) {
+                return Result.failed(errors(report));
+            }
+            return fail("CG-A01", -1, -1, "the module has no kernel");
+        }
+        return emitKernels(m, ks.stream().mapToInt(Integer::intValue).toArray(), target, options);
+    }
+
+    private static List<Diagnostic> errors(Validator.Report report) {
+        List<Diagnostic> errors = new ArrayList<>();
+        for (Diagnostic d : report.diagnostics()) {
+            if (d.isError()) {
+                errors.add(d);
+            }
+        }
+        return errors;
+    }
+
+    private static Result<Program> emitKernels(IrModule m, int[] kernels, Target target, EmitOptions options) {
         Validator.Report report = Validator.validate(m);
         if (report.hasErrors()) {
-            List<Diagnostic> errors = new ArrayList<>();
-            for (Diagnostic d : report.diagnostics()) {
-                if (d.isError()) {
-                    errors.add(d);
+            return Result.failed(errors(report));
+        }
+        int n = m.functionCount();
+        boolean[] isKernel = new boolean[n];
+        boolean[] reach = new boolean[n];
+        boolean[][] reachOf = new boolean[kernels.length][];
+        int[] fp = new int[n];
+        java.util.Arrays.fill(fp, -1);
+        int features = 0;
+        List<Diagnostic> unsupported = new ArrayList<>();
+        for (int i = 0; i < kernels.length; i++) {
+            int k = kernels[i];
+            if (m.fKind(k) != IrModule.KERNEL) {
+                return fail("CG-A01", k, -1, "function " + k + " is not a kernel");
+            }
+            isKernel[k] = true;
+            boolean[] r = Support.reachable(m, k);
+            reachOf[i] = r;
+            unsupported.addAll(Support.check(m, k, r));
+            for (int f = 0; f < n; f++) {
+                if (r[f]) {
+                    reach[f] = true;
+                    fp[f] &= m.fFp(k);
                 }
             }
-            return Result.failed(errors);
+            features |= report.functions()[k].requiredFeatures();
         }
-        if (m.fKind(kernel) != IrModule.KERNEL) {
-            return fail("CG-A01", kernel, -1, "function " + kernel + " is not a kernel");
-        }
-        boolean[] reach = Support.reachable(m, kernel);
-        List<Diagnostic> unsupported = Support.check(m, kernel, reach);
         if (!unsupported.isEmpty()) {
             return Result.failed(unsupported);
         }
 
-        int features = report.functions()[kernel].requiredFeatures();
         Names global = new Names();
-        String[] funcNames = new String[m.functionCount()];
-        for (int f = 0; f < funcNames.length; f++) {
+        String[] funcNames = new String[n];
+        for (int f = 0; f < n; f++) {
             if (reach[f]) {
                 String wanted = options.debug() ? m.debug().functionName(f) : null;
-                funcNames[f] = global.unique(wanted, (f == kernel ? "k" : "f") + f);
+                funcNames[f] = global.unique(wanted, (isKernel[f] ? "k" : "f") + f);
             }
         }
 
-        // native_* - только для ядер с fp=native и только там, где их точность проверена на устройстве
-        int nativeMath = (m.fFp(kernel) & IrModule.FP_NATIVE) != 0 ? target.nativeMath() : 0;
         Helpers helpers = new Helpers();
         Layouts layouts = new Layouts(m, Support.usedTypes(m, reach), options.debug(), global);
         StringBuilder bodies = new StringBuilder();
-        List<KernelArg> args = new ArrayList<>();
-        for (int f = 0; f < funcNames.length; f++) {
+        java.util.Map<Integer, List<KernelArg>> args = new java.util.HashMap<>();
+        for (int f = 0; f < n; f++) {
             if (!reach[f]) {
                 continue;
             }
+            // native_* - только для функций, чьи ядра все разрешили fp=native, и только там, где точность проверена
+            int nativeMath = (fp[f] & IrModule.FP_NATIVE) != 0 ? target.nativeMath() : 0;
             FunctionEmitter fe = new FunctionEmitter(m, f, options, helpers, layouts, funcNames, global, nativeMath,
-                    m.fFp(kernel));
-            if (f == kernel) {
-                kernelArgs(m, f, fe, args);
+                    fp[f]);
+            if (isKernel[f]) {
+                List<KernelArg> a = new ArrayList<>();
+                kernelArgs(m, f, fe, a);
+                args.put(f, a);
             }
             if (!bodies.isEmpty()) {
                 bodies.append('\n');
             }
-            bodies.append(fe.emit(f == kernel));
+            bodies.append(fe.emit(isKernel[f]));
         }
 
         StringBuilder src = new StringBuilder();
@@ -148,13 +215,25 @@ public final class OpenClEmitter {
         }
         src.append(bodies);
 
-        // точное деление и sqrt - опция ужесточает математику и только для ядер, не разрешивших приближения
-        boolean approximate = (m.fFp(kernel) & (IrModule.FP_RECIPROCAL | IrModule.FP_NATIVE)) != 0;
-        String buildOptions = target.exactDivideSqrt() && !approximate && Support.usesFloatDivideOrSqrt(m, reach)
-                ? Target.EXACT_DIVIDE_SQRT_OPTION : "";
-        Artifact artifact = new Artifact(src.toString(), funcNames[kernel], args, features,
-                buildOptions, target, options);
-        return new Result<>(artifact, report.diagnostics());
+        // точное деление и sqrt - опция ужесточает математику; нужна, если её требует хотя бы одно ядро, не разрешившее
+        // приближения (у одного ядра - как раньше)
+        boolean exact = false;
+        for (int i = 0; i < kernels.length; i++) {
+            boolean approximate = (m.fFp(kernels[i]) & (IrModule.FP_RECIPROCAL | IrModule.FP_NATIVE)) != 0;
+            exact |= !approximate && Support.usesFloatDivideOrSqrt(m, reachOf[i]);
+        }
+        String buildOptions = target.exactDivideSqrt() && exact ? Target.EXACT_DIVIDE_SQRT_OPTION : "";
+        List<Program.Kernel> ks = new ArrayList<>();
+        for (int f = 0; f < n; f++) {
+            if (isKernel[f]) {
+                ks.add(new Program.Kernel(f, funcNames[f], args.get(f)));
+            }
+        }
+        if (kernels.length == 1) {
+            ks = List.of(new Program.Kernel(kernels[0], funcNames[kernels[0]], args.get(kernels[0])));
+        }
+        return new Result<>(new Program(src.toString(), ks, features, buildOptions, target, options),
+                report.diagnostics());
     }
 
     /** Раскрывает параметры ядра в аргументы OpenCL (8.2): массив даёт указатель и длину. */
@@ -170,7 +249,7 @@ public final class OpenClEmitter {
         }
     }
 
-    private static Result<Artifact> fail(String code, int function, int node, String message) {
+    private static <T> Result<T> fail(String code, int function, int node, String message) {
         return Result.failed(List.of(new Diagnostic(code, Diagnostic.Severity.ERROR, function, node, message)));
     }
 }

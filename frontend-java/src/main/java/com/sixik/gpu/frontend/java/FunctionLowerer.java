@@ -217,6 +217,17 @@ final class FunctionLowerer {
         fns.put(method, info);
         if (kernel) {
             attrs.apply(b, fallbackIndex);
+        } else {
+            com.sixik.gpu.api.annotations.DeviceFunction df =
+                    method.getAnnotation(com.sixik.gpu.api.annotations.DeviceFunction.class);
+            if (df != null) {
+                // @DeviceFunction(inline = ...) - политика функции в IR (18.2-S4); как у frontend-asm
+                b.inlinePolicy(switch (df.inline()) {
+                    case ALWAYS -> IrModule.INLINE_ALWAYS;
+                    case NEVER -> IrModule.INLINE_NEVER;
+                    default -> IrModule.INLINE_DEFAULT;
+                });
+            }
         }
         b.nameFunction(method.getSimpleName().toString());
         b.nameParams(pnames);

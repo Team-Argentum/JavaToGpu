@@ -138,6 +138,30 @@ public final class RouterLinks {
   4. **Рантайм:** `GpuContext.compileProgram(IrModule) → CompiledProgram { CompiledKernel kernel(String) }` — одна
      сборка драйвером на все точки входа, общий дисковый кэш.
 
+- **Сделано в B4 (2026-11-18).** Отличия от проекта выше:
+  - **IR не менялся.** Несколько функций `KERNEL` в модуле валидатор допускал и раньше, поэтому таблица `entries`,
+    `moduleId` и новая версия `IrBinary` не понадобились. Точки входа модуля — его функции `KERNEL` по порядку, имена —
+    в секции `debug`, уникальность имён в тексте обеспечивает генератор (`Names`).
+  - **`kernelId` точки входа** — хэш её одиночного модуля (`AsmJit.Kernel.module`), а не хэш выреза из общего модуля:
+    порядок общих функций в общем модуле зависит от соседних ядер. Поэтому кэш одиночных ядер не меняется. Цена — каждая
+    точка входа строится дважды (одиночно и в общем модуле); B7 может кэшировать понижение функций.
+  - **`ModuleBuilder.buildProgram`**: функции объединения замыканий — по разу, порядок — обход `order` от каждого ядра
+    по очереди; для одного ядра модуль тот же, что раньше. `AsmJit.Result.module()` — общий модуль,
+    `AsmJit.Kernel.function` — индекс ядра в нём.
+  - **Кодоген:** `OpenClEmitter.emitProgram(IrModule, Target, EmitOptions) → Program(source, kernels[function, entry,
+    args], requiredFeatures, buildOptions)`. Одиночный `emit` идёт тем же путём, текст прежний (golden-тесты). `fp`
+    общей функции — пересечение `fp` достигающих её ядер (так же `native_*`); `requiredFeatures` — объединение;
+    `-cl-fp32-correctly-rounded-divide-sqrt` — если его требует хотя бы одно ядро.
+  - **`inline`:** `@DeviceFunction(inline = InlinePolicy.NEVER)` (перечисление `InlinePolicy` уже было в `api`) читают
+    оба фронтенда; `INLINE_NEVER` у device-функции печатается `__attribute__((noinline))`. `ALWAYS` пока только
+    записывается в IR: встраивающего прохода в оптимизаторе нет.
+  - **Проверка.** `ProgramTest`: одна копия общей функции, `noinline`, три `__kernel`, пересечение `fp`.
+    `ProgramDeviceTest` (RTX 5070): драйвер NVIDIA собирает программу с `noinline` одной сборкой, каждое ядро совпадает
+    с интерпретатором. `AsmJitProgramTest`: три ядра с общей функцией — IR одиночных и политика `inline` совпадают с
+    `frontend-java`, `kernelId` прежний, функция общего модуля исполняется как одиночный модуль; весь корпус 17.14 по
+    классам (одна единица на класс) — то же самое.
+  - **Не сделано:** рантайм (п. 4, `compileProgram`) — перенесён в B6 вместе с `ClProgram`/`KernelAbi`.
+
 ### S5. Состояние work-item: контекст, memo, RNG
 
 - **Нужно:** `Ctx* c` в GA2 — это координаты, базы таблиц, memo (`R mv[NM]; uchar mk[NM]`, ленивое заполнение при первом
@@ -346,8 +370,9 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 
 **Сделано в B1 (2026-11-18).** `AsmJit.compile(Unit, Options)`, `Unit(classes, generated, entries)`,
 `Entry(owner, name, desc, kernel, workGroup)` (элементы `@Kernel` и `@WorkGroup` раздельно, как у аннотаций; `null` —
-из аннотации метода или по умолчанию), `Options(strictBarriers)`. До B4 `Result` — список `Kernel(entry, module, kernelId)`
-по одному модулю на точку входа; поля `Bindings`, `Links`, `Lvt`, `budget` появятся в своих шагах. Статические методы
+из аннотации метода или по умолчанию), `Options(strictBarriers)`. `Result(module, kernels, diagnostics)`: с B4 `module` —
+общий модуль всех точек входа, `Kernel(entry, module, kernelId, function)` — одиночный модуль точки, его `kernelId` и
+индекс точки в общем модуле; поля `Bindings`, `Links`, `Lvt`, `budget` появятся в своих шагах. Статические методы
 классов из `generated` вызываются без `@DeviceFunction` (контракт 18.3), классы из `classes` — только с ней. Ошибки
 точки входа (`GPU0306`, `GPU0311`, ошибки тела) пропускают только её. Тест `AsmJitTest`: корпус 17.14 через `ClassSource`
 и через деревья `ClassNode` даёт тот же IR и `kernelId`, что `AsmFrontend.compile`; класс без аннотаций с атрибутами
@@ -413,9 +438,9 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 | **B1** | ✅ (18.4): `AsmJit`, `Unit`, вход `ClassNode`, `ClassSource.chain`, явные `entries`, `GPU0311` | корпус 17.14 через `AsmJit` даёт тот же IR, что `compile` |
 | **B2** | ✅ (S7): `LvtSynth` (`SYNTHESIZE`), `GPU0307`, позиции-узлы | корпус со стёртыми LVT и строками: то же поведение; IR — с пунктами (а)(г) 17.14-3 |
 | **B3** | ✅ (S2, S3): `Bindings` (константы), `Links`, `@Extern`, `GPU0308/0309` | тесты на `ClassWriter`: свёртка флага убирает ветку; библиотека ↔ сгенерированное в обе стороны |
-| **B4** | Модуль с многими точками входа: IR, валидатор, `IrBinary`, кодоген, `F_INLINE`, `@DeviceFunction(inline)` | модуль из 3 ядер с общей функцией: одна копия функции в исходнике; `noinline` в выводе; `kernelId` одиночного ядра не изменился |
+| **B4** | ✅ (S4; IR и `IrBinary` менять не понадобилось, рантайм `compileProgram` — в B6): модуль с многими точками входа, кодоген, `F_INLINE`, `@DeviceFunction(inline)` | модуль из 3 ядер с общей функцией: одна копия функции в исходнике; `noinline` в выводе; `kernelId` одиночного ядра не изменился |
 | **B5** | `exact`, JDK-интринсики (общие с `frontend-java`), тест неспекулятивности оптимизатора, `GPU0310` | F64-образцы: интерпретатор = JVM побитово на `opt=0..3`; `Math.sin` в `exact` даёт `GPU0310` |
-| **B6** | ✅ частично: `runtime` и компиляторная часть под `--release 17`, бэкенды `runtime-opencl-ffm/-lwjgl`, `:runtime:deviceTestLwjgl`. Осталось: CI на JDK 17, `ClProgram`/`KernelAbi`, проверка в dev-клиенте | моды NeoForge 1.21.1, Fabric и версия на Java 17 (1.20.1) запускают ядро через `runtime-opencl-lwjgl` |
+| **B6** | ✅ частично: `runtime` и компиляторная часть под `--release 17`, бэкенды `runtime-opencl-ffm/-lwjgl`, `:runtime:deviceTestLwjgl`. Осталось: CI на JDK 17, `ClProgram`/`KernelAbi`, `GpuContext.compileProgram` (перенесено из B4), проверка в dev-клиенте | моды NeoForge 1.21.1, Fabric и версия на Java 17 (1.20.1) запускают ядро через `runtime-opencl-lwjgl` |
 | **B7** | Масштаб: итеративные алгоритмы, `budget`, детерминизм | роутер B0 укладывается в бюджет; два прогона дают одинаковый `moduleId` |
 | **B8** | **Пилот GA2:** `DfNoise`, `DfSpline`, `Jm` на Java; `GpuEmitter` для `FLAT`, `HOIST`, `CORNER` в F64; ядра `k_flat`, `k_hoist`, `k_corner` | критерии 18.8 |
 | **B9** | Остальные контексты, аквифер, жилы, биомы, упаковка, certified F32; затем `SurfaceSpec`, `LightProgram`; удаление `ClEmitter` | `GpuVerify` GA2 зелёный без `ClEmitter` |

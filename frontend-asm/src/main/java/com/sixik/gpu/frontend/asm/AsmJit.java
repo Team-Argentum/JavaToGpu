@@ -152,19 +152,24 @@ public final class AsmJit {
      * Построенная точка входа.
      *
      * @param entry    точка входа
-     * @param module   модуль IR (ядро - последняя функция)
-     * @param kernelId хэш модуля ({@code IrBinary.kernelId}), ключ кэша рантайма
+     * @param module   модуль IR только этой точки (ядро - последняя функция), как у {@link AsmFrontend}
+     * @param kernelId хэш {@code module} ({@code IrBinary.kernelId}): ключ кэша одиночного ядра; не зависит от того,
+     *                 какие ещё точки входа в единице
+     * @param function индекс функции этой точки в общем модуле {@link Result#module()}
      */
-    public record Kernel(Entry entry, IrModule module, String kernelId) {
+    public record Kernel(Entry entry, IrModule module, String kernelId, int function) {
     }
 
     /**
      * Результат.
      *
+     * @param module      общий модуль всех построенных точек входа (18.2-S4, шаг B4): каждая функция - один раз,
+     *                    вызываемые раньше вызывающих, ядра - в порядке точек входа; {@code null}, если не построено
+     *                    ни одной точки. Генератор печатает его одной программой ({@code OpenClEmitter.emitProgram})
      * @param kernels     построенные точки входа в порядке {@link Unit#entries()} (без точек с ошибками)
      * @param diagnostics все диагностики по порядку
      */
-    public record Result(List<Kernel> kernels, List<AsmDiagnostic> diagnostics) {
+    public record Result(IrModule module, List<Kernel> kernels, List<AsmDiagnostic> diagnostics) {
         /** @return {@code true}, если среди диагностик нет ошибок */
         public boolean ok() {
             return diagnostics.stream().noneMatch(AsmDiagnostic::error);
@@ -194,6 +199,9 @@ public final class AsmJit {
             mb.addGenerated(cn);
         }
         AsmFrontend.Options fo = new AsmFrontend.Options(options.strictBarriers());
+        List<Map.Entry<ClassNode, MethodNode>> built = new ArrayList<>();
+        List<Entry> builtEntries = new ArrayList<>();
+        List<AsmFrontend.Kernel> singles = new ArrayList<>();
         for (Entry e : unit.entries()) {
             String cls = e.owner().replace('/', '.');
             ClassNode cn = mb.find(e.owner());
@@ -219,10 +227,50 @@ public final class AsmJit {
             }
             AsmFrontend.Kernel k = AsmFrontend.guarded(mb, cn, mn, reduction, fo, diags);
             if (k != null) {
-                kernels.add(new Kernel(e, k.module(), k.entry().kernelId()));
+                built.add(Map.entry(cn, mn));
+                builtEntries.add(e);
+                singles.add(k);
             }
         }
-        return new Result(List.copyOf(kernels), List.copyOf(diags));
+        if (built.isEmpty()) {
+            return new Result(null, List.of(), List.copyOf(diags));
+        }
+        ModuleBuilder.Built program = program(mb, built, options, diags);
+        if (program == null) {
+            return new Result(null, List.of(), List.copyOf(diags));
+        }
+        for (int i = 0; i < singles.size(); i++) {
+            AsmFrontend.Kernel k = singles.get(i);
+            kernels.add(new Kernel(builtEntries.get(i), k.module(), k.entry().kernelId(), program.functions()[i]));
+        }
+        return new Result(program.module(), List.copyOf(kernels), List.copyOf(diags));
+    }
+
+    /**
+     * Общий модуль точек входа, уже построенных по одной: те же функции, поэтому ошибок не ждём; сбой валидатора
+     * или сборки - {@code GPU0902} (внутренняя ошибка).
+     */
+    private static ModuleBuilder.Built program(ModuleBuilder mb, List<Map.Entry<ClassNode, MethodNode>> built, Options options,
+                                    List<AsmDiagnostic> diags) {
+        String cls = built.get(0).getKey().name.replace('/', '.');
+        String what = "module of " + built.size() + " entry points";
+        try {
+            ModuleBuilder.Built b = mb.buildProgram(built);
+            if (b == null) {
+                diags.add(AsmDiagnostic.of("GPU0902", cls, "", 0, what, "the module was not built"));
+                return null;
+            }
+            com.sixik.gpu.ir.Validator.Report report = com.sixik.gpu.ir.Validator.validate(b.module(),
+                    new com.sixik.gpu.ir.Validator.Options(options.strictBarriers()));
+            if (report.hasErrors()) {
+                diags.add(AsmDiagnostic.of("GPU0902", cls, "", 0, what, report.diagnostics()));
+                return null;
+            }
+            return b;
+        } catch (RuntimeException e) {
+            diags.add(AsmDiagnostic.of("GPU0902", cls, "", 0, what, e.getMessage() != null ? e.getMessage() : e));
+            return null;
+        }
     }
 
     /**

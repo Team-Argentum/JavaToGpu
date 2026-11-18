@@ -96,10 +96,11 @@ final class ModuleBuilder {
     /**
      * Построенный модуль.
      *
-     * @param module модуль IR (ещё не проверенный валидатором)
-     * @param line   первая строка ядра (позиция диагностик модуля)
+     * @param module    модуль IR (ещё не проверенный валидатором)
+     * @param line      первая строка ядра (позиция диагностик модуля)
+     * @param functions индексы функций-ядер в модуле, в порядке запрошенных ядер
      */
-    record Built(IrModule module, int line) {
+    record Built(IrModule module, int line, int[] functions) {
     }
 
     private static final String JVM_SUFFIX = "$jvm";
@@ -194,15 +195,40 @@ final class ModuleBuilder {
      * @return модуль либо {@code null}, если найдены ошибки (диагностики уже выданы)
      */
     Built build(ClassNode cn, MethodNode mn) {
-        Unit k = unit(cn, mn);
-        if (!prepare(k, new ArrayDeque<>())) {
-            return null;
+        return buildAll(List.of(unit(cn, mn)));
+    }
+
+    /**
+     * Строит один модуль с несколькими ядрами (18.2-S4, шаг B4): функции замыканий - по одному разу, вызываемые раньше
+     * вызывающих; ядра - в порядке списка, каждое после своих функций. Для одного ядра - тот же модуль, что
+     * {@link #build}.
+     *
+     * @param kernels пары класс → метод ядра (каждое уже построено {@link #build} без ошибок)
+     * @return модуль либо {@code null}, если найдены ошибки
+     */
+    Built buildProgram(List<Map.Entry<ClassNode, MethodNode>> kernels) {
+        List<Unit> ks = new ArrayList<>();
+        for (Map.Entry<ClassNode, MethodNode> e : kernels) {
+            ks.add(unit(e.getKey(), e.getValue()));
+        }
+        return buildAll(ks);
+    }
+
+    private Built buildAll(List<Unit> ks) {
+        for (Unit k : ks) {
+            if (!prepare(k, new ArrayDeque<>())) {
+                return null;
+            }
+        }
+        Set<Unit> all = new LinkedHashSet<>();
+        for (Unit k : ks) {
+            all.addAll(closure(k));
         }
         // стейтменты всех функций замыкания (порядок вызовов исходника берётся из них)
         Map<Unit, List<St>> bodies = new HashMap<>();
         Map<Unit, MethodLowerer> lowerers = new HashMap<>();
         int before = errorCount();
-        for (Unit u : closure(k)) {
+        for (Unit u : all) {
             MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), u.lowered ? new ArrayList<>() : diags, aggs);
             ml.bindings = bindings;
             ml.callees = mi -> callee(u, mi);
@@ -214,7 +240,9 @@ final class ModuleBuilder {
             return null;
         }
         List<Unit> order = new ArrayList<>();
-        order(k, bodies, order);
+        for (Unit k : ks) {
+            order(k, bodies, order);
+        }
 
         IrBuilder b = new IrBuilder();
         Aggs.IrTypes types = aggs.new IrTypes(b);
@@ -232,6 +260,9 @@ final class ModuleBuilder {
             if (u.attrs != null) {
                 u.attrs.apply(b, u.fallback == null ? -1 : fns.get(u.fallback.key));
             }
+            if (!u.kernel && !u.reduction) {
+                b.inlinePolicy(inlinePolicy(u.decl));
+            }
             b.nameFunction(u.name());
             b.nameParams(ml.paramNames);
             List<Integer> top = new Emitter(b, fns, types, aggs).body(ml.paramVars, ptypes, bodies.get(u));
@@ -242,7 +273,11 @@ final class ModuleBuilder {
             b.endFunction(b.block(root));
             fns.put(u.key, f);
         }
-        return new Built(b.build(), k.line);
+        int[] functions = new int[ks.size()];
+        for (int i = 0; i < functions.length; i++) {
+            functions[i] = fns.get(ks.get(i).key);
+        }
+        return new Built(b.build(), ks.get(0).line, functions);
     }
 
     // =============================================================================================
@@ -757,6 +792,19 @@ final class ModuleBuilder {
     }
 
     // =============================================================================================
+
+    /** Политика встраивания device-функции: {@code @DeviceFunction(inline = ...)} (18.2-S4). */
+    private static int inlinePolicy(MethodNode m) {
+        AnnotationNode a = Annotations.find(m.invisibleAnnotations, Annotations.DEVICE_FUNCTION);
+        Object v = a == null ? null : Annotations.explicitValues(a).get("inline");
+        // значение перечисления в AnnotationNode - пара {дескриптор, имя}
+        String name = v instanceof String[] e ? e[1] : v == null ? "DEFAULT" : v.toString();
+        return switch (name) {
+            case "ALWAYS" -> IrModule.INLINE_ALWAYS;
+            case "NEVER" -> IrModule.INLINE_NEVER;
+            default -> IrModule.INLINE_DEFAULT;
+        };
+    }
 
     /** @return первая строка метода ({@code LineNumberTable}) либо 0 */
     private static int firstLine(MethodNode m) {
