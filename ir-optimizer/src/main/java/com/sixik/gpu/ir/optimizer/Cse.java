@@ -119,8 +119,8 @@ final class Cse {
 
     // ---- ключи и кандидаты ---------------------------------------------------------------------
 
-    private String key(Tree e, State st, Map<Tree, String> memo) {
-        String cached = memo.get(e);
+    private Integer key(Tree e, State st, Map<Tree, Integer> memo) {
+        Integer cached = memo.get(e);
         if (cached != null) {
             return cached;
         }
@@ -151,17 +151,25 @@ final class Cse {
             default -> {
             }
         }
-        if (e.kids.length > 0) {
-            sb.append('(');
-            for (Tree k : e.kids) {
-                sb.append(key(k, st, memo)).append(',');
-            }
-            sb.append(')');
+        Integer[] kids = new Integer[e.kids.length];
+        for (int i = 0; i < kids.length; i++) {
+            kids[i] = key(e.kids[i], st, memo);
         }
-        String r = sb.toString();
+        Integer r = ids.computeIfAbsent(new Sig(sb.toString(), List.of(kids)), z -> ids.size());
         memo.put(e, r);
         return r;
     }
+
+    /**
+     * Сигнатура узла для интернирования ключей: собственная часть (операция, тип, константа, версии) и ключи детей.
+     * Прежде ключ был строкой всего поддерева, и на глубоком выражении (вложенный {@code ?:} роутера) память росла
+     * квадратично (шаг B7, FRONTEND_ASM_RUNTIME.md, S9); равенство ключей то же - структурное.
+     */
+    private record Sig(String head, List<Integer> kids) {
+    }
+
+    /** Интернированные ключи: одинаковая сигнатура - один номер (на весь проход по функции). */
+    private final Map<Sig, Integer> ids = new java.util.HashMap<>();
 
     private boolean eligible(Tree e, boolean conditional) {
         if (e.kids.length == 0 || e.isStmt() || !Costs.storable(src, e.type)) {
@@ -191,13 +199,13 @@ final class Cse {
         }
     }
 
-    private void collect(Tree e, int stmtIdx, State st, boolean conditional, Map<Tree, String> memo,
-                         Map<String, Cand> out) {
+    private void collect(Tree e, int stmtIdx, State st, boolean conditional, Map<Tree, Integer> memo,
+                         Map<Integer, Cand> out) {
         if (e.kids.length == 0) {
             return;
         }
         if (eligible(e, conditional)) {
-            String k = key(e, st, memo);
+            Integer k = key(e, st, memo);
             Cand c = out.get(k);
             if (c == null) {
                 c = new Cand(e, Costs.cost(e), stmtIdx);
@@ -210,11 +218,11 @@ final class Cse {
         }
     }
 
-    private Tree replace(Tree e, String key, int local, State st, boolean conditional, Map<Tree, String> memo) {
+    private Tree replace(Tree e, Integer key, int local, State st, boolean conditional, Map<Tree, Integer> memo) {
         if (e.kids.length == 0) {
             return e;
         }
-        if (eligible(e, conditional) && key(e, st, memo).equals(key)) {
+        if (eligible(e, conditional) && key(e, st, memo).intValue() == key.intValue()) {
             return Tree.ofImm(Op.LOCAL_GET, e.type, local);
         }
         Tree[] nk = null;
@@ -230,7 +238,7 @@ final class Cse {
         return nk == null ? e : e.withKids(nk);
     }
 
-    private Tree replaceInStmt(Tree s, String key, int local, State st, Map<Tree, String> memo) {
+    private Tree replaceInStmt(Tree s, Integer key, int local, State st, Map<Tree, Integer> memo) {
         switch (s.op) {
             case Op.LOCAL_DECL, Op.LOCAL_SET, Op.EXPR_STMT, Op.RETURN, Op.STORE -> {
                 Tree[] nk = null;
@@ -259,18 +267,18 @@ final class Cse {
     private Tree block(Tree b) {
         List<Tree> stmts = new ArrayList<>(List.of(b.kids));
         for (int round = 0; round < MAX_TEMPS_PER_BLOCK; round++) {
-            Map<String, Cand> cands = new LinkedHashMap<>();
+            Map<Integer, Cand> cands = new LinkedHashMap<>();
             State st = new State();
             for (int i = 0; i < stmts.size(); i++) {
-                Map<Tree, String> memo = new IdentityHashMap<>();
+                Map<Tree, Integer> memo = new IdentityHashMap<>();
                 for (Tree root : exprRoots(stmts.get(i))) {
                     collect(root, i, st, false, memo, cands);
                 }
                 st.advance(stmts.get(i));
             }
-            String bestKey = null;
+            Integer bestKey = null;
             long bestGain = 0;
-            for (Map.Entry<String, Cand> e : cands.entrySet()) {
+            for (Map.Entry<Integer, Cand> e : cands.entrySet()) {
                 Cand c = e.getValue();
                 long gain = (long) c.cost * (c.count - 1);
                 if (c.count >= 2 && gain > bestGain) {
@@ -291,7 +299,7 @@ final class Cse {
             State st2 = new State();
             for (int i = 0; i < stmts.size(); i++) {
                 if (i >= best.firstStmt) {
-                    Map<Tree, String> memo = new IdentityHashMap<>();
+                    Map<Tree, Integer> memo = new IdentityHashMap<>();
                     stmts.set(i, replaceInStmt(stmts.get(i), bestKey, local, st2, memo));
                 }
                 st2.advance(stmts.get(i));

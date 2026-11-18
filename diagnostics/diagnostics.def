@@ -88,6 +88,7 @@ GPU0308 error   Binding of {0}: {1} | Bind a static field of a primitive type wi
 GPU0309 error   Call to {0}: {1} | Link the @Extern stub to a generated method with the same descriptor (AsmJit Links); frontend-java does not link
 GPU0310 error   Kernel {0} is exact, but uses {1} ({2}) | An exact kernel is bitwise equal to the JVM: it uses no fp flags and only exact operations (arithmetic, conversions, sqrt, fma, min, max and the JDK intrinsics such as Math.floor); approximate builtins like Gpu.sin are not exact
 GPU0311 error   Entry point {0}: {1} | Entry points of AsmJit name an existing static method; give @Kernel elements either by the annotation or by the entry, not both
+GPU0312 warning Compilation of {0} took {1} ms, over the budget of {2} ms | The IR is complete; split the generated code into several units or raise AsmJit.Options.budget (the optimizer keeps its own budget and lowers opt by itself)
 
 # --- internal errors ----------------------------------------------------------------------------
 GPU0901 error   The IR of kernel {0} failed validation: {1} | Internal frontend error or an IR contract violation; report it with a code sample

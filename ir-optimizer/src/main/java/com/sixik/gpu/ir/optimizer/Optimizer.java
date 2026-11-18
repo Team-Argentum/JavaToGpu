@@ -83,17 +83,78 @@ public final class Optimizer implements OptimizerPass {
      * @return результат: модуль и отчёт
      */
     public static OptimizeResult optimize(IrModule input, OptimizeOptions options) {
+        return optimize(input, options, System::nanoTime);
+    }
+
+    /**
+     * Оптимизация под бюджетом времени {@link OptimizeOptions#timeBudget()} (шаг B7, FRONTEND_ASM_RUNTIME.md, S9-2).
+     * Превысивший бюджет запуск прерывается целиком (частичный результат не берётся - он зависел бы от скорости машины) и
+     * повторяется с новым бюджетом на уровне {@code 1}; если и он не уложился - модуль возвращается как есть (уровень
+     * {@code 0}). Отметка о понижении попадает в {@link OptimizeResult#failures()}.
+     *
+     * @param input   корректный модуль
+     * @param options настройки
+     * @param clock   часы в наносекундах (тесты подменяют)
+     * @return результат: модуль, фактический уровень и отчёт
+     * @throws IllegalStateException если вложенность модуля слишком глубока даже для потока
+     *                               {@link com.sixik.gpu.ir.DeepStack} (рантайм тогда собирает ядро без оптимизации)
+     */
+    static OptimizeResult optimize(IrModule input, OptimizeOptions options, java.util.function.LongSupplier clock) {
+        // проходы рекурсивны по глубине деревьев: глубокая вложенность роутера (B7, S9-1) - на потоке с большим стеком
+        return com.sixik.gpu.ir.DeepStack.call("javatogpu-optimizer", () -> {
+            try {
+                return budgeted(input, options, clock);
+            } catch (StackOverflowError e) {
+                throw new IllegalStateException("the nesting of the module is too deep for the optimizer");
+            }
+        });
+    }
+
+    private static OptimizeResult budgeted(IrModule input, OptimizeOptions options, java.util.function.LongSupplier clock) {
+        if (options.timeBudget() == null || options.level() <= 0) {
+            return attempt(input, options);
+        }
+        List<String> notes = new ArrayList<>();
+        int level = options.level();
+        while (level > 0) {
+            Deadline d = Deadline.start(clock, options.timeBudget());
+            try {
+                OptimizeResult r = attempt(input, options.withLevel(level));
+                if (notes.isEmpty()) {
+                    return r;
+                }
+                List<String> failures = new ArrayList<>(notes);
+                failures.addAll(r.failures());
+                return new OptimizeResult(r.module(), r.iterations(), r.applied(), List.copyOf(failures),
+                        r.pressureBefore(), r.pressureAfter(), r.overBudget(), r.functionMap(), r.level());
+            } catch (Deadline.OverBudget e) {
+                int next = level >= 2 ? 1 : 0;
+                notes.add("budget: opt=" + level + " exceeded the time budget of " + options.timeBudget().toMillis()
+                        + " ms, retried at opt=" + next);
+            } finally {
+                d.close();
+            }
+            level = level >= 2 ? 1 : 0;
+        }
+        OptimizeResult r = attempt(input, options.withLevel(0));
+        return new OptimizeResult(r.module(), r.iterations(), r.applied(), List.copyOf(notes), r.pressureBefore(),
+                r.pressureAfter(), r.overBudget(), r.functionMap(), 0);
+    }
+
+    private static OptimizeResult attempt(IrModule input, OptimizeOptions options) {
         List<String> applied = new ArrayList<>();
         List<String> failures = new ArrayList<>();
         RegisterPressure.Report before = RegisterPressure.analyze(input);
         if (options.level() <= 0) {
-            return new OptimizeResult(input, 0, applied, failures, before, before, over(before, options, input), identity(input));
+            return new OptimizeResult(input, 0, applied, failures, before, before, over(before, options, input), identity(input),
+                    Math.max(0, options.level()));
         }
         if (options.validateEachPass()) {
             Validator.Report r = Validator.validate(input);
             if (r.hasErrors()) {
                 failures.add("input: module is invalid, optimizer skipped: " + firstError(r));
-                return new OptimizeResult(input, 0, applied, failures, before, before, over(before, options, input), identity(input));
+                return new OptimizeResult(input, 0, applied, failures, before, before, over(before, options, input), identity(input),
+                    Math.max(0, options.level()));
             }
         }
         Codec.ModuleTree mt;
@@ -101,7 +162,8 @@ public final class Optimizer implements OptimizerPass {
             mt = Codec.lift(input);
         } catch (UnsupportedOperationException e) {
             failures.add("lift: " + e.getMessage());
-            return new OptimizeResult(input, 0, applied, failures, before, before, over(before, options, input), identity(input));
+            return new OptimizeResult(input, 0, applied, failures, before, before, over(before, options, input), identity(input),
+                    Math.max(0, options.level()));
         }
 
         Run run = new Run(mt, options, applied, failures);
@@ -109,7 +171,8 @@ public final class Optimizer implements OptimizerPass {
 
         if (applied.isEmpty()) {
             return new OptimizeResult(input, iterations, applied, failures, before, before,
-                    over(before, options, input), identity(input));
+                    over(before, options, input), identity(input),
+                    Math.max(0, options.level()));
         }
         IrModule out;
         int[] map = new int[input.functionCount()];
@@ -123,10 +186,12 @@ public final class Optimizer implements OptimizerPass {
         } catch (RuntimeException e) {
             failures.add("lower: " + e.getMessage());
             return new OptimizeResult(input, iterations, applied, failures, before, before,
-                    over(before, options, input), identity(input));
+                    over(before, options, input), identity(input),
+                    Math.max(0, options.level()));
         }
         RegisterPressure.Report after = RegisterPressure.analyze(out);
-        return new OptimizeResult(out, iterations, applied, failures, before, after, over(after, options, out), map);
+        return new OptimizeResult(out, iterations, applied, failures, before, after, over(after, options, out), map,
+                options.level());
     }
 
     private static int[] identity(IrModule m) {
@@ -238,6 +303,7 @@ public final class Optimizer implements OptimizerPass {
                 if (!fn.alive) {
                     continue;
                 }
+                Deadline.check();
                 Tree nb = pass.apply(f, fn);
                 if (nb != fn.body) {
                     fn.body = root(nb);
@@ -253,6 +319,7 @@ public final class Optimizer implements OptimizerPass {
 
         /** Выполняет проход с откатом при ошибке или невалидном результате. */
         boolean step(String name, BooleanSupplier body) {
+            Deadline.check();
             Codec.ModuleTree snap = mt.copy();
             boolean changed;
             try {
@@ -265,6 +332,8 @@ public final class Optimizer implements OptimizerPass {
                         return false;
                     }
                 }
+            } catch (Deadline.OverBudget e) {
+                throw e;
             } catch (RuntimeException e) {
                 rollback(snap);
                 failures.add(name + "#" + iteration + ": " + e);

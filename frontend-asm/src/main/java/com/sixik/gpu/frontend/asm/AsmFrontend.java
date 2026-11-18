@@ -216,6 +216,11 @@ public final class AsmFrontend {
      * @return ядра и диагностики
      */
     public static Result compile(ClassSource source, List<String> classes, Options options) {
+        // глубокая вложенность (B7, S9-1): рекурсивные проходы - на потоке с большим стеком
+        return com.sixik.gpu.ir.DeepStack.call("javatogpu-frontend-asm", () -> compileHere(source, classes, options));
+    }
+
+    private static Result compileHere(ClassSource source, List<String> classes, Options options) {
         List<Kernel> kernels = new ArrayList<>();
         List<AsmDiagnostic> diags = new ArrayList<>();
         ModuleBuilder mb = new ModuleBuilder(source, diags);
@@ -273,8 +278,15 @@ public final class AsmFrontend {
         } catch (RuntimeException e) {
             diags.add(AsmDiagnostic.of("GPU0902", cls, mn.name, 0, mn.name, e.getMessage() != null ? e.getMessage() : e));
             return null;
+        } catch (StackOverflowError e) {
+            diags.add(AsmDiagnostic.of("GPU0902", cls, mn.name, 0, mn.name, NESTING_TOO_DEEP));
+            return null;
         }
     }
+
+    /** Текст {@code GPU0902} при переполнении стека даже на потоке {@link com.sixik.gpu.ir.DeepStack}. */
+    static final String NESTING_TOO_DEEP = "the nesting is too deep (stack overflow even with "
+            + (com.sixik.gpu.ir.DeepStack.STACK_BYTES >> 20) + " MB of stack); split the method";
 
     private static Kernel compileKernel(ModuleBuilder mb, ClassNode cn, MethodNode mn, boolean reduction,
                                         Options options, List<AsmDiagnostic> diags) {

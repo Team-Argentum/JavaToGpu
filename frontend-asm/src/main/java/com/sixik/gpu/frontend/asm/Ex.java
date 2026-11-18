@@ -280,15 +280,34 @@ final class Ex {
 
     /** @return {@code true}, если в дереве есть чтение переменной {@code v} */
     boolean reads(Var v) {
-        if (op == LOCAL_GET && var == v) {
-            return true;
+        if (kids.length == 0) {
+            return op == LOCAL_GET && var == v;
         }
-        for (Ex k : kids) {
-            if (k.reads(v)) {
-                return true;
+        java.util.Set<Var> r = new java.util.HashSet<>();
+        collectReads(r);
+        return r.contains(v);
+    }
+
+    /**
+     * Добавляет в {@code out} все переменные, читаемые деревом. Обход итеративный (без рекурсии по глубине
+     * выражения, FRONTEND_ASM_RUNTIME.md, S9) и посещает общий подузел один раз - дерево может быть DAG.
+     */
+    void collectReads(java.util.Set<Var> out) {
+        java.util.Set<Ex> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        java.util.ArrayDeque<Ex> stack = new java.util.ArrayDeque<>();
+        stack.push(this);
+        while (!stack.isEmpty()) {
+            Ex e = stack.pop();
+            if (!seen.add(e)) {
+                continue;
+            }
+            if (e.op == LOCAL_GET) {
+                out.add(e.var);
+            }
+            for (Ex k : e.kids) {
+                stack.push(k);
             }
         }
-        return false;
     }
 
     /** @return {@code true} для константы {@code int} с этим значением */

@@ -125,6 +125,18 @@ public final class OpenClEmitter {
     }
 
     private static Result<Program> emitKernels(IrModule m, int[] kernels, Target target, EmitOptions options) {
+        // печать рекурсивна по глубине вложенности: роутер GA2 (B7, FRONTEND_ASM_RUNTIME.md, S9-1) - на потоке с большим
+        // стеком; переполнение и там - CG-U01, а не StackOverflowError у вызывающего
+        return com.sixik.gpu.ir.DeepStack.call("javatogpu-codegen", () -> {
+            try {
+                return emitKernelsHere(m, kernels, target, options);
+            } catch (StackOverflowError e) {
+                return fail("CG-U01", kernels[0], -1, "the nesting is too deep for the code generator");
+            }
+        });
+    }
+
+    private static Result<Program> emitKernelsHere(IrModule m, int[] kernels, Target target, EmitOptions options) {
         Validator.Report report = Validator.validate(m);
         if (report.hasErrors()) {
             return Result.failed(errors(report));

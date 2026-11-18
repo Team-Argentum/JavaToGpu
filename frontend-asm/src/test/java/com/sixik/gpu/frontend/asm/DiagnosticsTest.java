@@ -245,8 +245,28 @@ class DiagnosticsTest {
         assertEquals(Set.of("GPU0310"), codes(d), d.toString());
     }
 
+    /**
+     * {@code GPU0312} (шаг B7): единица, не уложившаяся в {@code AsmJit.Options.budget}, - предупреждение, а не ошибка;
+     * IR тот же, что без предела.
+     */
+    @Test
+    void compilationOverTheBudgetIsAWarning() {
+        AsmJit.Options zero = GeneratedShapes.SYNTH.withBudget(java.time.Duration.ZERO);
+        AsmJit.Result r = AsmJit.compile(GeneratedShapes.unit(GeneratedShapes.router(64)), zero);
+        r.diagnostics().forEach(d -> covered.add(d.code()));
+        assertEquals(List.of("GPU0312"), r.diagnostics().stream().map(AsmDiagnostic::code).toList(),
+                r.diagnostics().toString());
+        assertTrue(r.ok(), "an exceeded budget is a warning");
+        assertEquals(java.time.Duration.ZERO, r.remaining(zero));
+        AsmJit.Result free = AsmJit.compile(GeneratedShapes.unit(GeneratedShapes.router(64)),
+                GeneratedShapes.SYNTH.withBudget(null));
+        assertTrue(free.diagnostics().isEmpty(), free.diagnostics().toString());
+        assertEquals(free.moduleId(), r.moduleId());
+    }
+
     @Test
     void everyBytecodeOnlyCodeIsCovered() throws IOException {
+        compilationOverTheBudgetIsAWarning();
         classWithoutLocalVariableTableIsRejected();
         subroutinesAreUnsupportedInstructions();
         unreadableClassFilesAreReported();

@@ -200,6 +200,27 @@ class OptimizerIntegrationTest {
                 && e.detail().contains("register pressure")), events.toString());
     }
 
+    /**
+     * Бюджет времени оптимизатора (шаг B7, FRONTEND_ASM_RUNTIME.md, S9-2): исчерпанный бюджет - не ошибка, ядро
+     * собирается как есть, а слушатель получает предупреждение с фактическим уровнем.
+     */
+    @Test
+    void exhaustedTimeBudgetCompilesTheKernelUnoptimized() {
+        List<GpuEvent> events = new ArrayList<>();
+        try (GpuContext ctx = GpuContext.builder().api(FakeDeviceApi.withGpu()).ignoreEnvironment()
+                .listener(events::add).optimize(OptimizeOptions.DEFAULT.withTimeBudget(java.time.Duration.ZERO))
+                .build()) {
+            Result<CompiledKernel> r = ctx.compile(module());
+            assertTrue(r.isOk(), r.diagnostics().toString());
+            assertEquals(1, count(r.value().module(), Op.ADD), "2 + 3 is not folded at opt=0");
+        }
+        assertTrue(events.stream().anyMatch(e -> e.kind() == GpuEvent.Kind.WARNING
+                && e.detail().contains("exceeded the time budget") && e.detail().endsWith("compiled at opt=0")),
+                events.toString());
+        assertFalse(events.stream().anyMatch(e -> e.detail() != null && e.detail().contains("pass rejected")),
+                events.toString());
+    }
+
     @Test
     void optimizerSettingsAreCachedSeparately() {
         FakeDeviceApi fake = FakeDeviceApi.withGpu();

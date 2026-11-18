@@ -26,9 +26,38 @@ package com.sixik.gpu.ir.optimizer;
  *                         делается (явный {@code fma()} эмулировался бы программно). Рантайм берёт значение из
  *                         {@code CL_DEVICE_SINGLE_FP_CONFIG}
  * @param fmaF64           то же для {@code double} ({@code CL_DEVICE_DOUBLE_FP_CONFIG})
+ * @param timeBudget       бюджет времени на модуль ({@code null} - без предела; шаг B7, FRONTEND_ASM_RUNTIME.md, S9-2).
+ *                         Превышение не ошибка: запуск прерывается и повторяется на уровне {@code 1}, затем {@code 0}
+ *                         (модуль как есть); фактический уровень - {@link OptimizeResult#level()}. Результат каждого
+ *                         уровня детерминирован, от времени зависит только выбор уровня
  */
 public record OptimizeOptions(int level, int registerBudget, int maxIterations,
-                              boolean validateEachPass, boolean fmaF32, boolean fmaF64) {
+                              boolean validateEachPass, boolean fmaF32, boolean fmaF64, java.time.Duration timeBudget) {
+
+    /** Бюджет времени по умолчанию: 2 с на модуль (S9-2). */
+    public static final java.time.Duration DEFAULT_TIME_BUDGET = java.time.Duration.ofSeconds(2);
+
+    /** Проверяет поля. */
+    public OptimizeOptions {
+        if (timeBudget != null && timeBudget.isNegative()) {
+            throw new IllegalArgumentException("negative time budget " + timeBudget);
+        }
+    }
+
+    /**
+     * Настройки без бюджета времени (прежний конструктор).
+     *
+     * @param level            уровень
+     * @param registerBudget   бюджет регистров
+     * @param maxIterations    предел итераций
+     * @param validateEachPass проверка после прохода
+     * @param fmaF32           FMA для {@code float}
+     * @param fmaF64           FMA для {@code double}
+     */
+    public OptimizeOptions(int level, int registerBudget, int maxIterations, boolean validateEachPass, boolean fmaF32,
+                           boolean fmaF64) {
+        this(level, registerBudget, maxIterations, validateEachPass, fmaF32, fmaF64, DEFAULT_TIME_BUDGET);
+    }
 
     /** Бюджет по умолчанию: 64 регистра - типичная граница высокой заполняемости на GPU. */
     public static final int DEFAULT_BUDGET = 64;
@@ -44,7 +73,7 @@ public record OptimizeOptions(int level, int registerBudget, int maxIterations,
      * @return копия с другим уровнем
      */
     public OptimizeOptions withLevel(int l) {
-        return new OptimizeOptions(l, registerBudget, maxIterations, validateEachPass, fmaF32, fmaF64);
+        return new OptimizeOptions(l, registerBudget, maxIterations, validateEachPass, fmaF32, fmaF64, timeBudget);
     }
 
     /**
@@ -52,7 +81,7 @@ public record OptimizeOptions(int level, int registerBudget, int maxIterations,
      * @return копия с другим бюджетом
      */
     public OptimizeOptions withRegisterBudget(int budget) {
-        return new OptimizeOptions(level, budget, maxIterations, validateEachPass, fmaF32, fmaF64);
+        return new OptimizeOptions(level, budget, maxIterations, validateEachPass, fmaF32, fmaF64, timeBudget);
     }
 
     /**
@@ -60,7 +89,7 @@ public record OptimizeOptions(int level, int registerBudget, int maxIterations,
      * @return копия с другим флагом проверки
      */
     public OptimizeOptions withValidation(boolean on) {
-        return new OptimizeOptions(level, registerBudget, maxIterations, on, fmaF32, fmaF64);
+        return new OptimizeOptions(level, registerBudget, maxIterations, on, fmaF32, fmaF64, timeBudget);
     }
 
     /**
@@ -69,6 +98,14 @@ public record OptimizeOptions(int level, int registerBudget, int maxIterations,
      * @return копия с другими возможностями устройства
      */
     public OptimizeOptions withHardwareFma(boolean f32, boolean f64) {
-        return new OptimizeOptions(level, registerBudget, maxIterations, validateEachPass, f32, f64);
+        return new OptimizeOptions(level, registerBudget, maxIterations, validateEachPass, f32, f64, timeBudget);
+    }
+
+    /**
+     * @param budget бюджет времени на модуль либо {@code null} (без предела)
+     * @return копия с другим бюджетом времени
+     */
+    public OptimizeOptions withTimeBudget(java.time.Duration budget) {
+        return new OptimizeOptions(level, registerBudget, maxIterations, validateEachPass, fmaF32, fmaF64, budget);
     }
 }

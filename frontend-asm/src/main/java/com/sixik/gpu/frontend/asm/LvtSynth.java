@@ -14,11 +14,6 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.MultiANewArrayInsnNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
-import org.objectweb.asm.tree.analysis.Analyzer;
-import org.objectweb.asm.tree.analysis.AnalyzerException;
-import org.objectweb.asm.tree.analysis.Frame;
-import org.objectweb.asm.tree.analysis.SourceInterpreter;
-import org.objectweb.asm.tree.analysis.SourceValue;
 
 import java.util.ArrayList;
 import java.util.BitSet;
@@ -37,7 +32,7 @@ import java.util.function.Consumer;
  *       на все слоты сразу).</li>
  *   <li><b>Тип</b> - по семейству опкода ({@code istore/iload/iinc} → {@code I}, {@code lstore} → {@code J}, ...);
  *       у {@code astore} - тип источника значения ({@code newarray}, {@code new}, результат вызова, {@code aaload},
- *       параметр, другая локаль; ASM {@code SourceInterpreter}). {@code boolean/byte/short/char} не выводятся - это
+ *       параметр, другая локаль; {@link StackSources} - семантика ASM {@code SourceInterpreter}). {@code boolean/byte/short/char} не выводятся - это
  *       {@code int} (контракт 18.3).</li>
  *   <li><b>Диапазон</b> - от первой записи до последнего обращения. Веб, чей диапазон пересекается с другим вебом того
  *       же слота, получает новый слот.</li>
@@ -72,7 +67,7 @@ final class LvtSynth {
                 m.exceptions == null ? null : m.exceptions.toArray(new String[0]));
         m.accept(c);
         c.maxLocals = Math.max(c.maxLocals, maxSlot(c));
-        new Run(owner, c, problems).run();
+        new Run(c, problems).run();
         return c;
     }
 
@@ -175,19 +170,17 @@ final class LvtSynth {
 
     /** Один проход по методу. */
     private static final class Run {
-        private final String owner;
         private final MethodNode m;
         private final InsnList insns;
         private final Consumer<String> problems;
         private final String[] params;
         /** Веб каждой инструкции обращения к локали (по индексу инструкции). */
         private final Map<Integer, Web> webOf = new HashMap<>();
-        private Frame<SourceValue>[] frames;
+        private StackSources.Frame[] frames;
         private boolean analysisFailed;
         private String analysisError;
 
-        Run(String owner, MethodNode m, Consumer<String> problems) {
-            this.owner = owner;
+        Run(MethodNode m, Consumer<String> problems) {
             this.m = m;
             this.insns = m.instructions;
             this.problems = problems;
@@ -378,11 +371,11 @@ final class LvtSynth {
             if (!frames()) {
                 return false;
             }
-            Frame<SourceValue> f = frames[store];
+            StackSources.Frame f = frames[store];
             return f != null && f.getStackSize() > 0 && dependsOn(f.getStack(f.getStackSize() - 1), from, 0);
         }
 
-        private boolean dependsOn(SourceValue v, int target, int depth) {
+        private boolean dependsOn(StackSources.Src v, int target, int depth) {
             for (AbstractInsnNode p : v.insns) {
                 int pi = insns.indexOf(p);
                 if (pi == target) {
@@ -391,7 +384,7 @@ final class LvtSynth {
                 if (depth > 32 || pi + 1 >= frames.length || frames[pi] == null || frames[pi + 1] == null) {
                     continue;
                 }
-                Frame<SourceValue> before = frames[pi];
+                StackSources.Frame before = frames[pi];
                 // операнды производителя - вершина стека перед ним (снято = было - стало + 1 результат)
                 int consumed = Math.max(0, before.getStackSize() - frames[pi + 1].getStackSize() + 1);
                 for (int i = 0; i < consumed && i < before.getStackSize(); i++) {
@@ -403,13 +396,15 @@ final class LvtSynth {
             return false;
         }
 
-        /** Кадры {@code SourceInterpreter} (один раз на метод). @return {@code false}, если байткод не разбирается */
-        @SuppressWarnings("unchecked")
+        /**
+         * Источники значений стека (один раз на метод; {@link StackSources} - линейная по памяти замена
+         * {@code SourceInterpreter}, шаг B7). @return {@code false}, если байткод не разбирается
+         */
         private boolean frames() {
             if (frames == null && !analysisFailed) {
                 try {
-                    frames = new Analyzer<>(new SourceInterpreter()).analyze(owner, m);
-                } catch (AnalyzerException e) {
+                    frames = StackSources.analyze(m);
+                } catch (StackSources.Failure e) {
                     analysisFailed = true;
                     analysisError = e.getMessage();
                 }
@@ -507,7 +502,7 @@ final class LvtSynth {
                 if (in.getOpcode() != Opcodes.ASTORE || frames[k] == null) {
                     continue;
                 }
-                Frame<SourceValue> f = frames[k];
+                StackSources.Frame f = frames[k];
                 String d = valueType(f.getStack(f.getStackSize() - 1), 0);
                 if (d == null) {
                     continue;
@@ -524,7 +519,7 @@ final class LvtSynth {
             return r;
         }
 
-        private String valueType(SourceValue v, int depth) {
+        private String valueType(StackSources.Src v, int depth) {
             String r = null;
             for (AbstractInsnNode p : v.insns) {
                 String d = producerType(p, depth);
@@ -541,7 +536,7 @@ final class LvtSynth {
         }
 
         private String top(AbstractInsnNode p, int fromTop, int depth) {
-            Frame<SourceValue> f = frames[insns.indexOf(p)];
+            StackSources.Frame f = frames[insns.indexOf(p)];
             if (f == null || f.getStackSize() <= fromTop) {
                 return null;
             }

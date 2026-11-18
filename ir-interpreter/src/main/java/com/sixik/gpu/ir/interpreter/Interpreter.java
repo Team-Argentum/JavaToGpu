@@ -91,6 +91,18 @@ public final class Interpreter {
      * @return итог либо диагностики; при успехе в диагностиках могут быть предупреждения валидатора
      */
     public static Result<Execution> run(IrModule m, int function, NdRange range, Options options, Object[] args) {
+        // валидатор и исполнитель рекурсивны по глубине вложенности: роутер GA2 (B7, FRONTEND_ASM_RUNTIME.md, S9-1) -
+        // на потоке с большим стеком
+        return com.sixik.gpu.ir.DeepStack.call("javatogpu-interpreter", () -> {
+            try {
+                return runHere(m, function, range, options, args);
+            } catch (StackOverflowError e) {
+                return fail("IN-U01", function, "the nesting is too deep for the interpreter");
+            }
+        });
+    }
+
+    private static Result<Execution> runHere(IrModule m, int function, NdRange range, Options options, Object[] args) {
         Validator.Report report = Validator.validate(m);
         if (report.hasErrors()) {
             return Result.failed(report.diagnostics());

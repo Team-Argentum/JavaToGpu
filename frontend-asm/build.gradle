@@ -23,8 +23,8 @@ dependencies {
     api project(':frontend-common')
     implementation "org.ow2.asm:asm:${asmVersion}"
     implementation "org.ow2.asm:asm-tree:${asmVersion}"
-    // B2 (18.2-S7): источник значения astore при синтезе LVT - SourceInterpreter (загрузчики модов поставляют asm-analysis)
-    implementation "org.ow2.asm:asm-analysis:${asmVersion}"
+    // asm-analysis не нужен: источники значений стека при синтезе LVT считает свой StackSources (B7) - кадры ASM Analyzer
+    // квадратичны по памяти на методах роутера, а лимиты ASM 9.11 зависят от версии загрузчика
 
     // Только тесты: корпус образцов (class-файлы с IR от frontend-java в ресурсах), дамп IR и интерпретатор для
     // сравнения IR_asm с IR_java по тексту и по поведению (критерий 17.14).

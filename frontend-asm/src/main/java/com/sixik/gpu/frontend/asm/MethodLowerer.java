@@ -437,24 +437,39 @@ final class MethodLowerer {
             return null;
         }
         int idx = insns.indexOf(at);
+        List<LocalVariableNode> entries = lvtOfSlot(slot);
         if (store) {
             int next = idx + 1;
             while (next < insns.size() && insns.get(next).getOpcode() < 0) {
                 next++;
             }
-            for (LocalVariableNode lv : m.localVariables) {
+            for (LocalVariableNode lv : entries) {
                 int s = insns.indexOf(lv.start);
-                if (lv.index == slot && s > idx && s <= next) {
+                if (s > idx && s <= next) {
                     return lv;
                 }
             }
         }
-        for (LocalVariableNode lv : m.localVariables) {
-            if (lv.index == slot && insns.indexOf(lv.start) <= idx && idx < insns.indexOf(lv.end)) {
+        for (LocalVariableNode lv : entries) {
+            if (insns.indexOf(lv.start) <= idx && idx < insns.indexOf(lv.end)) {
                 return lv;
             }
         }
         return null;
+    }
+
+    /** Записи LVT по слотам в порядке таблицы (первое совпадение - как при обходе всей таблицы); строится один раз. */
+    private Map<Integer, List<LocalVariableNode>> lvtBySlot;
+
+    /** @return записи LVT слота: поиск в точке программы не просматривает всю таблицу (роутер - тысячи записей, B7) */
+    private List<LocalVariableNode> lvtOfSlot(int slot) {
+        if (lvtBySlot == null) {
+            lvtBySlot = new HashMap<>();
+            for (LocalVariableNode lv : m.localVariables) {
+                lvtBySlot.computeIfAbsent(lv.index, z -> new ArrayList<>()).add(lv);
+            }
+        }
+        return lvtBySlot.getOrDefault(slot, List.of());
     }
 
     /**
@@ -503,6 +518,13 @@ final class MethodLowerer {
     /**
      * Паутины переменных (17.10): достигающие определения по каждому слоту; чтение объединяет свою запись LVT с
      * записями LVT всех достигающих его записей в слот.
+     *
+     * <p>Шаг B7 (FRONTEND_ASM_RUNTIME.md, S9): достигающие записи каждого чтения ищутся обратным обходом графа от
+     * чтения до первой записи в слот на каждом пути. Прежний анализ потоков данных держал у каждого блока множество
+     * всех записей всех слотов, а у каждого чтения перебирал его целиком; у роутера с тысячами локалей это квадрат, у
+     * вложенных циклов - ещё и проход на каждый уровень. Результат тот же: множество достигающих записей не зависит от
+     * способа поиска, а объединения идут в прежнем порядке (блоки, инструкции, записи по возрастанию), поэтому корни
+     * паутин не меняются.</p>
      */
     private void buildWebs(Cfg g) {
         if (m.localVariables == null) {
@@ -515,68 +537,73 @@ final class MethodLowerer {
             }
         }
         int n = g.size();
-        for (int slot : slots) {
-            List<Integer> defs = new ArrayList<>();
-            for (int k = 0; k < insns.size(); k++) {
-                if (storeSlot(insns.get(k)) == slot) {
-                    defs.add(k);
+        // последняя запись каждого слота в блоке: ключ - (блок, слот)
+        Map<Long, Integer> lastStore = new HashMap<>();
+        for (int b = 0; b < n; b++) {
+            Cfg.Block bl = g.get(b);
+            for (int k = bl.start; k < bl.end; k++) {
+                int slot = storeSlot(insns.get(k));
+                if (slot >= 0 && slots.contains(slot)) {
+                    lastStore.put(((long) b << 32) | slot, k);
                 }
             }
-            if (defs.isEmpty()) {
-                continue;
-            }
-            Map<Integer, Integer> bit = new HashMap<>();
-            for (int d = 0; d < defs.size(); d++) {
-                bit.put(defs.get(d), d);
-            }
-            java.util.BitSet[] outSet = new java.util.BitSet[n];
-            for (int b = 0; b < n; b++) {
-                outSet[b] = new java.util.BitSet();
-            }
-            boolean changed = true;
-            while (changed) {
-                changed = false;
-                for (int b = 0; b < n; b++) {
-                    java.util.BitSet cur = inSet(g, b, outSet);
-                    Cfg.Block bl = g.get(b);
-                    for (int k = bl.start; k < bl.end; k++) {
-                        if (storeSlot(insns.get(k)) == slot) {
-                            cur.clear();
-                            cur.set(bit.get(k));
-                        }
-                    }
-                    if (!cur.equals(outSet[b])) {
-                        outSet[b] = cur;
-                        changed = true;
+        }
+        int[] seen = new int[n];
+        int stamp = 0;
+        java.util.ArrayDeque<Integer> work = new java.util.ArrayDeque<>();
+        List<Integer> reaching = new ArrayList<>();
+        for (int b = 0; b < n; b++) {
+            Cfg.Block bl = g.get(b);
+            for (int k = bl.start; k < bl.end; k++) {
+                AbstractInsnNode in = insns.get(k);
+                int slot = loadSlot(in);
+                if (slot < 0 || !slots.contains(slot)) {
+                    continue;
+                }
+                reaching.clear();
+                int local = -1;
+                for (int j = k - 1; j >= bl.start; j--) {
+                    if (storeSlot(insns.get(j)) == slot) {
+                        local = j;
+                        break;
                     }
                 }
-            }
-            for (int b = 0; b < n; b++) {
-                java.util.BitSet cur = inSet(g, b, outSet);
-                Cfg.Block bl = g.get(b);
-                for (int k = bl.start; k < bl.end; k++) {
-                    AbstractInsnNode in = insns.get(k);
-                    if (loadSlot(in) == slot) {
-                        LocalVariableNode use = lvtAt(slot, in, false);
-                        for (int d = cur.nextSetBit(0); d >= 0; d = cur.nextSetBit(d + 1)) {
-                            union(use, defEntry(slot, insns.get(defs.get(d))));
+                if (local >= 0) {
+                    reaching.add(local);
+                } else {
+                    // вверх по предшественникам до записи в слот (сам блок по обратной дуге - его последняя запись)
+                    stamp++;
+                    work.clear();
+                    for (int p : bl.preds) {
+                        work.push(p);
+                    }
+                    while (!work.isEmpty()) {
+                        int p = work.pop();
+                        if (seen[p] == stamp) {
+                            continue;
+                        }
+                        seen[p] = stamp;
+                        Integer def = lastStore.get(((long) p << 32) | slot);
+                        if (def != null) {
+                            reaching.add(def);
+                            continue;
+                        }
+                        for (int q : g.get(p).preds) {
+                            if (seen[q] != stamp) {
+                                work.push(q);
+                            }
                         }
                     }
-                    if (storeSlot(in) == slot) {
-                        cur.clear();
-                        cur.set(bit.get(k));
+                    java.util.Collections.sort(reaching);
+                }
+                if (!reaching.isEmpty()) {
+                    LocalVariableNode use = lvtAt(slot, in, false);
+                    for (int d : reaching) {
+                        union(use, defEntry(slot, insns.get(d)));
                     }
                 }
             }
         }
-    }
-
-    private static java.util.BitSet inSet(Cfg g, int b, java.util.BitSet[] outSet) {
-        java.util.BitSet r = new java.util.BitSet();
-        for (int p : g.get(b).preds) {
-            r.or(outSet[p]);
-        }
-        return r;
     }
 
     private LocalVariableNode defEntry(int slot, AbstractInsnNode def) {

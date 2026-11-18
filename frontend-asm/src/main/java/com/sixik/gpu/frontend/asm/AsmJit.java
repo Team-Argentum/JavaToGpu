@@ -25,7 +25,8 @@ import java.util.Objects;
  *   <li>ресурсы {@code META-INF/gpu/**} не пишутся - результат только в памяти.</li>
  * </ul>
  *
- * <p>Чистая функция: без файлов, потоков и глобального состояния. До шага B4 модуль IR - по одному на точку входа
+ * <p>Чистая функция: без файлов и глобального состояния; работа идёт на собственном потоке с большим стеком
+ * ({@code DeepStack}, шаг B7), вызывающий ждёт его. До шага B4 модуль IR - по одному на точку входа
  * (ядро - последняя функция модуля, как у {@link AsmFrontend}); B4 сведёт их в один модуль с несколькими ядрами.</p>
  */
 public final class AsmJit {
@@ -117,14 +118,33 @@ public final class AsmJit {
      * @param strictBarriers барьер под расходящимся управлением - ошибка {@code GPU0131}, а не предупреждение
      *                       {@code GPU0130}
      * @param lvt            что делать с методом без {@code LocalVariableTable}
+     * @param budget         бюджет времени на единицу ({@code null} - без предела; шаг B7, FRONTEND_ASM_RUNTIME.md,
+     *                       S9-2). Превышение - предупреждение {@code GPU0312}: IR при этом полный и тот же. Оптимизатору
+     *                       вызывающий отдаёт остаток ({@link Result#remaining(Options)}), а тот понижает {@code opt} сам
      */
-    public record Options(boolean strictBarriers, Lvt lvt) {
-        /** Настройки по умолчанию: LVT обязательна. */
+    public record Options(boolean strictBarriers, Lvt lvt, java.time.Duration budget) {
+        /** Бюджет по умолчанию: 2 с на модуль для фронтенда и оптимизатора вместе (S9-2). */
+        public static final java.time.Duration DEFAULT_BUDGET = java.time.Duration.ofSeconds(2);
+
+        /** Настройки по умолчанию: LVT обязательна, бюджет {@link #DEFAULT_BUDGET}. */
         public static final Options DEFAULT = new Options(false, Lvt.REQUIRED);
 
         /** Проверяет поля. */
         public Options {
             Objects.requireNonNull(lvt, "lvt");
+            if (budget != null && budget.isNegative()) {
+                throw new IllegalArgumentException("negative budget " + budget);
+            }
+        }
+
+        /**
+         * Настройки с бюджетом по умолчанию.
+         *
+         * @param strictBarriers барьер под расходящимся управлением - ошибка
+         * @param lvt            режим LVT
+         */
+        public Options(boolean strictBarriers, Lvt lvt) {
+            this(strictBarriers, lvt, DEFAULT_BUDGET);
         }
 
         /**
@@ -132,7 +152,15 @@ public final class AsmJit {
          * @return копия с режимом {@link Lvt#SYNTHESIZE} либо {@link Lvt#REQUIRED}
          */
         public Options synthesizeLvt(boolean on) {
-            return new Options(strictBarriers, on ? Lvt.SYNTHESIZE : Lvt.REQUIRED);
+            return new Options(strictBarriers, on ? Lvt.SYNTHESIZE : Lvt.REQUIRED, budget);
+        }
+
+        /**
+         * @param b бюджет времени либо {@code null} (без предела)
+         * @return копия с другим бюджетом
+         */
+        public Options withBudget(java.time.Duration b) {
+            return new Options(strictBarriers, lvt, b);
         }
     }
 
@@ -168,11 +196,37 @@ public final class AsmJit {
      *                    ни одной точки. Генератор печатает его одной программой ({@code OpenClEmitter.emitProgram})
      * @param kernels     построенные точки входа в порядке {@link Unit#entries()} (без точек с ошибками)
      * @param diagnostics все диагностики по порядку
+     * @param elapsed     время компиляции единицы
      */
-    public record Result(IrModule module, List<Kernel> kernels, List<AsmDiagnostic> diagnostics) {
+    public record Result(IrModule module, List<Kernel> kernels, List<AsmDiagnostic> diagnostics,
+                         java.time.Duration elapsed) {
         /** @return {@code true}, если среди диагностик нет ошибок */
         public boolean ok() {
             return diagnostics.stream().noneMatch(AsmDiagnostic::error);
+        }
+
+        /**
+         * Идентификатор общего модуля - хэш его семантических секций ({@code IrBinary.kernelId}). Вход детерминирован:
+         * одинаковые классы и точки входа дают побайтово тот же {@code IrBinary} и тот же {@code moduleId} в любом
+         * запуске (шаг B7, S9-3), поэтому он годится ключом дискового кэша.
+         *
+         * @return 64 шестнадцатеричных символа либо {@code null}, если модуль не построен
+         */
+        public String moduleId() {
+            return module == null ? null : com.sixik.gpu.ir.IrBinary.kernelId(module);
+        }
+
+        /**
+         * @param options настройки, с которыми получен результат
+         * @return остаток бюджета для оптимизатора ({@code OptimizeOptions.withTimeBudget}); {@code Duration.ZERO},
+         * если фронтенд его исчерпал, либо {@code null} без предела
+         */
+        public java.time.Duration remaining(Options options) {
+            if (options.budget() == null) {
+                return null;
+            }
+            java.time.Duration r = options.budget().minus(elapsed);
+            return r.isNegative() ? java.time.Duration.ZERO : r;
         }
     }
 
@@ -184,6 +238,22 @@ public final class AsmJit {
      * @return построенные точки и диагностики
      */
     public static Result compile(Unit unit, Options options) {
+        long t0 = System.nanoTime();
+        // глубокая вложенность генератора (B7, S9-1): рекурсивные проходы - на потоке с большим стеком
+        Result r = com.sixik.gpu.ir.DeepStack.call("javatogpu-asmjit", () -> build(unit, options));
+        java.time.Duration elapsed = java.time.Duration.ofNanos(System.nanoTime() - t0);
+        if (options.budget() == null || elapsed.compareTo(options.budget()) <= 0) {
+            return new Result(r.module(), r.kernels(), r.diagnostics(), elapsed);
+        }
+        List<AsmDiagnostic> diags = new ArrayList<>(r.diagnostics());
+        int n = unit.entries().size();
+        String cls = n == 0 ? "" : unit.entries().get(0).owner().replace('/', '.');
+        String what = n == 0 ? "an empty unit" : "the unit " + cls + " (" + n + (n == 1 ? " entry point)" : " entry points)");
+        diags.add(AsmDiagnostic.of("GPU0312", cls, "", 0, what, elapsed.toMillis(), options.budget().toMillis()));
+        return new Result(r.module(), r.kernels(), List.copyOf(diags), elapsed);
+    }
+
+    private static Result build(Unit unit, Options options) {
         List<AsmDiagnostic> diags = new ArrayList<>();
         List<Kernel> kernels = new ArrayList<>();
         ModuleBuilder mb = new ModuleBuilder(unit.classes(), diags);
@@ -233,17 +303,17 @@ public final class AsmJit {
             }
         }
         if (built.isEmpty()) {
-            return new Result(null, List.of(), List.copyOf(diags));
+            return new Result(null, List.of(), List.copyOf(diags), java.time.Duration.ZERO);
         }
         ModuleBuilder.Built program = program(mb, built, options, diags);
         if (program == null) {
-            return new Result(null, List.of(), List.copyOf(diags));
+            return new Result(null, List.of(), List.copyOf(diags), java.time.Duration.ZERO);
         }
         for (int i = 0; i < singles.size(); i++) {
             AsmFrontend.Kernel k = singles.get(i);
             kernels.add(new Kernel(builtEntries.get(i), k.module(), k.entry().kernelId(), program.functions()[i]));
         }
-        return new Result(program.module(), List.copyOf(kernels), List.copyOf(diags));
+        return new Result(program.module(), List.copyOf(kernels), List.copyOf(diags), java.time.Duration.ZERO);
     }
 
     /**
@@ -269,6 +339,9 @@ public final class AsmJit {
             return b;
         } catch (RuntimeException e) {
             diags.add(AsmDiagnostic.of("GPU0902", cls, "", 0, what, e.getMessage() != null ? e.getMessage() : e));
+            return null;
+        } catch (StackOverflowError e) {
+            diags.add(AsmDiagnostic.of("GPU0902", cls, "", 0, what, AsmFrontend.NESTING_TOO_DEEP));
             return null;
         }
     }

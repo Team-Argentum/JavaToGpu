@@ -1031,7 +1031,10 @@ public final class GpuContext implements AutoCloseable {
             return null;
         }
         for (String failure : r.failures()) {
-            emit(GpuEvent.Kind.WARNING, "f" + kernel, 0, 0, "IR optimizer pass rejected: " + failure);
+            // понижение уровня по бюджету времени (B7, S9-2) - не отвергнутый проход
+            emit(GpuEvent.Kind.WARNING, "f" + kernel, 0, 0, failure.startsWith("budget: ")
+                    ? "IR optimizer " + failure.substring("budget: ".length()) + "; the kernel is compiled at opt=" + r.level()
+                    : "IR optimizer pass rejected: " + failure);
         }
         // превышение бюджета сообщается после сборки (reportPressure): по данным драйвера, если они есть
         return r;

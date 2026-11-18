@@ -17,10 +17,12 @@ import java.util.List;
  *                       кандидаты на {@link KernelSplitter}
  * @param functionMap    индекс функции входного модуля -> индекс в {@link #module()} либо {@code -1}, если функция
  *                       удалена как недостижимая (сборка также ставит вызываемые функции раньше вызывающих)
+ * @param level          уровень, на котором модуль фактически оптимизирован: ниже запрошенного, если запуск не уложился
+ *                       в {@link OptimizeOptions#timeBudget()} (шаг B7)
  */
 public record OptimizeResult(IrModule module, int iterations, List<String> applied, List<String> failures,
                              RegisterPressure.Report pressureBefore, RegisterPressure.Report pressureAfter,
-                             List<Integer> overBudget, int[] functionMap) {
+                             List<Integer> overBudget, int[] functionMap, int level) {
 
     /**
      * @param inputFunction индекс функции во входном модуле

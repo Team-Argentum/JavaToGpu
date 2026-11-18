@@ -45,6 +45,13 @@ final class Liveness {
     private final FnTree fn;
     private BitSet breakLive = new BitSet();
     private BitSet contLive = new BitSet();
+    /**
+     * Последняя неподвижная точка каждого цикла: живые на выходе и найденная голова. Живость цикла зависит только от
+     * живых на выходе ({@code break/continue} тела относятся к нему самому), поэтому повтор с тем же выходом не
+     * пересчитывается, а больший выход итерируется от прежней головы (она ниже новой наименьшей неподвижной точки:
+     * анализ монотонен). Без этого вложенные циклы стоили {@code 3^глубина} обходов (шаг B7, FRONTEND_ASM_RUNTIME.md, S9).
+     */
+    private final java.util.Map<Tree, BitSet[]> loopMemo = new java.util.IdentityHashMap<>();
 
     private Liveness(FnTree fn, IrModule src, Effects fx, boolean dse, Listener listener) {
         this.fn = fn;
@@ -251,6 +258,23 @@ final class Liveness {
         return s.withKids(nk);
     }
 
+    /**
+     * Начало итерации цикла по мемо: готовая голова ({@code [0] != null}) при том же выходе, прежняя голова при
+     * большем выходе ({@code [1]}), иначе {@code null}.
+     */
+    private BitSet[] recall(Tree s, BitSet exit) {
+        BitSet[] m = loopMemo.get(s);
+        if (m == null) {
+            return new BitSet[]{null, null};
+        }
+        if (m[0].equals(exit)) {
+            return new BitSet[]{m[1], null};
+        }
+        BitSet extra = (BitSet) m[0].clone();
+        extra.andNot(exit);
+        return new BitSet[]{null, extra.isEmpty() ? m[1] : null};
+    }
+
     private Tree loop(Tree s, BitSet live, boolean fin) {
         BitSet exit = (BitSet) live.clone();
         BitSet head = (BitSet) exit.clone();
@@ -259,7 +283,12 @@ final class Liveness {
 
         BitSet savedBreak = breakLive;
         BitSet savedCont = contLive;
-        for (int iter = 0, max = variableCount() + 2; iter < max; iter++) {
+        BitSet[] memo = recall(s, exit);
+        if (memo[1] != null) {
+            head.or(memo[1]);
+        }
+        for (int iter = 0, max = memo[0] != null ? 0 : variableCount() + 2; iter < max; iter++) {
+            Deadline.check();
             BitSet afterBody = (BitSet) head.clone();
             if (hasUpdate) {
                 walk(s.kids[2], afterBody, false);
@@ -277,6 +306,19 @@ final class Liveness {
                 break;
             }
             head = merged;
+        }
+        if (memo[0] != null) {
+            head = (BitSet) memo[0].clone();
+        } else {
+            loopMemo.put(s, new BitSet[]{exit, (BitSet) head.clone()});
+        }
+        if (!fin) {
+            // анализ: финальный обход нужен только для отчёта и преобразования тела
+            breakLive = savedBreak;
+            contLive = savedCont;
+            live.clear();
+            live.or(head);
+            return s;
         }
 
         Tree[] nk = s.kids.clone();
@@ -303,7 +345,12 @@ final class Liveness {
         BitSet savedBreak = breakLive;
         BitSet savedCont = contLive;
         BitSet condLive = null;
-        for (int iter = 0, max = variableCount() + 2; iter < max; iter++) {
+        BitSet[] memo = recall(s, exit);
+        if (memo[1] != null) {
+            head.or(memo[1]);
+        }
+        for (int iter = 0, max = memo[0] != null ? 0 : variableCount() + 2; iter < max; iter++) {
+            Deadline.check();
             condLive = (BitSet) head.clone();
             condLive.or(exit);
             addUses(s.kids[1], condLive);
@@ -317,6 +364,18 @@ final class Liveness {
                 break;
             }
             head = merged;
+        }
+        if (memo[0] != null) {
+            head = (BitSet) memo[0].clone();
+        } else {
+            loopMemo.put(s, new BitSet[]{exit, (BitSet) head.clone()});
+        }
+        if (!fin) {
+            breakLive = savedBreak;
+            contLive = savedCont;
+            live.clear();
+            live.or(head);
+            return s;
         }
         condLive = (BitSet) head.clone();
         condLive.or(exit);

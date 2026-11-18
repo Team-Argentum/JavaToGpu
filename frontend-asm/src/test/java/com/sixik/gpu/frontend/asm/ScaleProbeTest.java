@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ScaleProbeTest {
 
     /** Размеры, которые фронтенд обязан проходить на стеке потока по умолчанию. */
-    private static final int[] REQUIRED = {64};
+    private static final int[] REQUIRED = {64, 256};
     /** Полная шкала замера. */
     private static final int[] SCALE = {64, 128, 256, 512, 1024, 2048, 4096, 8192};
 

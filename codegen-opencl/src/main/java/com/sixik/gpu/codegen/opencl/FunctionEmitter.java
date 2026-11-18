@@ -1302,8 +1302,14 @@ final class FunctionEmitter {
 
     // ---- вывод -------------------------------------------------------------------------------
 
+    /**
+     * Предел отступа в уровнях: глубже текст не сдвигается. Иначе исходник вложенности {@code d} весит {@code O(d²)}
+     * (роутер GA2 с вложенностью в тысячи уровней - сотни мегабайт пробелов; шаг B7, FRONTEND_ASM_RUNTIME.md, S9).
+     */
+    private static final int MAX_INDENT = 32;
+
     private void line(String s) {
-        for (int i = 0; i < indent; i++) {
+        for (int i = 0, n = Math.min(indent, MAX_INDENT); i < n; i++) {
             out.append("    ");
         }
         out.append(s).append('\n');
