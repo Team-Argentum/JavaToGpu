@@ -47,7 +47,8 @@ final class ModuleBuilder {
         final String cls;
         final ClassNode cn;
         final MethodNode decl;
-        final MethodNode body;
+        /** Тело; при синтезе LVT (18.2-S7) - копия с синтезированной таблицей. */
+        MethodNode body;
         final boolean kernel;
         final boolean reduction;
         /** Проверочный исполнитель: сигнатура, найденные вызовы. */
@@ -116,6 +117,8 @@ final class ModuleBuilder {
      * вызываются как device-функции и без {@code @DeviceFunction} (контракт 18.3).
      */
     private final Set<String> generated = new HashSet<>();
+    /** Методам без LVT она синтезируется ({@link LvtSynth}, режим {@code SYNTHESIZE} у {@link AsmJit}). */
+    private boolean synthesizeLvt;
 
     ModuleBuilder(ClassSource source, List<AsmDiagnostic> diags) {
         this.source = source;
@@ -135,6 +138,11 @@ final class ModuleBuilder {
     void addGenerated(ClassNode cn) {
         classes.put(cn.name, cn);
         generated.add(cn.name);
+    }
+
+    /** Включает синтез LVT для методов без неё (18.2-S7); иначе такие методы дают {@code GPU0301}. */
+    void synthesizeLvt(boolean on) {
+        synthesizeLvt = on;
     }
 
     /**
@@ -350,10 +358,19 @@ final class ModuleBuilder {
             return;
         }
         u.checked = true;
+        int before = errorCount();
+        boolean synthFailed = false;
+        if (synthesizeLvt && LvtSynth.needed(u.body)) {
+            MethodNode b = u.body;
+            u.body = LvtSynth.synthesize(u.cn.name, b, what -> report(u, "GPU0307", firstLine(b), u.name(), what));
+            synthFailed = errorCount() != before;
+        }
         MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), diags, aggs);
         u.ml = ml;
         u.line = ml.firstLine();
-        int before = errorCount();
+        if (synthFailed) {
+            return; // GPU0307 уже выдан; неполная LVT дала бы ещё и GPU0301
+        }
         MethodNode mn = u.decl;
         String what = u.kernel ? "Kernel" : u.reduction ? "Reduction" : "DeviceFunction";
         if (u.kernel && u.reduction) {
@@ -707,6 +724,16 @@ final class ModuleBuilder {
     }
 
     // =============================================================================================
+
+    /** @return первая строка метода ({@code LineNumberTable}) либо 0 */
+    private static int firstLine(MethodNode m) {
+        for (org.objectweb.asm.tree.AbstractInsnNode in = m.instructions.getFirst(); in != null; in = in.getNext()) {
+            if (in instanceof org.objectweb.asm.tree.LineNumberNode l) {
+                return l.line;
+            }
+        }
+        return 0;
+    }
 
     private void report(Unit u, String code, int line, Object... args) {
         diags.add(AsmDiagnostic.of(code, u.cls, u.name(), line, args));

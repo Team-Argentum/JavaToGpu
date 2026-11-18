@@ -75,7 +75,7 @@ class CorpusTest {
      * длины массивов, один work-item для ядер, пишущих в общую ячейку. Остальные - {@code of1D(16, 16)}: массивы
      * {@link SampleArgs} рассчитаны на 16-24 work-item'а.
      */
-    private static final Map<String, NdRange> RANGES = Map.of(
+    static final Map<String, NdRange> RANGES = Map.of(
             "IndexKernels.grouped", NdRange.of2D(8, 6),
             "LocalKernels.transpose", NdRange.of2D(24, 16),
             "MemoryKernels.lengths", NdRange.of1D(3),
@@ -197,7 +197,7 @@ class CorpusTest {
      * Побитовое сравнение аргументов: массивы - поэлементно, объекты struct и векторы - по полям (у них нет
      * {@code equals}), числа - через {@code equals} обёрток (побитово для float/double).
      */
-    private static boolean same(Object x, Object y) {
+    static boolean same(Object x, Object y) {
         if (x == null || y == null) {
             return x == y;
         }
@@ -241,7 +241,7 @@ class CorpusTest {
      * Случайные аргументы; у {@code transpose} ширина и высота должны совпадать с запуском, у {@code reduceSum} вход -
      * по элементу на work-item двух групп по 64, у {@code histogram} - двух групп по 32 и 16 корзин.
      */
-    private static Object[] args(SampleKernels.Kernel k, long seed) {
+    static Object[] args(SampleKernels.Kernel k, long seed) {
         Object[] a = SampleArgs.random(k, seed).get();
         if (k.label().equals("LocalKernels.transpose")) {
             a[2] = 24;
@@ -268,7 +268,7 @@ class CorpusTest {
         return a;
     }
 
-    private static String outcome(IrModule m, NdRange range, Object[] args) {
+    static String outcome(IrModule m, NdRange range, Object[] args) {
         Result<Interpreter.Execution> r = Interpreter.run(m, range, args);
         if (r.isOk()) {
             return "ok";

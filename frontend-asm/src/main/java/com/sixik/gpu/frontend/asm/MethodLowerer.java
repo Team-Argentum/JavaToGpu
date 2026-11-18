@@ -695,6 +695,15 @@ final class MethodLowerer {
             }
             Cfg.Block h = g0.get(l.target);
             int headerLine = lineAt[firstOpcodeIndex(h)];
+            if (headerLine == 0) {
+                // без LineNumberTable (18.2-S7) шаг по строке не найти: цикл - while, а латч, в который ведут
+                // continue (больше одного предшественника), - шаг: он исполняется и после тела, и по continue
+                if (l.preds.size() > 1) {
+                    splits.add(l.start);
+                    updates.put(h.start, l.start);
+                }
+                continue;
+            }
             int jump = insns.indexOf(l.last);
             int u = -1;
             int before = -1;

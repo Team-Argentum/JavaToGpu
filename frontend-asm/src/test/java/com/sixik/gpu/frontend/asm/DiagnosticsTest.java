@@ -153,6 +153,29 @@ class DiagnosticsTest {
         assertTrue(d.get(0).message().contains("t.Missing") && d.get(0).message().contains("Missing.f"), d.toString());
     }
 
+    /** {@code GPU0307}: синтез LVT ({@code AsmJit}, режим {@code SYNTHESIZE}) - слот читается до записи. */
+    @Test
+    void unsynthesizableLocalsAreReported() {
+        org.objectweb.asm.tree.ClassNode cn = new org.objectweb.asm.tree.ClassNode();
+        cn.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "t/NoLvt", null, "java/lang/Object", null);
+        MethodVisitor mv = cn.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "k", "([I)V", null, null);
+        mv.visitAnnotation(Annotations.KERNEL, false).visitEnd();
+        mv.visitCode();
+        mv.visitVarInsn(Opcodes.ALOAD, 0);
+        mv.visitInsn(Opcodes.ICONST_0);
+        mv.visitVarInsn(Opcodes.ILOAD, 1);
+        mv.visitInsn(Opcodes.IASTORE);
+        mv.visitInsn(Opcodes.RETURN);
+        mv.visitMaxs(3, 2);
+        mv.visitEnd();
+        cn.visitEnd();
+        AsmJit.Result r = AsmJit.compile(new AsmJit.Unit(null, Map.of("t/NoLvt", cn),
+                List.of(AsmJit.Entry.of("t/NoLvt", "k", "([I)V"))), AsmJit.Options.DEFAULT.synthesizeLvt(true));
+        r.diagnostics().forEach(d -> covered.add(d.code()));
+        assertEquals(List.of("GPU0307"), r.diagnostics().stream().map(AsmDiagnostic::code).toList(),
+                r.diagnostics().toString());
+    }
+
     /** {@code GPU0311}: точка входа {@link AsmJit} без метода и с атрибутами, заданными дважды. */
     @Test
     void badAsmJitEntriesAreReported() throws IOException {
@@ -176,6 +199,7 @@ class DiagnosticsTest {
         valueOnTheStackAcrossALoopIsRejected();
         calleeClassMissingFromTheClasspathIsReported();
         badAsmJitEntriesAreReported();
+        unsynthesizableLocalsAreReported();
         Set<String> table = Diag.codes().stream().filter(c -> c.startsWith("GPU03"))
                 .collect(Collectors.toCollection(TreeSet::new));
         assertFalse(table.isEmpty());

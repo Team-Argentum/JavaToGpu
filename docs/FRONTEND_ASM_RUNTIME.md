@@ -174,6 +174,28 @@ public final class RouterLinks {
   восстанавливаются как `while` (поведение то же, 17.9-4).
 - **Позиции:** генератор пишет `visitLineNumber(nodeId, label)` и `SourceFile = "router/<dimension>"`. Диагностика
   выглядит как `router/overworld:4711: GPU0xxx …`, а GA2 переводит 4711 в узел `Node`.
+- **Сделано в B2 (2026-11-18).** `AsmJit.Options.lvt` (`REQUIRED` по умолчанию, `synthesizeLvt(true)` → `SYNTHESIZE`);
+  `LvtSynth` работает в `ModuleBuilder.check` на копии метода (дерево генератора не меняется) и только у методов без
+  своей LVT. Устройство:
+  1. веба — достигающие определения сразу по всем слотам (битовые множества на блок), union-find записей;
+  2. тип — по опкоду, у `astore` — по источнику значения через ASM `SourceInterpreter` (`newarray`, `new`, вызов,
+     `getfield`, `aaload`, `dup`, параметр, другая локаль — до неподвижной точки). Зависимость `asm-analysis` (есть у
+     загрузчиков модов; сборка с ASM 9.7 проверена);
+  3. соседние веба одного слота и типа склеиваются, если значение записи вычислено из предыдущего (`x = f(x)`: у javac
+     это одна переменная);
+  4. диапазон — до выхода из цикла у переменной, последний раз использованной в латче (для `for`-инициализатора
+     17.9-8), иначе до конца метода; веб, пересекающийся с другим вебом слота, получает новый слот;
+  5. без `LineNumberTable` шаг `for` по строке не ищется: латч, в который ведут `continue` (больше одного
+     предшественника), становится шагом, иначе цикл — `while`.
+
+  `GPU0307` — разные типы в одном вебе, чтение до записи, неизвестный тип ссылки, неразбираемый байткод.
+  `AsmJit.position(d, unit)` даёт `router/overworld:4711` (`SourceFile` с `/` — как есть).
+  **Проверка** (`LvtSynthTest`): весь корпус 17.14 со `SKIP_DEBUG` (без LVT и строк) исполняется интерпретатором
+  побитово как IR_java; без LVT при сохранённых строках IR совпадает, кроме `SmallTypeKernels.compound/storage`
+  (локали `byte/short/char/boolean` → `int`, по контракту 18.3) и `ControlKernels.effects` (пункт (г), как и с LVT);
+  метод со своей LVT в режиме `SYNTHESIZE` даёт тот же `kernelId`. Затраты: `SourceInterpreter` хранит кадр на каждую
+  инструкцию (≈ инструкции × (локали + стек)), он запускается только при ссылочных локалях или склейке — замер на
+  методах роутера в B7.
 
 ### S8. Встраивание в Minecraft 1.21.1 (Java 21)
 
@@ -324,7 +346,7 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 | Код | Сообщение |
 |---|---|
 | `GPU0311` | Entry point {0}: {1} (нет метода; элементы `@Kernel` заданы и аннотацией, и `Entry`) — B1 |
-| `GPU0307` | Slot {0} of {1} holds incompatible types {2} in one variable (synthesized LVT) |
+| `GPU0307` | Local variables of {0} cannot be synthesized: {1} (разные типы в вебе, чтение до записи, неизвестный тип ссылки) — B2 |
 | `GPU0308` | Binding of {0} has type {1}, the field is {2} |
 | `GPU0309` | Call to {0}: no link, or the link target {1} has another descriptor |
 | `GPU0310` | Kernel {0} is `exact`, but uses {1} (tolerance {2} ULP or fp flag {3}) |
@@ -377,7 +399,7 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 |---|---|---|
 | **B0** | ✅ частично (18.8a): масштаб фронтенда, исправление `chain`, ASM 9.7. Осталось: роутеры GA2, решения 18.6. Замеры до кода: размер узлов и методов роутеров vanilla, Terralith и Tectonic в форме контракта (генератор-прототип вне репозитория); время и глубина рекурсии `Cfg/Structurer/Scopes`; проверка `frontend-asm --release 17` с ASM 9.7 | цифры и найденные рекурсии записаны в 18.8; решения 18.6 приняты |
 | **B1** | ✅ (18.4): `AsmJit`, `Unit`, вход `ClassNode`, `ClassSource.chain`, явные `entries`, `GPU0311` | корпус 17.14 через `AsmJit` даёт тот же IR, что `compile` |
-| **B2** | `LvtSynth` (`SYNTHESIZE`), `GPU0307`, позиции-узлы | корпус со стёртыми LVT и строками: то же поведение; IR — с пунктами (а)(г) 17.14-3 |
+| **B2** | ✅ (S7): `LvtSynth` (`SYNTHESIZE`), `GPU0307`, позиции-узлы | корпус со стёртыми LVT и строками: то же поведение; IR — с пунктами (а)(г) 17.14-3 |
 | **B3** | `Bindings` (константы), `Links`, `@Extern`, `GPU0308/0309` | тесты на `ClassWriter`: свёртка флага убирает ветку; библиотека ↔ сгенерированное в обе стороны |
 | **B4** | Модуль с многими точками входа: IR, валидатор, `IrBinary`, кодоген, `F_INLINE`, `@DeviceFunction(inline)` | модуль из 3 ядер с общей функцией: одна копия функции в исходнике; `noinline` в выводе; `kernelId` одиночного ядра не изменился |
 | **B5** | `exact`, JDK-интринсики (общие с `frontend-java`), тест неспекулятивности оптимизатора, `GPU0310` | F64-образцы: интерпретатор = JVM побитово на `opt=0..3`; `Math.sin` в `exact` даёт `GPU0310` |

@@ -100,10 +100,36 @@ public final class AsmJit {
      *
      * @param strictBarriers барьер под расходящимся управлением - ошибка {@code GPU0131}, а не предупреждение
      *                       {@code GPU0130}
+     * @param lvt            что делать с методом без {@code LocalVariableTable}
      */
-    public record Options(boolean strictBarriers) {
-        /** Настройки по умолчанию. */
-        public static final Options DEFAULT = new Options(false);
+    public record Options(boolean strictBarriers, Lvt lvt) {
+        /** Настройки по умолчанию: LVT обязательна. */
+        public static final Options DEFAULT = new Options(false, Lvt.REQUIRED);
+
+        /** Проверяет поля. */
+        public Options {
+            Objects.requireNonNull(lvt, "lvt");
+        }
+
+        /**
+         * @param on синтезировать LVT
+         * @return копия с режимом {@link Lvt#SYNTHESIZE} либо {@link Lvt#REQUIRED}
+         */
+        public Options synthesizeLvt(boolean on) {
+            return new Options(strictBarriers, on ? Lvt.SYNTHESIZE : Lvt.REQUIRED);
+        }
+    }
+
+    /** Режим LVT (18.2-S7). */
+    public enum Lvt {
+        /** Метод с локалями без LVT - {@code GPU0301} (как у {@link AsmFrontend}). */
+        REQUIRED,
+        /**
+         * LVT синтезируется до понижения ({@code LvtSynth}): веб - по достигающим определениям, тип - по опкоду и
+         * источнику значения, {@code boolean/byte/short/char} - как {@code int}; нарушение - {@code GPU0307}. Метод со
+         * своей LVT не меняется. Без {@code LineNumberTable} циклы восстанавливаются как {@code while}.
+         */
+        SYNTHESIZE
     }
 
     /**
@@ -140,6 +166,7 @@ public final class AsmJit {
         List<AsmDiagnostic> diags = new ArrayList<>();
         List<Kernel> kernels = new ArrayList<>();
         ModuleBuilder mb = new ModuleBuilder(unit.classes(), diags);
+        mb.synthesizeLvt(options.lvt() == Lvt.SYNTHESIZE);
         for (Map.Entry<String, ClassNode> g : unit.generated().entrySet()) {
             ClassNode cn = g.getValue();
             if (!g.getKey().equals(cn.name)) {
@@ -179,6 +206,30 @@ public final class AsmJit {
             }
         }
         return new Result(List.copyOf(kernels), List.copyOf(diags));
+    }
+
+    /**
+     * Позиция диагностики (18.2-S7): {@code SourceFile} сгенерированного класса и номер строки, который генератор
+     * записал {@code visitLineNumber} (например, идентификатор узла: {@code router/overworld:4711}). {@code SourceFile}
+     * с {@code /} берётся как есть, иначе к нему добавляется пакет класса, как у {@link AsmFrontend}.
+     *
+     * @param d    диагностика
+     * @param unit единица, в которой она получена
+     * @return {@code файл:строка}, {@code файл} либо двоичное имя класса
+     */
+    public static String position(AsmDiagnostic d, Unit unit) {
+        String internal = d.className().replace('.', '/');
+        ClassNode cn = unit.generated().get(internal);
+        String file = cn != null ? cn.sourceFile : null;
+        String where;
+        if (file == null) {
+            where = d.className();
+        } else if (file.indexOf('/') >= 0) {
+            where = file;
+        } else {
+            where = internal.substring(0, internal.lastIndexOf('/') + 1) + file;
+        }
+        return d.line() > 0 ? where + ":" + d.line() : where;
     }
 
     private static MethodNode method(ClassNode cn, Entry e) {
