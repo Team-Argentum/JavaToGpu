@@ -114,6 +114,56 @@ public final class OpenClEmitter {
         return emitKernels(m, ks.stream().mapToInt(Integer::intValue).toArray(), target, options);
     }
 
+    /**
+     * Компиляторный выход для чужого рантайма (FRONTEND_ASM_RUNTIME.md, S8, шаг B6) под {@link Target#GENERIC}:
+     * без {@code native_*} и без опции точного деления, если её не требует само ядро.
+     *
+     * @param m       модуль
+     * @param options параметры генерации
+     * @return программа с ABI ядер либо диагностики
+     */
+    public static Result<ClProgram> program(IrModule m, EmitOptions options) {
+        return program(m, Target.GENERIC, options);
+    }
+
+    /**
+     * Как {@link #emitProgram}, но результат - {@link ClProgram}: текст, опции сборки и ABI всех ядер (порядок
+     * аргументов, тип и размер элемента, адресное пространство, чтение/запись буфера).
+     *
+     * @param m       модуль
+     * @param target  цель
+     * @param options параметры генерации
+     * @return программа с ABI ядер либо диагностики
+     */
+    public static Result<ClProgram> program(IrModule m, Target target, EmitOptions options) {
+        Result<Program> p = emitProgram(m, target, options);
+        if (!p.isOk()) {
+            return Result.failed(p.diagnostics());
+        }
+        Program pr = p.value();
+        Validator.Report report = Validator.validate(m);
+        List<ClProgram.KernelAbi> abis = new ArrayList<>();
+        for (Program.Kernel k : pr.kernels()) {
+            int[] access = report.functions()[k.function()].paramAccess();
+            List<ClProgram.Param> params = new ArrayList<>();
+            for (KernelArg a : k.args()) {
+                int kind = switch (a.kind()) {
+                    case KernelArg.ARRAY_PTR -> ClProgram.Param.BUFFER;
+                    case KernelArg.ARRAY_LEN -> ClProgram.Param.LENGTH;
+                    default -> ClProgram.Param.SCALAR;
+                };
+                int acc = kind == ClProgram.Param.BUFFER && a.param() < access.length ? access[a.param()] : 0;
+                params.add(new ClProgram.Param(kind, a.param(), a.name(), a.type(),
+                        com.sixik.gpu.ir.AbiLayout.sizeOf(m, a.type()), a.space(), acc));
+            }
+            int f = k.function();
+            int[] wg = {m.fReqWorkGroup(f, 0), m.fReqWorkGroup(f, 1), m.fReqWorkGroup(f, 2)};
+            abis.add(new ClProgram.KernelAbi(k.entry(), f, m.debug().functionName(f), wg, params));
+        }
+        return new Result<>(new ClProgram(pr.source(), pr.buildOptions(), pr.requiredFeatures(), abis),
+                p.diagnostics());
+    }
+
     private static List<Diagnostic> errors(Validator.Report report) {
         List<Diagnostic> errors = new ArrayList<>();
         for (Diagnostic d : report.diagnostics()) {

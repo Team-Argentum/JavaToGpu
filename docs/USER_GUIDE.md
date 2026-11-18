@@ -269,6 +269,22 @@ try (GpuBuffer in = ctx.allocate(Types.F32, n)) {
 памяти — не определено). Пара `readView()` → правка в `writeView()` → `commitView()` меняет буфер на месте; `readView()`
 до `commitView()` перезаписывает незафиксированные изменения.
 
+## Несколько ядер одной программой
+
+Модуль IR с несколькими ядрами (например, `AsmJit.Result.module()` фронтенда байткода) можно собрать одной программой
+драйвера: общие `@DeviceFunction` компилируются один раз, образ на диске — один на модуль.
+
+```java
+CompiledProgram program = context.compileProgram(jit.module()).value();
+context.launch(program.kernel("square"), LaunchConfig.of1D(a.length), (Object) a);
+```
+
+`kernel(String)` ищет по имени метода (или имени `__kernel`), `kernel(int)` — по индексу функции в модуле
+(`AsmJit.Kernel.function()`). Подбора `fallback`-вариантов здесь нет: если устройство не поддерживает то, что нужно
+хотя бы одному ядру, вся программа получает `RT-D02`. Для своего рантайма OpenCL тот же модуль превращается в текст и
+ABI ядер без `runtime`: `OpenClEmitter.program(module, EmitOptions.RELEASE)` → `ClProgram` (исходник, опции сборки,
+по ядру — порядок аргументов `clSetKernelArg`, тип и размер элемента, адресное пространство, чтение/запись буфера).
+
 ## Массивы, данные которых живут на устройстве
 
 `GpuFloatArray`, `GpuIntArray`, `GpuLongArray` и `GpuDoubleArray` (пакет `com.sixik.gpu.api.types`) пишутся в сигнатуре

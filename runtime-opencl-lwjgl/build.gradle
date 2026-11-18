@@ -39,3 +39,34 @@ tasks.register('deviceTest', Test) {
     }
     shouldRunAfter tasks.named('test')
 }
+
+// Проверка на JVM 17 (FRONTEND_ASM_RUNTIME.md, S8, шаг B6): путь мода на Java 17 - frontend-asm, ClProgram и
+// GpuContext.compileProgram через LWJGL - собирается с --release 17 и запускается на JDK 17 (toolchain). Тесты модулей
+// собираются под 25 и на 17 не запускаются, поэтому совместимость Java-17-модулей проверяет эта программа.
+// Без устройства запуск ядер пропускается; -PsmokeRequireDevice=true делает это ошибкой.
+sourceSets {
+    jdk17Smoke
+}
+
+dependencies {
+    jdk17SmokeImplementation sourceSets.main.output
+    jdk17SmokeImplementation project(':runtime')
+    jdk17SmokeImplementation project(':frontend-asm')
+    jdk17SmokeImplementation "org.lwjgl:lwjgl:${LWJGL_VERSION}"
+    jdk17SmokeImplementation "org.lwjgl:lwjgl-opencl:${LWJGL_VERSION}"
+    jdk17SmokeRuntimeOnly "org.lwjgl:lwjgl:${LWJGL_VERSION}:${lwjglNatives}"
+}
+
+tasks.named('compileJdk17SmokeJava', JavaCompile) {
+    options.release = 17
+}
+
+tasks.register('jdk17Smoke', JavaExec) {
+    group = 'verification'
+    description = 'Runs frontend-asm, ClProgram and GpuContext.compileProgram (LWJGL backend) on a JDK 17 launcher.'
+    classpath = sourceSets.jdk17Smoke.runtimeClasspath
+    mainClass = 'com.sixik.gpu.smoke.Jdk17Smoke'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+    systemProperty 'smoke.expectJava', '17'
+    systemProperty 'smoke.requireDevice', findProperty('smokeRequireDevice') ?: 'false'
+}

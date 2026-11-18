@@ -1185,6 +1185,255 @@ public final class GpuContext implements AutoCloseable {
         }
     }
 
+    // =============================================================================================
+    // программа из нескольких ядер (B4/B6)
+    // =============================================================================================
+
+    private static final class ProgramEntry {
+        Result<CompiledProgram> result;
+    }
+
+    /** Кэш {@link #compileProgram}: модуль, опции, оптимизатор, цель, устройство. */
+    private final ConcurrentHashMap<String, ProgramEntry> programCache = new ConcurrentHashMap<>();
+    /** Общие программы драйвера: их ядра держат {@code program = 0}, сами программы освобождаются при закрытии. */
+    private final List<Long> sharedPrograms = new ArrayList<>();
+
+    /**
+     * Компилирует все ядра модуля одной программой с параметрами генерации контекста.
+     *
+     * @param module IR-модуль с одним или несколькими ядрами ({@code AsmJit.Result.module()})
+     * @return программа либо диагностики
+     * @see #compileProgram(IrModule, EmitOptions)
+     */
+    public Result<CompiledProgram> compileProgram(IrModule module) {
+        return compileProgram(module, emitOptions);
+    }
+
+    /**
+     * Компилирует все ядра модуля одной программой (FRONTEND_ASM_RUNTIME.md, 18.2-S4, шаги B4/B6): модуль
+     * оптимизируется целиком, печатается {@link OpenClEmitter#emitProgram}, драйвер собирает его <b>один раз</b>, и
+     * из программы создаётся ядро на каждую точку входа. Общие device-функции компилируются один раз, образ на диске -
+     * один на модуль. Повторный запрос того же модуля отдаёт кэш.
+     *
+     * <p>Отличия от {@link #compile(IrModule, int, EmitOptions)}: нет подбора {@code fallback}-вариантов (если
+     * устройство не умеет того, что нужно хоть одному ядру, - {@code RT-D02} для всей программы), уровень оптимизации -
+     * контекста либо общий {@code opt} всех ядер. Деление на стадии ({@link KernelSplitMode}) работает как обычно.</p>
+     *
+     * @param module  IR-модуль
+     * @param options параметры генерации
+     * @return программа (в диагностиках - предупреждения драйвера) либо ошибки: {@code IR-*}/{@code CG-*} от
+     *         генератора ({@code CG-A01} - в модуле нет ядер), {@code RT-D02}, {@code RT-D04}, {@code RT-C01},
+     *         {@code RT-X01}, {@code RT-X02}
+     */
+    public Result<CompiledProgram> compileProgram(IrModule module, EmitOptions options) {
+        if (module == null || options == null) {
+            throw new IllegalArgumentException("module and options are required");
+        }
+        if (closed) {
+            return failure("RT-X02", "context is closed");
+        }
+        String key = "prog|" + kernelIdOf(module) + "|" + options.debug() + "," + options.sourceName() + "|"
+                + optimizeKey() + "|" + programTarget(module).id() + "|" + device.name() + "|" + device.driverVersion();
+        ProgramEntry entry = programCache.computeIfAbsent(key, k -> new ProgramEntry());
+        String shortKey = key.substring(5, Math.min(21, key.length()));
+        synchronized (entry) {
+            if (entry.result != null) {
+                hits.incrementAndGet();
+                emit(GpuEvent.Kind.COMPILE, shortKey, 0, 0, "cache-hit; program");
+                return entry.result;
+            }
+            misses.incrementAndGet();
+            long t0 = System.nanoTime();
+            String[] how = {"built"};
+            Result<CompiledProgram> r = buildProgram(module, options, how);
+            entry.result = r;
+            emit(GpuEvent.Kind.COMPILE, shortKey, System.nanoTime() - t0, 0,
+                    (r.isOk() ? how[0] + "; program of " + r.value().kernels().size() + " kernels" : "failed"));
+            return r;
+        }
+    }
+
+    /** Цель программы: с {@code native_*}, если хотя бы одно ядро разрешило {@code fp=native} (генератор применит их только к его функциям). */
+    private Target programTarget(IrModule m) {
+        for (int f = 0; f < m.functionCount(); f++) {
+            if (m.fKind(f) == IrModule.KERNEL && (m.fFp(f) & IrModule.FP_NATIVE) != 0) {
+                return target.withNativeMath(nativeMath().mask());
+            }
+        }
+        return target;
+    }
+
+    private Result<CompiledProgram> buildProgram(IrModule original, EmitOptions options, String[] how) {
+        List<Integer> originals = new ArrayList<>();
+        for (int f = 0; f < original.functionCount(); f++) {
+            if (original.fKind(f) == IrModule.KERNEL) {
+                originals.add(f);
+            }
+        }
+        // уровень: общий opt всех ядер, иначе - контекста
+        int level = optimizeOptions.level();
+        if (!originals.isEmpty()) {
+            int first = original.fOpt(originals.get(0));
+            boolean same = true;
+            for (int f : originals) {
+                same &= original.fOpt(f) == first;
+            }
+            if (same && first != IrModule.OPT_INHERIT) {
+                level = first;
+            }
+        }
+        IrModule m = original;
+        OptimizeResult optimized = null;
+        if (!options.debug() && level > 0 && !originals.isEmpty()) {
+            try {
+                optimized = Optimizer.optimize(original, level == optimizeOptions.level() ? optimizeOptions
+                        : optimizeOptions.withLevel(level));
+                for (int f : originals) {
+                    if (optimized.newIndexOf(f) < 0) {
+                        optimized = null;
+                        break;
+                    }
+                }
+            } catch (RuntimeException e) {
+                emit(GpuEvent.Kind.WARNING, "program", 0, 0, "IR optimizer failed, the program is compiled unoptimized: " + e);
+                optimized = null;
+            }
+            if (optimized != null) {
+                m = optimized.module();
+                for (String failure : optimized.failures()) {
+                    emit(GpuEvent.Kind.WARNING, "program", 0, 0, failure.startsWith("budget: ")
+                            ? "IR optimizer " + failure.substring("budget: ".length())
+                            + "; the program is compiled at opt=" + optimized.level()
+                            : "IR optimizer pass rejected: " + failure);
+                }
+            }
+        }
+        Target t = programTarget(m);
+        Result<com.sixik.gpu.codegen.opencl.Program> emitted = OpenClEmitter.emitProgram(m, t, options);
+        if (!emitted.isOk()) {
+            return Result.failed(emitted.diagnostics());
+        }
+        com.sixik.gpu.codegen.opencl.Program pr = emitted.value();
+        int[] kernels = new int[originals.size()];
+        Artifact[] arts = new Artifact[kernels.length];
+        int need = pr.requiredFeatures();
+        for (int i = 0; i < kernels.length; i++) {
+            kernels[i] = optimized == null ? originals.get(i) : optimized.newIndexOf(originals.get(i));
+            com.sixik.gpu.codegen.opencl.Program.Kernel k = pr.kernel(kernels[i]);
+            arts[i] = new Artifact(pr.source(), k.entry(), k.args(), pr.requiredFeatures(), pr.buildOptions(), t,
+                    options);
+            need |= requiredMask(m, kernels[i]);
+        }
+        dumpSource(arts[0]);
+        int missing = need & ~device.features();
+        if (missing != 0) {
+            return failure("RT-D02", "device " + device.describe() + " does not support " + Features.describe(missing)
+                    + ", but the program of " + kernels.length + " kernels requires them");
+        }
+        Validator.FunctionInfo[] infos = Validator.validate(m).functions();
+        for (int i = 0; i < kernels.length; i++) {
+            long localBytes = localMemoryBytes(m, kernels[i]);
+            if (localBytes > device.localMemory()) {
+                return failure("RT-D04", "kernel " + arts[i].entry() + " declares " + localBytes
+                        + " bytes of local memory, but the device " + device.describe() + " provides per work-group "
+                        + device.localMemory() + " (CL_DEVICE_LOCAL_MEM_SIZE); reduce the @Local arrays");
+            }
+        }
+        if (!beginBuild()) {
+            return failure("RT-X02", "context is closed");
+        }
+        long program = 0;
+        long[] handles = new long[kernels.length];
+        boolean registered = false;
+        try {
+            String diskKey = disk == null ? null : "gbp1|codegen=" + codegenVersion + "|" + optimizeKey() + "|ir="
+                    + kernelIdOf(m) + "|emit=" + options.debug() + "|build=" + buildOptions(arts[0])
+                    + "|device=" + device.vendor() + "/" + device.name() + "|driver=" + device.driverVersion()
+                    + "|opencl=" + device.openClVersion() + "|src=" + java.util.HexFormat.of().formatHex(
+                    DiskCache.sha256(pr.source().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            String driverLog = "";
+            List<Diagnostic> log = List.of();
+            boolean fromDisk = false;
+            if (diskKey != null) {
+                long[] cached = loadFromDisk(diskKey, arts[0], new String[]{""});
+                if (cached != null) {
+                    program = cached[0];
+                    handles[0] = cached[1];
+                    fromDisk = true;
+                    how[0] = "disk-hit";
+                }
+            }
+            if (!fromDisk) {
+                program = api.createProgram(contextHandle, pr.source());
+                DeviceApi.BuildOutcome outcome = buildProgram(program, buildOptions(arts[0]));
+                driverLog = outcome.log();
+                log = BuildLog.parse(outcome.log(), kernels[0], !outcome.ok());
+                if (!outcome.ok()) {
+                    api.release(DeviceApi.HandleKind.PROGRAM, program);
+                    program = 0;
+                    return Result.failed(log);
+                }
+                handles[0] = api.createKernel(program, arts[0].entry());
+                if (diskKey != null) {
+                    saveToDisk(diskKey, program);
+                }
+            }
+            for (int i = 1; i < kernels.length; i++) {
+                handles[i] = api.createKernel(program, arts[i].entry());
+            }
+            long[] maxWg = new long[kernels.length];
+            DriverStats[] stats = new DriverStats[kernels.length];
+            for (int i = 0; i < kernels.length; i++) {
+                maxWg[i] = api.kernelMaxWorkGroupSize(handles[i], device.handle());
+                DriverStats s = isNvidia() ? DriverStats.parseNvidiaLog(driverLog, arts[i].entry()) : DriverStats.UNKNOWN;
+                stats[i] = rememberDriverStats(diskKey == null ? null : diskKey + "#" + arts[i].entry(), s, !fromDisk)
+                        .withPrivateBytes(api.kernelPrivateMemSize(handles[i], device.handle()));
+            }
+            String moduleId = kernelIdOf(original);
+            lock.lock();
+            try {
+                if (closed) {
+                    return failure("RT-X02", "context is closed");
+                }
+                List<CompiledKernel> cks = new ArrayList<>();
+                for (int i = 0; i < kernels.length; i++) {
+                    int k = kernels[i];
+                    CompiledKernel ck = new CompiledKernel(this, m, k, arts[i], moduleId, infos[k].paramAccess(), 0,
+                            handles[i], maxWg[i], stats[i], estimateRegisters(m, k), fullyWritten(m, k));
+                    compiled.add(ck);
+                    cks.add(ck);
+                }
+                sharedPrograms.add(program);
+                registered = true;
+                for (int i = 0; i < cks.size(); i++) {
+                    reportPressure(cks.get(i));
+                    attachSplit(cks.get(i), m, kernels[i], options);
+                }
+                for (Diagnostic d : log) {
+                    emit(GpuEvent.Kind.WARNING, arts[0].entry(), 0, 0, d.message());
+                }
+                int[] fs = originals.stream().mapToInt(Integer::intValue).toArray();
+                return new Result<>(new CompiledProgram(original, moduleId, pr.source(), fs, cks), log);
+            } finally {
+                lock.unlock();
+            }
+        } catch (DeviceApiException e) {
+            return failure("RT-X01", "driver error during compilation: " + e.getMessage());
+        } finally {
+            if (!registered) {
+                for (long h : handles) {
+                    if (h != 0) {
+                        api.release(DeviceApi.HandleKind.KERNEL, h);
+                    }
+                }
+                if (program != 0) {
+                    api.release(DeviceApi.HandleKind.PROGRAM, program);
+                }
+            }
+            endBuild();
+        }
+    }
+
     /** Монитор учёта идущих сборок драйвером (они идут без замка контекста). */
     private final Object builds = new Object();
     /** Сборок драйвером в работе. */
@@ -1411,7 +1660,9 @@ public final class GpuContext implements AutoCloseable {
         for (CompiledKernel s : stages) {
             if (s != null && compiled.remove(s)) {
                 api.release(DeviceApi.HandleKind.KERNEL, s.kernel);
-                api.release(DeviceApi.HandleKind.PROGRAM, s.program);
+                if (s.program != 0) {
+                    api.release(DeviceApi.HandleKind.PROGRAM, s.program);
+                }
             }
         }
     }
@@ -2692,9 +2943,15 @@ public final class GpuContext implements AutoCloseable {
             closed = true;
             for (CompiledKernel k : compiled) {
                 api.release(DeviceApi.HandleKind.KERNEL, k.kernel);
-                api.release(DeviceApi.HandleKind.PROGRAM, k.program);
+                if (k.program != 0) {
+                    api.release(DeviceApi.HandleKind.PROGRAM, k.program);
+                }
             }
             compiled.clear();
+            for (long p : sharedPrograms) {
+                api.release(DeviceApi.HandleKind.PROGRAM, p);
+            }
+            sharedPrograms.clear();
             for (long h : scratchHandles) {
                 if (h != 0) {
                     api.release(DeviceApi.HandleKind.BUFFER, h);

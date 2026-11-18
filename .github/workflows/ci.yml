@@ -1,0 +1,59 @@
+# Сборка и тесты (FRONTEND_ASM_RUNTIME.md, S8, шаг B6).
+# Модули собираются toolchain-ом JDK 25, Java-17-модули - с --release 17; тесты идут на 25. Совместимость с JVM 17
+# (моды Minecraft 1.18-1.20.4) проверяет :runtime-opencl-lwjgl:jdk17Smoke на JDK 17 и CPU OpenCL (pocl) через LWJGL.
+# Device-тесты (GPU) здесь не запускаются: у раннера нет GPU, а pocl расходится с интерпретатором в известном ядре.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # последняя версия списка становится JAVA_HOME (Gradle работает на 21, как у разработчика);
+      # 17 и 25 Gradle находит через JAVA_HOME_17_X64 / JAVA_HOME_25_X64 (org.gradle.java.installations.fromEnv)
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            25
+            21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: OpenCL on the CPU (pocl)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pocl-opencl-icd ocl-icd-libopencl1 ocl-icd-opencl-dev clinfo
+          clinfo -l
+
+      - name: Build and test (JDK 25 toolchain)
+        run: >
+          ./gradlew build --continue
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_25_X64
+          -Porg.gradle.java.installations.auto-download=false
+
+      - name: JDK 17 smoke (frontend-asm, ClProgram, compileProgram over LWJGL)
+        run: >
+          ./gradlew :runtime-opencl-lwjgl:jdk17Smoke -PsmokeRequireDevice=true
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_25_X64
+          -Porg.gradle.java.installations.auto-download=false
+
+      - name: Test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: '**/build/reports/tests/'
+          retention-days: 7

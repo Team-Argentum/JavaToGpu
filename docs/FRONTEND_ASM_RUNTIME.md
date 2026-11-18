@@ -160,7 +160,7 @@ public final class RouterLinks {
     с интерпретатором. `AsmJitProgramTest`: три ядра с общей функцией — IR одиночных и политика `inline` совпадают с
     `frontend-java`, `kernelId` прежний, функция общего модуля исполняется как одиночный модуль; весь корпус 17.14 по
     классам (одна единица на класс) — то же самое.
-  - **Не сделано:** рантайм (п. 4, `compileProgram`) — перенесён в B6 вместе с `ClProgram`/`KernelAbi`.
+  - **Не сделано в B4:** рантайм (п. 4, `compileProgram`) — сделан в B6 (см. S8, «Сделано в B6»).
 
 ### S5. Состояние work-item: контекст, memo, RNG
 
@@ -296,6 +296,33 @@ public final class RouterLinks {
 - **Компиляторный выход для чужого рантайма** остаётся полезным (GA2 может сначала оставить свой `ClApi`):
   `OpenClCodegen.program(IrModule, EmitOptions) → ClProgram(String source, String buildOptions, List<KernelAbi> kernels)`,
   где `KernelAbi(name, params[i] = {kind: BUFFER|SCALAR|LOCAL, elem, space, access, size})`.
+- **Сделано в B6 (остатки, 2026-11-18).** Отличия от проекта выше:
+  - **`ClProgram`** — в `codegen-opencl`, строится `OpenClEmitter.program(IrModule, [Target,] EmitOptions)` (отдельного
+    класса `OpenClCodegen` нет; без цели — `Target.GENERIC`). `ClProgram(source, buildOptions, requiredFeatures,
+    kernels)`; `KernelAbi(name, function, debugName, reqdWorkGroup, params)`, поиск `kernel(entry)` по имени в тексте C
+    и `named(debugName)` по имени метода (в release ядра называются `k<индекс>`, и отладочное `k0` может оказаться ядром
+    `k1`). `Param(kind, param, name, type, size, space, access)`: `kind` — `BUFFER`, `LENGTH` (длина предыдущего буфера
+    в элементах, `int`) или `SCALAR`; индекс в списке — индекс `clSetKernelArg`; `size` — по `AbiLayout`; `access` —
+    чтение/запись буфера по валидатору. `LOCAL` нет: local-память объявляется внутри ядра, `__local`-параметры ядра v1
+    не поддерживает (`CG-U01`).
+  - **`GpuContext.compileProgram(IrModule[, EmitOptions]) → CompiledProgram`**: модуль оптимизируется целиком (уровень
+    — общий `opt` ядер, иначе контекста), печатается `emitProgram`, драйвер собирает его **один раз**, ядро создаётся
+    на каждую точку входа. Дисковый ключ `gbp1|…` — один образ на модуль; кэш в памяти — по модулю и настройкам.
+    `CompiledProgram`: `kernels()`, `kernel(int function)` (индекс в исходном модуле, как `AsmJit.Kernel.function`),
+    `kernel(String)` (имя метода или `__kernel`), `moduleId()`, `source()`. Программа драйвера общая, освобождается при
+    закрытии контекста. Отличия от `compile`: нет подбора `fallback`-вариантов — `RT-D02` для всей программы, если
+    устройство не умеет того, что нужно хоть одному ядру; деление на стадии работает как обычно.
+  - **CI** — `.github/workflows/ci.yml`: `gradlew build` (toolchain JDK 25, Java-17-модули под `--release 17`) и
+    `:runtime-opencl-lwjgl:jdk17Smoke` на JDK 17 и pocl. Тесты модулей собраны под 25 и на JVM 17 не идут, поэтому
+    совместимость проверяет программа из source set `jdk17Smoke` (`--release 17`, запуск toolchain-ом 17): фронтенд байткода
+    по методам с общей `@DeviceFunction`, `ClProgram`, `compileProgram` и запуск трёх ядер через LWJGL. Device-тесты в CI
+    не идут (нет GPU; pocl расходится с интерпретатором в `IndexKernels.ids`).
+  - **Проверка.** `ClProgramTest` (текст и опции как у `emitProgram`, ABI буферов, скаляра и `reqd_work_group_size`),
+    `CompileProgramTest` на фейке (одна сборка и одна программа на три ядра, запуск, кэш, образ с диска, освобождение при
+    закрытии, `RT-D02`, `CG-A01`), `CompileProgramDeviceTest` на RTX 5070 (три ядра считают верно, второй контекст берёт
+    образ с диска). `jdk17Smoke` локально: Zulu 17.0.20, LWJGL 3.3.3, RTX 5070 — OK. Прогон workflow на GitHub ещё
+    не проверен.
+  - **Не сделано:** проверка в dev-клиенте Minecraft (NeoForge 1.21.1, Fabric, 1.20.1) — вне репозитория.
 - **ASM в загрузчике мода (решение 18.6-7):** `compileOnly` на ASM, используется ASM загрузчика (NeoForge/Fabric
   поставляют 9.7+). Только API `Opcodes.ASM9` и tree API. Если загрузчик дал ASM старше 9.7 — `GPU0306` с версией.
 
@@ -457,9 +484,13 @@ public record Result(IrModule module,                   // много KERNEL-ф�
 ```
 
 ```java
-// codegen-opencl, компиляторный артефакт (S8)
-public record ClProgram(String source, String buildOptions, List<KernelAbi> kernels) {}
-public static Result<ClProgram> program(IrModule module, EmitOptions options);
+// codegen-opencl, компиляторный артефакт (S8, B6)
+public record ClProgram(String source, String buildOptions, int requiredFeatures, List<KernelAbi> kernels) {}
+public static Result<ClProgram> OpenClEmitter.program(IrModule module, [Target target,] EmitOptions options);
+
+// runtime (S4, B6)
+public Result<CompiledProgram> GpuContext.compileProgram(IrModule module[, EmitOptions options]);
+// CompiledProgram: kernels(), kernel(int function), kernel(String name), moduleId(), source()
 ```
 
 **Сделано в B1 (2026-11-18).** `AsmJit.compile(Unit, Options)`, `Unit(classes, generated, entries)`,
@@ -533,9 +564,9 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 | **B1** | ✅ (18.4): `AsmJit`, `Unit`, вход `ClassNode`, `ClassSource.chain`, явные `entries`, `GPU0311` | корпус 17.14 через `AsmJit` даёт тот же IR, что `compile` |
 | **B2** | ✅ (S7): `LvtSynth` (`SYNTHESIZE`), `GPU0307`, позиции-узлы | корпус со стёртыми LVT и строками: то же поведение; IR — с пунктами (а)(г) 17.14-3 |
 | **B3** | ✅ (S2, S3): `Bindings` (константы), `Links`, `@Extern`, `GPU0308/0309` | тесты на `ClassWriter`: свёртка флага убирает ветку; библиотека ↔ сгенерированное в обе стороны |
-| **B4** | ✅ (S4; IR и `IrBinary` менять не понадобилось, рантайм `compileProgram` — в B6): модуль с многими точками входа, кодоген, `F_INLINE`, `@DeviceFunction(inline)` | модуль из 3 ядер с общей функцией: одна копия функции в исходнике; `noinline` в выводе; `kernelId` одиночного ядра не изменился |
+| **B4** | ✅ (S4; IR и `IrBinary` менять не понадобилось, рантайм `compileProgram` — сделан в B6): модуль с многими точками входа, кодоген, `F_INLINE`, `@DeviceFunction(inline)` | модуль из 3 ядер с общей функцией: одна копия функции в исходнике; `noinline` в выводе; `kernelId` одиночного ядра не изменился |
 | **B5** | ✅ (S6; `exact` - бит `FP_EXACT`, `Math.sin` остаётся `GPU0112`, `GPU0310` - у `Gpu.sin`): `exact`, JDK-интринсики (общие с `frontend-java`), тест неспекулятивности оптимизатора, `GPU0310` | F64-образцы: интерпретатор = JVM побитово на `opt=0..3`; `Math.sin` в `exact` даёт `GPU0310` |
-| **B6** | ✅ частично: `runtime` и компиляторная часть под `--release 17`, бэкенды `runtime-opencl-ffm/-lwjgl`, `:runtime:deviceTestLwjgl`. Осталось: CI на JDK 17, `ClProgram`/`KernelAbi`, `GpuContext.compileProgram` (перенесено из B4), проверка в dev-клиенте | моды NeoForge 1.21.1, Fabric и версия на Java 17 (1.20.1) запускают ядро через `runtime-opencl-lwjgl` |
+| **B6** | ✅ (кроме dev-клиента): `runtime` и компиляторная часть под `--release 17`, бэкенды `runtime-opencl-ffm/-lwjgl`, `:runtime:deviceTestLwjgl`, `ClProgram`/`KernelAbi`, `GpuContext.compileProgram`, CI (`build` + `jdk17Smoke` на JDK 17). Осталось: проверка в dev-клиенте (вне репозитория) | моды NeoForge 1.21.1, Fabric и версия на Java 17 (1.20.1) запускают ядро через `runtime-opencl-lwjgl` |
 | **B7** | ✅ (S9; рекурсия - на потоке `DeepStack`, а не переписана; бюджет - у фронтенда `GPU0312`, у оптимизатора откат на `opt=1/0`): масштаб, `budget`, детерминизм | роутер B0 укладывается в бюджет; два прогона дают одинаковый `moduleId` |
 | **B8** | **Пилот GA2:** `DfNoise`, `DfSpline`, `Jm` на Java; `GpuEmitter` для `FLAT`, `HOIST`, `CORNER` в F64; ядра `k_flat`, `k_hoist`, `k_corner` | критерии 18.8 |
 | **B9** | Остальные контексты, аквифер, жилы, биомы, упаковка, certified F32; затем `SurfaceSpec`, `LightProgram`; удаление `ClEmitter` | `GpuVerify` GA2 зелёный без `ClEmitter` |
