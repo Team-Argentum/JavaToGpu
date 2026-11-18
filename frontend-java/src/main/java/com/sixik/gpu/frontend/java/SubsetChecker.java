@@ -995,6 +995,10 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
             }
             return;
         }
+        if (callee.getAnnotation(com.sixik.gpu.api.annotations.Extern.class) != null) {
+            rep.report(p, "GPU0309", shown, "frontend-java does not link @Extern stubs");
+            return;
+        }
         if (callee.getAnnotation(DeviceFunction.class) != null) {
             if (!isStatic) {
                 rep.report(p, "GPU0107", "call of instance method " + shown);

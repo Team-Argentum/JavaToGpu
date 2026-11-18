@@ -176,6 +176,46 @@ class DiagnosticsTest {
                 r.diagnostics().toString());
     }
 
+    /**
+     * {@code GPU0308}: привязка поля значением другого типа; {@code GPU0309}: вызов заглушки {@code @Extern} без
+     * связи. Классы - {@code ClassWriter}, деревом.
+     */
+    @Test
+    void badBindingsAndLinksAreReported() {
+        org.objectweb.asm.tree.ClassNode stub = new org.objectweb.asm.tree.ClassNode();
+        stub.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "t/Stub", null, "java/lang/Object", null);
+        MethodVisitor sm = stub.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "f", "(I)I", null, null);
+        sm.visitAnnotation(Annotations.DEVICE_FUNCTION, false).visitEnd();
+        sm.visitAnnotation(Annotations.EXTERN, false).visitEnd();
+        sm.visitCode();
+        sm.visitVarInsn(Opcodes.ILOAD, 0);
+        sm.visitInsn(Opcodes.IRETURN);
+        sm.visitMaxs(1, 1);
+        sm.visitEnd();
+        stub.visitEnd();
+        org.objectweb.asm.ClassWriter sw = new org.objectweb.asm.ClassWriter(0);
+        stub.accept(sw);
+
+        org.objectweb.asm.tree.ClassNode k = new org.objectweb.asm.tree.ClassNode();
+        k.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "t/UsesStub", null, "java/lang/Object", null);
+        MethodVisitor mv = k.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "k", "([I)V", null, null);
+        mv.visitCode();
+        mv.visitVarInsn(Opcodes.ALOAD, 0);
+        mv.visitInsn(Opcodes.ICONST_0);
+        mv.visitFieldInsn(Opcodes.GETSTATIC, "t/Flags", "N", "I");
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "t/Stub", "f", "(I)I", false);
+        mv.visitInsn(Opcodes.IASTORE);
+        mv.visitInsn(Opcodes.RETURN);
+        mv.visitMaxs(3, 1);
+        mv.visitEnd();
+        k.visitEnd();
+        AsmJit.Result r = AsmJit.compile(new AsmJit.Unit(ClassSource.of(Map.of("t/Stub", sw.toByteArray())),
+                Map.of("t/UsesStub", k), List.of(AsmJit.Entry.of("t/UsesStub", "k", "([I)V")),
+                Bindings.none().constant("t/Flags", "N", 1L), null), AsmJit.Options.DEFAULT);
+        r.diagnostics().forEach(d -> covered.add(d.code()));
+        assertEquals(Set.of("GPU0308", "GPU0309"), codes(r.diagnostics()), r.diagnostics().toString());
+    }
+
     /** {@code GPU0311}: точка входа {@link AsmJit} без метода и с атрибутами, заданными дважды. */
     @Test
     void badAsmJitEntriesAreReported() throws IOException {
@@ -200,6 +240,7 @@ class DiagnosticsTest {
         calleeClassMissingFromTheClasspathIsReported();
         badAsmJitEntriesAreReported();
         unsynthesizableLocalsAreReported();
+        badBindingsAndLinksAreReported();
         Set<String> table = Diag.codes().stream().filter(c -> c.startsWith("GPU03"))
                 .collect(Collectors.toCollection(TreeSet::new));
         assertFalse(table.isEmpty());

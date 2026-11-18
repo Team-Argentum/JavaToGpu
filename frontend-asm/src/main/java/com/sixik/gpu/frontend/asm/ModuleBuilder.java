@@ -119,6 +119,8 @@ final class ModuleBuilder {
     private final Set<String> generated = new HashSet<>();
     /** Методам без LVT она синтезируется ({@link LvtSynth}, режим {@code SYNTHESIZE} у {@link AsmJit}). */
     private boolean synthesizeLvt;
+    private Bindings bindings = Bindings.none();
+    private Links links = Links.none();
 
     ModuleBuilder(ClassSource source, List<AsmDiagnostic> diags) {
         this.source = source;
@@ -138,6 +140,17 @@ final class ModuleBuilder {
     void addGenerated(ClassNode cn) {
         classes.put(cn.name, cn);
         generated.add(cn.name);
+    }
+
+    /**
+     * Привязки полей и таблица связей {@link AsmJit} (18.2-S2, S3). Задаются до первой сборки.
+     *
+     * @param bindings привязки
+     * @param links    связи
+     */
+    void link(Bindings bindings, Links links) {
+        this.bindings = bindings;
+        this.links = links;
     }
 
     /** Включает синтез LVT для методов без неё (18.2-S7); иначе такие методы дают {@code GPU0301}. */
@@ -191,6 +204,7 @@ final class ModuleBuilder {
         int before = errorCount();
         for (Unit u : closure(k)) {
             MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), u.lowered ? new ArrayList<>() : diags, aggs);
+            ml.bindings = bindings;
             ml.callees = mi -> callee(u, mi);
             bodies.put(u, ml.execute());
             lowerers.put(u, ml);
@@ -366,6 +380,7 @@ final class ModuleBuilder {
             synthFailed = errorCount() != before;
         }
         MethodLowerer ml = new MethodLowerer(u.cls, u.body, u.name(), diags, aggs);
+        ml.bindings = bindings;
         u.ml = ml;
         u.line = ml.firstLine();
         if (synthFailed) {
@@ -432,6 +447,19 @@ final class ModuleBuilder {
         MethodInsnNode mi = c.insn();
         String shown = simpleName(mi.owner) + "." + mi.name;
         String owner = mi.owner;
+        String name = mi.name;
+        Links.Target link = links.target(mi.owner, mi.name, mi.desc);
+        if (link != null) {
+            String to = simpleName(link.owner()) + "." + link.name();
+            if (!link.desc().equals(mi.desc)) {
+                report(caller, "GPU0309", c.line(), shown, "the link target " + to + link.desc()
+                        + " has another descriptor than " + mi.desc);
+                return null;
+            }
+            owner = link.owner();
+            name = link.name();
+            shown = to;
+        }
         while (owner != null) {
             ClassNode cn = classNode(owner);
             if (cn == null) {
@@ -439,7 +467,12 @@ final class ModuleBuilder {
                 return null;
             }
             for (MethodNode m : cn.methods) {
-                if (m.name.equals(mi.name) && m.desc.equals(mi.desc)) {
+                if (m.name.equals(name) && m.desc.equals(mi.desc)) {
+                    if (Annotations.find(m.invisibleAnnotations, Annotations.EXTERN) != null) {
+                        report(caller, "GPU0309", c.line(), shown, link == null
+                                ? "the @Extern stub has no link (AsmJit Links)" : "the link target is an @Extern stub");
+                        return null;
+                    }
                     // у сгенерированного класса device-функция - любой статический метод (контракт 18.3)
                     boolean device = Annotations.find(m.invisibleAnnotations, Annotations.DEVICE_FUNCTION) != null
                             || generated.contains(cn.name) && (m.access & Opcodes.ACC_STATIC) != 0;

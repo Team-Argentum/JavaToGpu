@@ -17,6 +17,7 @@ final class Annotations {
     static final String REDUCTION = "Lcom/sixik/gpu/api/annotations/Reduction;";
     static final String WORK_GROUP = "Lcom/sixik/gpu/api/annotations/WorkGroup;";
     static final String DEVICE_FUNCTION = "Lcom/sixik/gpu/api/annotations/DeviceFunction;";
+    static final String EXTERN = "Lcom/sixik/gpu/api/annotations/Extern;";
 
     private Annotations() {
     }

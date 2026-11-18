@@ -98,6 +98,13 @@ public final class RouterLinks {
 вызов заглушки заменяется вызовом цели. Дескрипторы должны совпадать (`GPU0309`). Если `@Extern` вызывается без связи,
 выдаётся `GPU0309`. Это то же, что `resolveExterns`, но по символам, а не по тексту.
 
+**Сделано в B3 (2026-11-18).** `api.annotations.Extern` (retention CLASS); `Links.none().redirect(...)` в
+`AsmJit.Unit.links`. Связь применяется при разрешении вызова (`ModuleBuilder.resolve`): цель — сгенерированный
+статический метод или `@DeviceFunction`; другой дескриптор, вызов `@Extern` без связи и связь на другую заглушку —
+`GPU0309`. Вызов разрешается и в ветке, которую выключила привязка: таблица связей проверяется целиком.
+`frontend-java` тело `@Extern` не проверяет (иначе `throw` дал бы `GPU0101`), а вызов заглушки из его ядра — `GPU0309`
+(он не связывает).
+
 ### S3. Параметры времени компиляции
 
 - **Нужно:** вместо `if (aquifers) src.append(...)` писать обычный `if (Ga2Flags.AQUIFERS)` в Java-библиотеке. Сюда же
@@ -108,6 +115,11 @@ public final class RouterLinks {
   (`Simplify` + DCE уже есть). Тип значения не совпадает с дескриптором — `GPU0308`. Непривязанный `getstatic` по-прежнему
   даёт `GPU0115`. Привязка примитивного массива — решение 18.6-5. На JVM-пути поле читается как обычно, поэтому
   библиотеку можно тестировать JUnit'ом, выставив поля.
+- **Сделано в B3 (2026-11-18).** `Bindings.none().constant(owner, field, value)` в `AsmJit.Unit.bindings`:
+  `Integer` (а также `Short/Byte/Character`) для `int/short/byte/char` с проверкой диапазона, `Boolean`, `Long`,
+  `Float`, `Double`; на стеке `boolean/byte/short/char` — константа `int`. Привязка — часть IR, поэтому `kernelId`
+  разный для разных значений. Проверка (`BindingsLinksTest`): `if (Flags.AQUIFERS)` при `false` — после
+  `Optimizer.optimize` в IR нет `if`, результат интерпретатора тот же; ядро `ClassWriter` без LVT читает привязку.
 
 ### S4. Одна программа — много точек входа
 
@@ -347,8 +359,8 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 |---|---|
 | `GPU0311` | Entry point {0}: {1} (нет метода; элементы `@Kernel` заданы и аннотацией, и `Entry`) — B1 |
 | `GPU0307` | Local variables of {0} cannot be synthesized: {1} (разные типы в вебе, чтение до записи, неизвестный тип ссылки) — B2 |
-| `GPU0308` | Binding of {0} has type {1}, the field is {2} |
-| `GPU0309` | Call to {0}: no link, or the link target {1} has another descriptor |
+| `GPU0308` | Binding of {0}: {1} (тип значения, диапазон, поле не примитивного типа) — B3 |
+| `GPU0309` | Call to {0}: {1} (нет связи у `@Extern`, другой дескриптор цели, вызов из `frontend-java`) — B3 |
 | `GPU0310` | Kernel {0} is `exact`, but uses {1} (tolerance {2} ULP or fp flag {3}) |
 
 **Изменения IR, кодогена и `api`:** несколько `KERNEL` в модуле и таблица `entries`, `kernelId`/`moduleId`, версия
@@ -400,7 +412,7 @@ public static Result<ClProgram> program(IrModule module, EmitOptions options);
 | **B0** | ✅ частично (18.8a): масштаб фронтенда, исправление `chain`, ASM 9.7. Осталось: роутеры GA2, решения 18.6. Замеры до кода: размер узлов и методов роутеров vanilla, Terralith и Tectonic в форме контракта (генератор-прототип вне репозитория); время и глубина рекурсии `Cfg/Structurer/Scopes`; проверка `frontend-asm --release 17` с ASM 9.7 | цифры и найденные рекурсии записаны в 18.8; решения 18.6 приняты |
 | **B1** | ✅ (18.4): `AsmJit`, `Unit`, вход `ClassNode`, `ClassSource.chain`, явные `entries`, `GPU0311` | корпус 17.14 через `AsmJit` даёт тот же IR, что `compile` |
 | **B2** | ✅ (S7): `LvtSynth` (`SYNTHESIZE`), `GPU0307`, позиции-узлы | корпус со стёртыми LVT и строками: то же поведение; IR — с пунктами (а)(г) 17.14-3 |
-| **B3** | `Bindings` (константы), `Links`, `@Extern`, `GPU0308/0309` | тесты на `ClassWriter`: свёртка флага убирает ветку; библиотека ↔ сгенерированное в обе стороны |
+| **B3** | ✅ (S2, S3): `Bindings` (константы), `Links`, `@Extern`, `GPU0308/0309` | тесты на `ClassWriter`: свёртка флага убирает ветку; библиотека ↔ сгенерированное в обе стороны |
 | **B4** | Модуль с многими точками входа: IR, валидатор, `IrBinary`, кодоген, `F_INLINE`, `@DeviceFunction(inline)` | модуль из 3 ядер с общей функцией: одна копия функции в исходнике; `noinline` в выводе; `kernelId` одиночного ядра не изменился |
 | **B5** | `exact`, JDK-интринсики (общие с `frontend-java`), тест неспекулятивности оптимизатора, `GPU0310` | F64-образцы: интерпретатор = JVM побитово на `opt=0..3`; `Math.sin` в `exact` даёт `GPU0310` |
 | **B6** | ✅ частично: `runtime` и компиляторная часть под `--release 17`, бэкенды `runtime-opencl-ffm/-lwjgl`, `:runtime:deviceTestLwjgl`. Осталось: CI на JDK 17, `ClProgram`/`KernelAbi`, проверка в dev-клиенте | моды NeoForge 1.21.1, Fabric и версия на Java 17 (1.20.1) запускают ядро через `runtime-opencl-lwjgl` |

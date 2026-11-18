@@ -106,7 +106,8 @@ public class GpuProcessor extends AbstractProcessor {
             }
         }
         for (Element e : round.getElementsAnnotatedWith(DeviceFunction.class)) {
-            if (e instanceof ExecutableElement ee) {
+            // тело заглушки @Extern - не GPU-код: реализацию подставляет связь AsmJit (18.2-S2)
+            if (e instanceof ExecutableElement ee && ee.getAnnotation(com.sixik.gpu.api.annotations.Extern.class) == null) {
                 guarded(ee, () -> compiler.check(ee));
             }
         }

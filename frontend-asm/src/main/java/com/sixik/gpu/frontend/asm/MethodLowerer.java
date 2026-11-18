@@ -136,6 +136,8 @@ final class MethodLowerer {
     final List<DeviceCall> deviceCalls = new ArrayList<>();
     /** Сведения о вызываемых; {@code null} для вызова, который сборщик модуля не разрешил. */
     java.util.function.Function<MethodInsnNode, Callee> callees = mi -> null;
+    /** Привязки полей ({@link Bindings}, 18.2-S3): {@code getstatic} привязанного поля - константа. */
+    Bindings bindings = Bindings.none();
     private List<St> out = new ArrayList<>();
     private int[] lineAt;
     private AbstractInsnNode lastOp;
@@ -229,10 +231,16 @@ final class MethodLowerer {
                 }
                 case Opcodes.GETSTATIC, Opcodes.PUTSTATIC -> {
                     FieldInsnNode f = (FieldInsnNode) in;
+                    Object bound = op == Opcodes.GETSTATIC ? bindings.constant(f.owner, f.name) : null;
                     if (f.name.equals("$assertionsDisabled")) {
                         if (!assertReported) {
                             report("GPU0103", ln);
                             assertReported = true;
+                        }
+                    } else if (bound != null) {
+                        String problem = Bindings.problem(f.desc, bound);
+                        if (problem != null) {
+                            report("GPU0308", ln, f.owner.replace('/', '.') + "." + f.name, problem);
                         }
                     } else {
                         report("GPU0115", ln, f.owner.replace('/', '.') + "." + f.name);
@@ -1255,6 +1263,10 @@ final class MethodLowerer {
             case Opcodes.IASTORE, Opcodes.LASTORE, Opcodes.FASTORE, Opcodes.DASTORE, Opcodes.BASTORE, Opcodes.CASTORE,
                  Opcodes.SASTORE, Opcodes.AASTORE -> arrayStore();
             case Opcodes.GETFIELD -> getField((FieldInsnNode) in);
+            case Opcodes.GETSTATIC -> {
+                FieldInsnNode f = (FieldInsnNode) in;
+                push(Bindings.constantOf(f.desc, bindings.constant(f.owner, f.name)));
+            }
             case Opcodes.PUTFIELD -> putField((FieldInsnNode) in);
             case Opcodes.NEW -> push(Ex.newObject(((TypeInsnNode) in).desc));
             case Opcodes.INVOKESPECIAL -> construct((MethodInsnNode) in);

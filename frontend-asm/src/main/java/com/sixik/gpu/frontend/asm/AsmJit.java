@@ -84,14 +84,30 @@ public final class AsmJit {
      * @param classes   библиотека и прочие классы по имени (jar мода, загрузчик игры; см. {@link ClassSource#chain})
      * @param generated сгенерированные классы деревом: внутреннее имя → узел; ищутся раньше {@code classes}
      * @param entries   точки входа в порядке результата
+     * @param bindings  привязки полей - параметры времени компиляции (18.2-S3); {@code null} - нет
+     * @param links     связи заглушек {@code @Extern} с сгенерированными методами (18.2-S2); {@code null} - нет
      */
-    public record Unit(ClassSource classes, Map<String, ClassNode> generated, List<Entry> entries) {
+    public record Unit(ClassSource classes, Map<String, ClassNode> generated, List<Entry> entries, Bindings bindings,
+                       Links links) {
 
         /** Проверяет поля и копирует коллекции. */
         public Unit {
             classes = classes == null ? ClassSource.empty() : classes;
             generated = generated == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(generated));
             entries = List.copyOf(Objects.requireNonNull(entries, "entries"));
+            bindings = bindings == null ? Bindings.none() : bindings;
+            links = links == null ? Links.none() : links;
+        }
+
+        /**
+         * Единица без привязок и связей.
+         *
+         * @param classes   библиотека
+         * @param generated сгенерированные классы
+         * @param entries   точки входа
+         */
+        public Unit(ClassSource classes, Map<String, ClassNode> generated, List<Entry> entries) {
+            this(classes, generated, entries, null, null);
         }
     }
 
@@ -167,6 +183,7 @@ public final class AsmJit {
         List<Kernel> kernels = new ArrayList<>();
         ModuleBuilder mb = new ModuleBuilder(unit.classes(), diags);
         mb.synthesizeLvt(options.lvt() == Lvt.SYNTHESIZE);
+        mb.link(unit.bindings(), unit.links());
         for (Map.Entry<String, ClassNode> g : unit.generated().entrySet()) {
             ClassNode cn = g.getValue();
             if (!g.getKey().equals(cn.name)) {
