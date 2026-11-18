@@ -18,11 +18,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # последняя версия списка становится JAVA_HOME (Gradle работает на 21, как у разработчика);
       # 17 и 25 Gradle находит через JAVA_HOME_17_X64 / JAVA_HOME_25_X64 (org.gradle.java.installations.fromEnv)
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: |
@@ -30,7 +30,7 @@ jobs:
             25
             21
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       - name: OpenCL on the CPU (pocl)
         run: |
@@ -52,7 +52,7 @@ jobs:
 
       - name: Test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: test-reports
           path: '**/build/reports/tests/'

@@ -213,7 +213,8 @@ class DiskCacheTest {
 
     @Test
     void defaultDirectoryFollowsTheConventionsOfEachOs() {
-        assertEquals(Path.of("C:\\Users\\u\\AppData\\Local\\javatogpu"),
+        // ожидание - через resolve, как и результат: на Linux "\\" не разделитель, и путь одной строкой был бы одним именем
+        assertEquals(Path.of("C:\\Users\\u\\AppData\\Local").resolve("javatogpu"),
                 DiskCache.defaultDirectory("Windows 10", Map.of("LOCALAPPDATA", "C:\\Users\\u\\AppData\\Local"), "C:\\Users\\u"));
         assertEquals(Path.of("C:\\Users\\u").resolve("AppData").resolve("Local").resolve("javatogpu"),
                 DiskCache.defaultDirectory("Windows 11", Map.of(), "C:\\Users\\u"));
