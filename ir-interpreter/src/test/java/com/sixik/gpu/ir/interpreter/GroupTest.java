@@ -275,6 +275,49 @@ class GroupTest {
         assertEquals(77, cell[0]);
     }
 
+    /** CAS: запись только при совпадении, результат - прежнее значение; {@code u32} сравнивается по битам. */
+    @Test
+    void compareExchangeStoresOnlyWhenTheCellMatches() {
+        IrBuilder b = new IrBuilder();
+        int arr = b.array(AddressSpace.GLOBAL, Types.I32);
+        int u32 = b.array(AddressSpace.GLOBAL, Types.U32);
+        int i64 = b.array(AddressSpace.GLOBAL, Types.I64);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr, arr, u32, i64);
+        int cas = Builtins.idOf("atomicCmpxchg");
+        b.endFunction(b.block(
+                b.store(at(b, b.param(1), b.constI32(0)), b.intrinsic(cas, at(b, b.param(0), b.constI32(0)), b.constI32(10), b.constI32(20))),
+                b.store(at(b, b.param(1), b.constI32(1)), b.intrinsic(cas, at(b, b.param(0), b.constI32(1)), b.constI32(10), b.constI32(30))),
+                b.exprStmt(b.intrinsic(cas, at(b, b.param(2), b.constI32(0)), b.constU32(0xFFFFFFFF), b.constU32(5))),
+                b.exprStmt(b.intrinsic(cas, at(b, b.param(3), b.constI32(0)), b.constI64(Long.MIN_VALUE), b.constI64(7)))));
+        int[] cell = {10, 11};
+        int[] old = new int[2];
+        int[] u = {-1};
+        long[] l = {Long.MIN_VALUE};
+        ok(run(b.build(), NdRange.of1D(1), cell, old, u, l));
+        assertArrayEquals(new int[]{20, 11}, cell, "match stores, mismatch keeps the cell");
+        assertArrayEquals(new int[]{10, 11}, old);
+        assertEquals(5, u[0]);
+        assertEquals(7L, l[0]);
+    }
+
+    /** Спин-блокировка на CAS: каждый work-item один раз захватывает ячейку-флаг и увеличивает счётчик. */
+    @Test
+    void compareExchangeImplementsAClaimOnce() {
+        // out[1 + gid % 4] - флаг; только тот, кто сменил 0 на 1, увеличивает счётчик out[0]
+        IrModule m = kernel(8, (b, gid, lid, tile) -> {
+            int prev = b.declareLocal(Types.I32);
+            return new int[]{
+                    b.localDecl(prev, b.intrinsic(Builtins.idOf("atomicCmpxchg"),
+                            at(b, b.param(0), b.binary(Op.ADD, b.constI32(1), b.binary(Op.REM, b.localGet(gid), b.constI32(4)))),
+                            b.constI32(0), b.constI32(1))),
+                    b.ifStmt(b.binary(Op.EQ, b.localGet(prev), b.constI32(0)),
+                            b.block(b.exprStmt(atomic(b, "atomicAdd", at(b, b.param(0), b.constI32(0)), b.constI32(1)))), -1)};
+        });
+        int[] out = new int[8];
+        ok(run(m, NdRange.of1D(8), (Object) out));
+        assertArrayEquals(new int[]{4, 1, 1, 1, 1, 0, 0, 0}, out);
+    }
+
     @Test
     void minMaxOfUnsignedAndLongTypesAreComparedByTheirOwnOrder() {
         IrBuilder b = new IrBuilder();

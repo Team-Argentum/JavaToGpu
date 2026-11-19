@@ -105,6 +105,7 @@ final class Machine {
     private static final int B_BIT_COUNT = 37;
     private static final int B_COMPARE_UNSIGNED = 38;
     private static final int B_MULTIPLY_HIGH = 39;
+    private static final int B_ATOMIC_CMPXCHG = 40;
 
     /** Соответствие «id builtin -> код исполнения»; {@link #B_NONE}, если интерпретатор builtin не знает. */
     private static final int[] BUILTIN_CODE;
@@ -155,6 +156,7 @@ final class Machine {
                 case "bitCount" -> B_BIT_COUNT;
                 case "compareUnsigned" -> B_COMPARE_UNSIGNED;
                 case "multiplyHigh" -> B_MULTIPLY_HIGH;
+                case "atomicCmpxchg" -> B_ATOMIC_CMPXCHG;
                 default -> B_NONE;
             };
         }
@@ -1329,6 +1331,20 @@ final class Machine {
                     return 0;
                 }
                 store(n, p, atomicApply(code, t, old, v));
+                return old;
+            }
+            case B_ATOMIC_CMPXCHG: {
+                // значения канонические (Alu.canon), поэтому равенство - сравнение long
+                long p = eval(m.list(off));
+                long expected = eval(m.list(off + 1));
+                long v = eval(m.list(off + 2));
+                long old = load(n, p);
+                if (faulted()) {
+                    return 0;
+                }
+                if (old == expected) {
+                    store(n, p, v);
+                }
                 return old;
             }
             case B_FLOOR:

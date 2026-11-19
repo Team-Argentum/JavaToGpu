@@ -81,6 +81,22 @@ class GroupDeviceTest {
                 }
 
                 @Kernel
+                public static void claim(@Global int[] keys, @Global int[] owner, @Global int[] winners, @Global long[] total) {
+                    int gid = Gpu.getGlobalId(0);
+                    if (Gpu.atomicCmpxchg(GlobalIntPtr.of(owner, keys[gid] & 63), 0, gid + 1) == 0) {
+                        Gpu.atomicAdd(GlobalIntPtr.of(winners, 0), 1);
+                    }
+                    long old = total[0];
+                    while (true) {
+                        long seen = Gpu.atomicCmpxchg(GlobalLongPtr.of(total, 0), old, old + keys[gid]);
+                        if (seen == old) {
+                            break;
+                        }
+                        old = seen;
+                    }
+                }
+
+                @Kernel
                 @WorkGroup(x = 64)
                 public static void hog(@Global int[] a) {
                     @Local int[] huge = new int[1 << 20];
@@ -116,7 +132,7 @@ class GroupDeviceTest {
     private Class<?> load(Path dir, URLClassLoader[] holder) throws Exception {
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
-        assertEquals(3, Weaver.weaveTree(dir).kernels());
+        assertEquals(4, Weaver.weaveTree(dir).kernels());
         holder[0] = new URLClassLoader(new URL[]{dir.toUri().toURL()}, getClass().getClassLoader());
         return holder[0].loadClass("demo.Groups");
     }
@@ -155,6 +171,30 @@ class GroupDeviceTest {
             }
             call(groups, "histogram", data, bins);
             assertArrayEquals(expectedBins, bins, "atomics in local, then merge into global");
+
+            int[] keys = new int[1024];
+            long sum = 0;
+            boolean[] used = new boolean[64];
+            for (int i = 0; i < keys.length; i++) {
+                keys[i] = rnd.nextInt(40);
+                sum += keys[i];
+                used[keys[i] & 63] = true;
+            }
+            int[] owner = new int[64];
+            int[] winners = new int[1];
+            long[] total = new long[1];
+            call(groups, "claim", keys, owner, winners, total);
+            int claimed = 0;
+            for (int k = 0; k < 64; k++) {
+                if (used[k]) {
+                    claimed++;
+                    assertEquals(k, keys[owner[k] - 1] & 63, "the owner of slot " + k + " has this key");
+                } else {
+                    assertEquals(0, owner[k]);
+                }
+            }
+            assertEquals(claimed, winners[0], "exactly one compare-exchange wins each slot");
+            assertEquals(sum, total[0], "64-bit compare-exchange loop adds every key");
         } finally {
             if (holder[0] != null) {
                 holder[0].close();

@@ -584,6 +584,27 @@ class EmitterTest {
         assertTrue(src.contains("#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable"), src);
     }
 
+    /** {@code atomicCmpxchg} - три аргумента; 64-битный - из базового набора, расширенные атомики не нужны. */
+    @Test
+    void compareExchangeTakesThreeArguments() {
+        IrBuilder b = new IrBuilder();
+        int i32 = b.array(AddressSpace.GLOBAL, Types.I32);
+        int i64 = b.array(AddressSpace.GLOBAL, Types.I64);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, i32, i64);
+        int cas = com.sixik.gpu.ir.Builtins.idOf("atomicCmpxchg");
+        b.endFunction(b.block(
+                b.exprStmt(b.intrinsic(cas, b.elemPtr(b.param(0), b.constI32(0)), b.constI32(0), b.constI32(1))),
+                b.exprStmt(b.intrinsic(cas, b.elemPtr(b.param(1), b.constI32(0)), b.constI64(2), b.constI64(3)))));
+        Result<Artifact> r = OpenClEmitter.emit(b.build(), Target.GENERIC);
+        assertTrue(r.isOk(), r.diagnostics().toString());
+        String src = r.value().source();
+        assertTrue(src.contains("atomic_cmpxchg(&"), src);
+        assertTrue(src.contains("atom_cmpxchg(&"), src);
+        assertTrue(src.contains(", 0, 1)"), src);
+        assertTrue(src.contains("cl_khr_int64_base_atomics"), src);
+        assertFalse(src.contains("cl_khr_int64_extended_atomics"), src);
+    }
+
     @Test
     void baseAtomicsOf64BitsDoNotRequireTheExtendedExtension() {
         IrBuilder b = new IrBuilder();

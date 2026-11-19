@@ -1238,6 +1238,12 @@ final class FunctionEmitter {
                 return new Ex(fn + "(" + expr(Operands.get(m, n, 0)).s() + ", " + expr(Operands.get(m, n, 1)).s() + ")",
                         P_ATOM);
             }
+            case "atomicCmpxchg": {
+                // 32 бита - atomic_cmpxchg (ядро OpenCL 1.1), 64 бита - atom_cmpxchg (cl_khr_int64_base_atomics)
+                String fn = Types.bits(t) == 64 ? "atom_cmpxchg" : "atomic_cmpxchg";
+                return new Ex(fn + "(" + expr(Operands.get(m, n, 0)).s() + ", " + expr(Operands.get(m, n, 1)).s() + ", "
+                        + expr(Operands.get(m, n, 2)).s() + ")", P_ATOM);
+            }
             default:
                 if (Builtins.has(id, Builtins.JDK)) {
                     return jdkIntrinsic(n, name);

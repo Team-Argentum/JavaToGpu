@@ -151,6 +151,10 @@ jvm i64 = { long old = a.get(0); a.set(0, old ^ b); return old; }
 doc Атомарно записывает {@code b} по указателю {@code a} и возвращает прежнее значение.
 jvm i32 = { int old = a.get(0); a.set(0, b); return old; }
 jvm i64 = { long old = a.get(0); a.set(0, b); return old; }
+40  atomicCmpxchg   effect,reads,atomic    T (ptr<T:geni>, T, T)
+doc Атомарно сравнивает значение по указателю {@code a} с {@code b} и при равенстве записывает {@code c}; возвращает прежнее значение (запись была, если оно равно {@code b}).
+jvm i32 = { int old = a.get(0); if (old == b) { a.set(0, c); } return old; }
+jvm i64 = { long old = a.get(0); if (old == b) { a.set(0, c); } return old; }
 
 # --- JDK-интринсики (FRONTEND_ASM_RUNTIME.md, 18.2-S6, п. 2) -------------------------------------
 # Побитово точные операции JDK. Фронтенды строят их из вызовов Math.*, StrictMath.*, Integer.*, Long.* по таблице

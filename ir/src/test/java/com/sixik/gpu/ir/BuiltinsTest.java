@@ -57,6 +57,8 @@ class BuiltinsTest {
             assertTrue(Builtins.has(Builtins.idOf(ext), Builtins.ATOMIC), ext);
         }
         assertFalse(Builtins.has(Builtins.idOf("atomicXchg"), Builtins.EXT));
+        assertFalse(Builtins.has(Builtins.idOf("atomicCmpxchg"), Builtins.EXT), "cmpxchg is a base 64-bit atomic");
+        assertTrue(Builtins.has(Builtins.idOf("atomicCmpxchg"), Builtins.ATOMIC));
     }
 
     @Test
@@ -85,8 +87,8 @@ class BuiltinsTest {
                 occupied++;
             }
         }
-        assertEquals(40, occupied);
-        assertEquals(40, Builtins.count());
+        assertEquals(41, occupied);
+        assertEquals(41, Builtins.count());
     }
 
     /** JDK-интринсики (S6-2): флаг {@code jdk}, классы {@code sf/si/sn} принимают только скаляры. */
