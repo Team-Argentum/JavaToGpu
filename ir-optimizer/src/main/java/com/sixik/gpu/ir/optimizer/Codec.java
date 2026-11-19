@@ -28,8 +28,8 @@ final class Codec {
 
     /** Поднятый модуль: исходный модуль (таблица типов, отладка) и деревья функций. */
     static final class ModuleTree {
-        /** Исходный модуль. */
-        final IrModule source;
+        /** Исходный модуль; таблица типов растёт через {@link #absorbExtraTypes()}. */
+        IrModule source;
         /** Функции в исходной нумерации. */
         final FnTree[] fns;
         /** Типы, добавленные поверх таблицы исходного модуля: тройки {@code (вид, a, b)} в порядке создания. */
@@ -73,6 +73,17 @@ final class Codec {
         /**
          * @return копия, где каждая функция скопирована отдельно
          */
+        /**
+         * Переносит {@link #extraTypes} в конец таблицы {@link #source}: id не меняются, а анализ проходов, который
+         * смотрит типы в исходном модуле, видит и новые.
+         */
+        void absorbExtraTypes() {
+            if (!extraTypes.isEmpty()) {
+                source = source.withTypes(extraTypes);
+                extraTypes.clear();
+            }
+        }
+
         ModuleTree copy() {
             FnTree[] c = new FnTree[fns.length];
             for (int i = 0; i < c.length; i++) {

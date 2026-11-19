@@ -169,6 +169,35 @@ public final class IrModule {
 
     // ---- типы ------------------------------------------------------------------------------------
 
+    /**
+     * Копия модуля с типами, дописанными в конец таблицы: id прежних типов не меняются, узлы, функции и строки
+     * разделяются с этим модулем. Нужна оптимизатору, когда проход заводит новый тип (вектор под {@code vload4}).
+     *
+     * @param rows строки {@code (вид, a, b)}: вектор ({@code Types.KIND_VEC}, скаляр, компоненты), указатель или массив
+     *             ({@code KIND_PTR}/{@code KIND_ARRAY}, пространство, элемент)
+     * @return модуль с расширенной таблицей типов
+     */
+    public IrModule withTypes(java.util.List<int[]> rows) {
+        if (rows.isEmpty()) {
+            return this;
+        }
+        int n = typeCount();
+        int[][] cols = new int[T_COLS][];
+        for (int c = 0; c < T_COLS; c++) {
+            cols[c] = java.util.Arrays.copyOf(types[c], n + rows.size());
+        }
+        for (int i = 0; i < rows.size(); i++) {
+            int[] r = rows.get(i);
+            if (r[0] != Types.KIND_VEC && r[0] != Types.KIND_PTR && r[0] != Types.KIND_ARRAY) {
+                throw new IllegalArgumentException("only vector, pointer and array types can be appended: kind " + r[0]);
+            }
+            cols[T_KIND][n + i] = r[0];
+            cols[T_A][n + i] = r[1];
+            cols[T_B][n + i] = r[2];
+        }
+        return new IrModule(new Parts(builtinsVersion, cols, strings, consts, nodes, lists, funcs, debug));
+    }
+
     /** @return число строк таблицы типов (включая 16 предустановленных) */
     public int typeCount() {
         return types[T_KIND].length;

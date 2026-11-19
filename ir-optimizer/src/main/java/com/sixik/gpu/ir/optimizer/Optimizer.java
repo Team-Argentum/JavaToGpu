@@ -29,6 +29,8 @@ import java.util.function.BooleanSupplier;
  *   <li><b>dead-locals</b> ({@link DeadCode}): записи в никогда не читаемые локали и неиспользуемые массивы;</li>
  *   <li><b>dead-stores</b> ({@link Liveness}, уровень 2+): записи, перезатираемые до чтения (обратная живость);</li>
  *   <li><b>dead-functions</b>: device-функции, недостижимые из ядер;</li>
+ *   <li><b>coalesce</b> ({@link Coalesce}, уровень 2+): соседние обращения ядра к буферу {@code p[4*i+0..3]} -
+ *       одно векторное {@code vload4/vstore4};</li>
  *   <li><b>cse</b> ({@link Cse}) и <b>licm</b> ({@link Licm}) (уровень 2+): общие подвыражения и инварианты циклов
  *       материализуются во временные локали, пока хватает запаса регистров ({@link RegisterPressure}).</li>
  * </ol>
@@ -267,6 +269,7 @@ public final class Optimizer implements OptimizerPass {
                 changed |= step("simplify", this::simplify);
                 changed |= step("dead-functions", () -> DeadCode.markDeadFunctions(mt));
                 if (o.level() >= 2) {
+                    changed |= step("coalesce", () -> perFunction((f, fn) -> Coalesce.run(fn, mt, fx)));
                     changed |= step("cse", () -> perFunction((f, fn) -> {
                         Costs.Budget b = budgetFor(f, fn);
                         return Cse.run(fn, mt.source, fx, b);
@@ -344,12 +347,15 @@ public final class Optimizer implements OptimizerPass {
             }
             if (changed) {
                 applied.add(name + "#" + iteration);
+                mt.absorbExtraTypes(); // новые типы прохода - в таблицу исходного модуля, их видит анализ следующих
             }
             return changed;
         }
 
         void rollback(Codec.ModuleTree snap) {
             System.arraycopy(snap.fns, 0, mt.fns, 0, mt.fns.length);
+            mt.extraTypes.clear();
+            mt.extraTypes.addAll(snap.extraTypes);
         }
     }
 }
