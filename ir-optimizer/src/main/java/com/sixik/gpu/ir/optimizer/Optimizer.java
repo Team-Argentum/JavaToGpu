@@ -20,6 +20,7 @@ import java.util.function.BooleanSupplier;
  *
  * <h2>Проходы (в порядке выполнения за итерацию)</h2>
  * <ol>
+ *   <li><b>inline</b> ({@link Inline}): встраивание функций с политикой {@code INLINE_ALWAYS};</li>
  *   <li><b>simplify</b> ({@link Simplify}): свёртка констант, алгебра, strength reduction, упрощение {@code select/convert/
  *       compare}, векторов и struct; {@code if(const)}, пустые ветки, недостижимый код после переходов;</li>
  *   <li><b>contract</b> ({@link Contract}): {@code p = x*y; ... p + c -> fma(x, y, c)} через локали - только в функциях
@@ -247,6 +248,8 @@ public final class Optimizer implements OptimizerPass {
             int max = Math.max(1, o.maxIterations());
             for (iteration = 1; iteration <= max; iteration++) {
                 boolean changed = false;
+                // @DeviceFunction(inline = ALWAYS): до остальных проходов, чтобы они видели встроенное тело
+                changed |= step("inline", () -> Inline.run(mt));
                 changed |= step("simplify", this::simplify);
                 changed |= step("contract", () -> {
                     int[] fp = FpModes.effective(mt);
