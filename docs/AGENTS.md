@@ -371,6 +371,11 @@ for (ClProgram.KernelAbi k : cl.value().kernels()) {
     // k.params(): порядок clSetKernelArg; kind - ClProgram.Param.BUFFER | LENGTH (int-длина предыдущего
     //             буфера в элементах) | SCALAR; type (тип IR), size (байт по AbiLayout), space, reads()/writes()
     // k.localMemoryBytes() - байт __local-массивов ядра (сравните с CL_DEVICE_LOCAL_MEM_SIZE)
+    // __global-буферы помечены restrict: один записываемый cl_mem в двух параметрах - неопределённое поведение
+    // (на NVIDIA проверено: in-place ядро считает неверно). Перед запуском:
+    //   buffers[param()] - ваш cl_mem (или ключ) по параметру IR, null для скаляров;
+    //   k.aliasConflict(buffers) == true -> запускайте программу из того же source,
+    //   собранную с opts + " " + Aliasing.ALIASED_OPTION ("-DJTG_ALIASED")
 }
 long constants = cl.value().constantBytes();      // таблицы __constant программы (CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE)
 ```
