@@ -145,9 +145,9 @@ try (var scope = JavaToGpu.launch(LaunchConfig.of2D(width, height))) {
 | Функции | статические `@DeviceFunction` из той же компиляции, без рекурсии |
 | Векторы | неизменяемые `Float/Double/Int/Long × 2/3/4/8/16`, операции и покомпонентные builtins |
 | Struct | `@Struct`, value-семантика, вложенные struct и векторы; без массивов и указателей внутри |
-| Память | `@Global`, `@Global(constant = true)`, приватные массивы константного размера, `@Local` в теле ядра |
+| Память | `@Global`, `@Global(constant = true)`, приватные массивы константного размера, `@Local` в теле ядра; параметры device-функций `@Local` и `@Private` |
 | Указатели | ссылки `FloatPtr` и аналоги; `Global/Local/Constant*Ptr` внутри ядра и в device-функциях |
-| Синхронизация | work-group barriers, целочисленные атомики 32/64 бит при поддержке устройства |
+| Синхронизация | work-group barriers, целочисленные атомики 32/64 бит при поддержке устройства (`atomicAdd`…`atomicXchg`, `atomicCmpxchg`) |
 
 Запрещены произвольные объекты и куча, виртуальные вызовы, исключения, `try`, мониторы, строки,
 лямбды, рекурсия, `for-each`, labeled `break/continue`, switch-выражения и pattern matching.
@@ -156,6 +156,22 @@ try (var scope = JavaToGpu.launch(LaunchConfig.of2D(width, height))) {
 Device-функции из JAR без исходников processor не связывает (`GPU0114`): их исходники должны входить в ту же
 компиляцию, либо модуль собирается фронтендом байткода (`gpu { frontend = 'asm' }`, см. «Подключение»).
 Аннотация `@DeviceFunction` обязательна и для приватного helper-метода.
+
+Параметр-массив device-функции без аннотации — `__global`. Чтобы передать в helper массив, созданный в теле
+(`int[] stack = new int[16];`), пометьте параметр `@Private`: массив передаётся по ссылке, записи видны вызывающему,
+`stack.length` работает. Массив другого пространства — ошибка `GPU0121`; `@Private` у параметра ядра, у скаляра или
+вместе с `@Local`/`@Global` — `GPU0123`.
+
+```java
+@DeviceFunction
+static int push(@Private int[] stack, int top, int v) {
+    stack[top] = v;
+    return top + 1;
+}
+```
+
+`Gpu.atomicCmpxchg(ptr, expected, value)` — сравнение с обменом (`atomic_cmpxchg`, для `long` — `atom_cmpxchg` из
+`cl_khr_int64_base_atomics`): записывает `value`, если ячейка равна `expected`, и возвращает прежнее значение.
 
 У struct открытые изменяемые поля и конструктор без аргументов для хоста; конструктор по полям сохраняет значения.
 Чтобы получить самостоятельное значение в ядре, используйте `new`, глубокий `copy()` либо результат `@DeviceFunction`.
@@ -302,7 +318,9 @@ context.launch(program.kernel("square"), LaunchConfig.of1D(a.length), (Object) a
 (`AsmJit.Kernel.function()`). Подбора `fallback`-вариантов здесь нет: если устройство не поддерживает то, что нужно
 хотя бы одному ядру, вся программа получает `RT-D02`. Для своего рантайма OpenCL тот же модуль превращается в текст и
 ABI ядер без `runtime`: `OpenClEmitter.program(module, EmitOptions.RELEASE)` → `ClProgram` (исходник, опции сборки,
-по ядру — порядок аргументов `clSetKernelArg`, тип и размер элемента, адресное пространство, чтение/запись буфера).
+по ядру — порядок аргументов `clSetKernelArg`, тип и размер элемента, адресное пространство, чтение/запись буфера,
+`localMemoryBytes()` объявленных `@Local`-массивов; у программы — `constantBytes()` таблиц констант). Сравните их с
+`CL_DEVICE_LOCAL_MEM_SIZE` и `CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE` до `clBuildProgram`.
 
 ## Массивы, данные которых живут на устройстве
 

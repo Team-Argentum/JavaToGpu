@@ -238,7 +238,8 @@ new AsmJit.Entry("gen/Router", "k", "([F[F)V",
 - Атрибуты задаются **либо** аннотацией метода, **либо** картами точки входа, иначе `GPU0311`. Несуществующий метод —
   `GPU0311`, ненайденный класс — `GPU0306`.
 - Ошибочная точка входа пропускается, остальные строятся (`Result.kernels()` — только построенные).
-- Параметры-массивы без аннотаций — `__global`. `@Global(constant = true)` и `@Local` задаются аннотацией параметра.
+- Параметры-массивы без аннотаций — `__global`. `@Global(constant = true)` и `@Local` задаются аннотацией параметра;
+  `@Private` — у параметра device-функции, которой передают массив из тела (`new int[N]`), иначе `GPU0121`.
 - С `reqd_work_group_size` (`Map.of("x", 64)`) глобальный размер запуска должен делиться на 64: иначе `IN-L01` в
   интерпретаторе и `RT-L01` на устройстве.
 
@@ -364,7 +365,9 @@ for (ClProgram.KernelAbi k : cl.value().kernels()) {
     // k.name() - имя __kernel (в RELEASE: k0, k1, ...), k.debugName() - имя метода, k.reqdWorkGroup()
     // k.params(): порядок clSetKernelArg; kind - ClProgram.Param.BUFFER | LENGTH (int-длина предыдущего
     //             буфера в элементах) | SCALAR; type (тип IR), size (байт по AbiLayout), space, reads()/writes()
+    // k.localMemoryBytes() - байт __local-массивов ядра (сравните с CL_DEVICE_LOCAL_MEM_SIZE)
 }
+long constants = cl.value().constantBytes();      // таблицы __constant программы (CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE)
 ```
 
 Таблицы `Bindings.table` уже внутри текста программы и аргументов не требуют.
@@ -482,7 +485,8 @@ AsmFrontend.Result r = AsmFrontend.compile(ClassSource.of(loader), List.of("pkg.
 | `GPU0116` | массив переприсвоен, таблица записана или сохранена в локаль | индексируйте `Tables.X[i]` прямо, массив-локаль создавайте один раз |
 | `GPU0112` | метод не поддержан (в том числе `Math.sin`) | `Gpu.*` или свой `@DeviceFunction` |
 | `GPU0113` | метод библиотеки без `@DeviceFunction` | пометьте аннотацией (сгенерированным классам она не нужна) |
-| `GPU0121` | адресное пространство массива не совпало с параметром функции | передавайте массив того же пространства |
+| `GPU0121` | адресное пространство массива не совпало с параметром функции | массив из тела (`new T[N]`) — параметр `@Private`, local — `@Local` |
+| `GPU0123` | `@Private` у параметра ядра, у скаляра или вместе с `@Local`/`@Global` | только у параметров-массивов `@DeviceFunction` |
 | `GPU0301` | нет LVT | `synthesizeLvt(true)` или `javac -g` |
 | `GPU0303` | класс вызываемого метода не найден | добавьте его в `ClassSource` |
 | `GPU0304` | неприводимый поток управления | структурные `if/loop`, `break/continue` ближайшего цикла |
