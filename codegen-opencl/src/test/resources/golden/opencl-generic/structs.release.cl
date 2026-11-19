@@ -2,6 +2,12 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 typedef struct {
     float f0;
     float f1;
@@ -28,7 +34,11 @@ S17 f0(S17 p0, float p1)
     return gpu_with_S17_0(p0, p0.f0 + p1);
 }
 
-__kernel void k1(__global float* p0, int p0_len, __global float* p1, int p1_len)
+__kernel void k1(
+        __global float* JTG_RESTRICT p0,
+        int p0_len,
+        __global float* JTG_RESTRICT p1,
+        int p1_len)
 {
     S17 v0 = gpu_make_S17(p0[0], p0[1], (float4)(p0[2], p0[3], p0[4], p0[5]), 7);
     S18 v1 = gpu_make_S18(f0(v0, 0.5f), 2.5);

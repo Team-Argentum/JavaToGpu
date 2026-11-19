@@ -3,7 +3,17 @@
 #pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
 #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 
-__kernel void wide(__global long* data, int data_len, __global long* sums, int sums_len)
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
+__kernel void wide(
+        __global long* JTG_RESTRICT data,
+        int data_len,
+        __global long* JTG_RESTRICT sums,
+        int sums_len)
 {
 #line 128
     long v = data[(int)get_global_id(0)];

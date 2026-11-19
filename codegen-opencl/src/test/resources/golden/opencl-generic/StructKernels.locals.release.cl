@@ -2,6 +2,12 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 typedef struct {
     float f0;
     float f1;
@@ -32,7 +38,11 @@ float f1(S17 p0)
     return 0.5f * (p0.f2.x * p0.f2.x + p0.f2.y * p0.f2.y + p0.f2.z * p0.f2.z);
 }
 
-__kernel void k2(__global S17* p0, int p0_len, __global float* p1, int p1_len)
+__kernel void k2(
+        __global S17* JTG_RESTRICT p0,
+        int p0_len,
+        __global float* JTG_RESTRICT p1,
+        int p1_len)
 {
     int v0 = (int)get_global_id(0);
     S17 v1 = p0[v0];

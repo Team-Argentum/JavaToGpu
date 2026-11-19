@@ -2,7 +2,19 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
-__kernel void parameters(int a, long b, float c, double d, __global double* out, int out_len)
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
+__kernel void parameters(
+        int a,
+        long b,
+        float c,
+        double d,
+        __global double* JTG_RESTRICT out,
+        int out_len)
 {
     int a_1 = a;
     long b_1 = b;

@@ -2,6 +2,12 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 static inline float gpu_max_f32(float a, float b) {
     if (isnan(a)) { return a; }
     if (isnan(b)) { return b; }
@@ -28,17 +34,17 @@ static inline double gpu_min_f64(double a, double b) {
 }
 
 __kernel void builtins(
-        __global float* in_f32,
+        __global float* JTG_RESTRICT in_f32,
         int in_f32_len,
-        __global double* in_f64,
+        __global double* JTG_RESTRICT in_f64,
         int in_f64_len,
-        __global int* in_i32,
+        __global int* JTG_RESTRICT in_i32,
         int in_i32_len,
-        __global int* out_i32,
+        __global int* JTG_RESTRICT out_i32,
         int out_i32_len,
-        __global float* out_f32,
+        __global float* JTG_RESTRICT out_f32,
         int out_f32_len,
-        __global double* out_f64,
+        __global double* JTG_RESTRICT out_f64,
         int out_f64_len)
 {
     int item = (int)((uint)(int)get_global_id(0) + (uint)(int)get_global_size(0) * ((uint)(int)get_global_id(1) + (uint)(int)get_global_size(1) * (uint)(int)get_global_id(2)));

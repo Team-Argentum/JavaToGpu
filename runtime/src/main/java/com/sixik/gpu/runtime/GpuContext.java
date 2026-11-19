@@ -1,5 +1,6 @@
 package com.sixik.gpu.runtime;
 
+import com.sixik.gpu.codegen.opencl.Aliasing;
 import com.sixik.gpu.codegen.opencl.Artifact;
 import com.sixik.gpu.codegen.opencl.EmitOptions;
 import com.sixik.gpu.codegen.opencl.KernelArg;
@@ -1678,6 +1679,17 @@ public final class GpuContext implements AutoCloseable {
         return outcome[0];
     }
 
+    /** Освобождает вариант ядра без {@code restrict}, если он собирался (под замком). */
+    private void releaseAliased(CompiledKernel k) {
+        if (k.aliasedKernel != 0) {
+            api.release(DeviceApi.HandleKind.KERNEL, k.aliasedKernel);
+            api.release(DeviceApi.HandleKind.PROGRAM, k.aliasedProgram);
+            k.aliasedKernel = 0;
+            k.aliasedProgram = 0;
+            k.aliasedActive = false;
+        }
+    }
+
     /** Освобождает уже собранные стадии (под замком). */
     private void releaseStages(CompiledKernel[] stages) {
         for (CompiledKernel s : stages) {
@@ -1686,6 +1698,7 @@ public final class GpuContext implements AutoCloseable {
                 if (s.program != 0) {
                     api.release(DeviceApi.HandleKind.PROGRAM, s.program);
                 }
+                releaseAliased(s);
             }
         }
     }
@@ -2092,7 +2105,7 @@ public final class GpuContext implements AutoCloseable {
         lock.lock();
         try {
             for (CompiledKernel k : compiled) {
-                if (k.kernel == handle) {
+                if (k.kernel == handle || k.aliasedKernel != 0 && k.aliasedKernel == handle) {
                     return k;
                 }
             }
@@ -2599,9 +2612,47 @@ public final class GpuContext implements AutoCloseable {
      * @param arena   владелец временной памяти для значений-агрегатов
      */
     void setKernelArgs(CompiledKernel k, Object[] args, long[] handles, long[] lengths, HostArena arena) {
+        selectVariant(k, handles);
         k.boundTo = null;
         for (int i = 0; i < k.artifact().args().size(); i++) {
             setKernelArg(k, i, args, handles, lengths, arena);
+        }
+    }
+
+    /**
+     * Выбирает объект драйвера для запуска с этими буферами: при перекрытии, которое нарушает {@code restrict}
+     * ({@link Aliasing#conflict}), - вариант, собранный с {@link Aliasing#ALIASED_OPTION} (собирается здесь при первой
+     * встрече), иначе основной. Смена варианта сбрасывает {@code boundTo}: аргументы нового объекта не выставлены.
+     * Вызывается под замком.
+     *
+     * @param handles дескрипторы буферов по номеру параметра-массива
+     */
+    void selectVariant(CompiledKernel k, long[] handles) {
+        boolean need = Aliasing.conflict(k.artifact().args(), k.accessArray(), handles);
+        if (need && k.aliasedKernel == 0) {
+            Artifact art = k.artifact();
+            long program = api.createProgram(contextHandle, art.source());
+            String options = buildOptions(art);
+            DeviceApi.BuildOutcome outcome = buildProgram(program, options.isBlank() ? Aliasing.ALIASED_OPTION
+                    : options + " " + Aliasing.ALIASED_OPTION);
+            if (!outcome.ok()) {
+                api.release(DeviceApi.HandleKind.PROGRAM, program);
+                throw new DeviceApiException(-11, "clBuildProgram",
+                        "the driver rejected the variant without restrict of " + art.entry() + ": " + outcome.log());
+            }
+            try {
+                k.aliasedKernel = api.createKernel(program, art.entry());
+            } catch (DeviceApiException e) {
+                api.release(DeviceApi.HandleKind.PROGRAM, program);
+                throw e;
+            }
+            k.aliasedProgram = program;
+            emit(GpuEvent.Kind.WARNING, art.entry(), 0, 0, "a written buffer is passed in several parameters: "
+                    + "the kernel runs without restrict");
+        }
+        if (need != k.aliasedActive) {
+            k.aliasedActive = need;
+            k.boundTo = null;
         }
     }
 
@@ -2616,13 +2667,13 @@ public final class GpuContext implements AutoCloseable {
             case KernelArg.SCALAR -> {
                 if (HostObjects.isAggregate(m, ka.type())) {
                     int size = AbiLayout.sizeOf(m, ka.type());
-                    api.setArgBytes(k.kernel, i, Marshal.valueToNative(arena, m, ka.type(), args[ka.param()]), size);
+                    api.setArgBytes(k.handle(), i, Marshal.valueToNative(arena, m, ka.type(), args[ka.param()]), size);
                 } else {
-                    api.setArgScalar(k.kernel, i, Marshal.scalarSize(ka.type()), Marshal.scalarBits(args[ka.param()]));
+                    api.setArgScalar(k.handle(), i, Marshal.scalarSize(ka.type()), Marshal.scalarBits(args[ka.param()]));
                 }
             }
-            case KernelArg.ARRAY_PTR -> api.setArgBuffer(k.kernel, i, handles[ka.param()]);
-            default -> api.setArgScalar(k.kernel, i, 4, lengths[ka.param()]);
+            case KernelArg.ARRAY_PTR -> api.setArgBuffer(k.handle(), i, handles[ka.param()]);
+            default -> api.setArgScalar(k.handle(), i, 4, lengths[ka.param()]);
         }
     }
 
@@ -2647,7 +2698,7 @@ public final class GpuContext implements AutoCloseable {
             global[d] = cfg.global(d);
         }
         long t1 = System.nanoTime();
-        api.enqueue(queue, k.kernel, cfg.dim(), global, local);
+        api.enqueue(queue, k.handle(), cfg.dim(), global, local);
         afterEnqueue(k.artifact().entry() + " " + cfg, defer);
         long nanos = System.nanoTime() - t1;
         emit(GpuEvent.Kind.KERNEL, k.artifact().entry(), nanos, 0, cfg.toString());
@@ -2757,7 +2808,7 @@ public final class GpuContext implements AutoCloseable {
             for (int d = 0; d < global.length; d++) {
                 global[d] = cfg.global(d);
             }
-            api.enqueue(queue, k.kernel, cfg.dim(), global, local);
+            api.enqueue(queue, k.handle(), cfg.dim(), global, local);
         }
         synchronizeQueue();
         long nanos = System.nanoTime() - t1;
@@ -2801,7 +2852,7 @@ public final class GpuContext implements AutoCloseable {
         }
         for (CompiledKernel s : p.stages()) {
             setKernelArgs(s, xa, xh, xl, arena);
-            api.enqueue(queue, s.kernel, cfg.dim(), global, local);
+            api.enqueue(queue, s.handle(), cfg.dim(), global, local);
         }
     }
 
@@ -2969,6 +3020,7 @@ public final class GpuContext implements AutoCloseable {
                 if (k.program != 0) {
                     api.release(DeviceApi.HandleKind.PROGRAM, k.program);
                 }
+                releaseAliased(k);
             }
             compiled.clear();
             for (long p : sharedPrograms) {

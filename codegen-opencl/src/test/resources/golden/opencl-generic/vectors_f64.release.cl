@@ -2,6 +2,12 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 static inline double gpu_max_f64(double a, double b) {
     if (isnan(a)) { return a; }
     if (isnan(b)) { return b; }
@@ -18,11 +24,11 @@ static inline double4 gpu_max_double4(double4 a, double4 b) { return (double4)(g
 static inline double4 gpu_min_double4(double4 a, double4 b) { return (double4)(gpu_min_f64(a.x, b.x), gpu_min_f64(a.y, b.y), gpu_min_f64(a.z, b.z), gpu_min_f64(a.w, b.w)); }
 
 __kernel void k0(
-        __global double* p0,
+        __global double* JTG_RESTRICT p0,
         int p0_len,
-        __global double* p1,
+        __global double* JTG_RESTRICT p1,
         int p1_len,
-        __global float* p2,
+        __global float* JTG_RESTRICT p2,
         int p2_len)
 {
     double4 v0 = (double4)(p0[0], p0[1], p0[2], p0[3]);

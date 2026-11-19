@@ -457,6 +457,7 @@ public final class PreparedLauncher implements AutoCloseable {
 
     /** Выставляет аргументы {@code cl_kernel}: все, если ядро запускал кто-то другой, иначе только изменённые. */
     private void bindArguments() {
+        ctx.selectVariant(kernel, handles); // смена варианта сбрасывает boundTo: тогда выставляются все аргументы
         boolean all = kernel.boundTo != this;
         kernel.boundTo = null;
         HostArena temp = hasValueAggregates ? ctx.api.arena(HostArena.Kind.CONFINED) : null;

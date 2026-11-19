@@ -2,33 +2,39 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 static inline int gpu_f32_to_i32(float x) { return isnan(x) ? 0 : convert_int_sat(x); }
 static inline uint gpu_f32_to_u32(float x) { return isnan(x) ? 0 : convert_uint_sat(x); }
 static inline long gpu_f32_to_i64(float x) { return isnan(x) ? 0 : convert_long_sat(x); }
 static inline ulong gpu_f32_to_u64(float x) { return isnan(x) ? 0 : convert_ulong_sat(x); }
 
 __kernel void u_convert_from_f32(
-        __global float* in,
+        __global float* JTG_RESTRICT in,
         int in_len,
-        __global char* out_i8,
+        __global char* JTG_RESTRICT out_i8,
         int out_i8_len,
-        __global uchar* out_u8,
+        __global uchar* JTG_RESTRICT out_u8,
         int out_u8_len,
-        __global short* out_i16,
+        __global short* JTG_RESTRICT out_i16,
         int out_i16_len,
-        __global ushort* out_u16,
+        __global ushort* JTG_RESTRICT out_u16,
         int out_u16_len,
-        __global int* out_i32,
+        __global int* JTG_RESTRICT out_i32,
         int out_i32_len,
-        __global uint* out_u32,
+        __global uint* JTG_RESTRICT out_u32,
         int out_u32_len,
-        __global long* out_i64,
+        __global long* JTG_RESTRICT out_i64,
         int out_i64_len,
-        __global ulong* out_u64,
+        __global ulong* JTG_RESTRICT out_u64,
         int out_u64_len,
-        __global float* out_f32,
+        __global float* JTG_RESTRICT out_f32,
         int out_f32_len,
-        __global double* out_f64,
+        __global double* JTG_RESTRICT out_f64,
         int out_f64_len)
 {
     out_i8[0] = (char)gpu_f32_to_i32(in[0]);

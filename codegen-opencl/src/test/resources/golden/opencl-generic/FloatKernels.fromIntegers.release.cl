@@ -2,14 +2,20 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 __kernel void k0(
-        __global int* p0,
+        __global int* JTG_RESTRICT p0,
         int p0_len,
-        __global long* p1,
+        __global long* JTG_RESTRICT p1,
         int p1_len,
-        __global float* p2,
+        __global float* JTG_RESTRICT p2,
         int p2_len,
-        __global double* p3,
+        __global double* JTG_RESTRICT p3,
         int p3_len)
 {
     int v0 = (int)get_global_id(0);

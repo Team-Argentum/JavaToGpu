@@ -272,6 +272,15 @@ public final class OpenClEmitter {
             src.append("#pragma OPENCL EXTENSION cl_khr_fp16 : enable\n");
         }
         src.append('\n');
+        boolean restrict = false;
+        for (List<KernelArg> list : args.values()) {
+            for (KernelArg a : list) {
+                restrict |= Aliasing.restricted(a);
+            }
+        }
+        if (restrict) {
+            src.append(Aliasing.PREAMBLE).append('\n');
+        }
         if (layouts.hasStructs()) {
             src.append(layouts.typedefs()).append('\n');
         }

@@ -2,16 +2,22 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 __kernel void atomics(
-        __global int* c_i32,
+        __global int* JTG_RESTRICT c_i32,
         int c_i32_len,
-        __global uint* c_u32,
+        __global uint* JTG_RESTRICT c_u32,
         int c_u32_len,
-        __global long* c_i64,
+        __global long* JTG_RESTRICT c_i64,
         int c_i64_len,
-        __global ulong* c_u64,
+        __global ulong* JTG_RESTRICT c_u64,
         int c_u64_len,
-        __global int* olds,
+        __global int* JTG_RESTRICT olds,
         int olds_len)
 {
     int gid = (int)get_global_id(0);

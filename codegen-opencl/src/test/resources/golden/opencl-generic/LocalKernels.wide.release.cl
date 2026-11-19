@@ -3,7 +3,17 @@
 #pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
 #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 
-__kernel void k0(__global long* p0, int p0_len, __global long* p1, int p1_len)
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
+__kernel void k0(
+        __global long* JTG_RESTRICT p0,
+        int p0_len,
+        __global long* JTG_RESTRICT p1,
+        int p1_len)
 {
     long v0 = p0[(int)get_global_id(0)];
     atom_add(&p1[0], v0);

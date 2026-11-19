@@ -2,28 +2,34 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 __kernel void k0(
-        __global int* p0,
+        __global int* JTG_RESTRICT p0,
         int p0_len,
-        __global char* p1,
+        __global char* JTG_RESTRICT p1,
         int p1_len,
-        __global uchar* p2,
+        __global uchar* JTG_RESTRICT p2,
         int p2_len,
-        __global short* p3,
+        __global short* JTG_RESTRICT p3,
         int p3_len,
-        __global ushort* p4,
+        __global ushort* JTG_RESTRICT p4,
         int p4_len,
-        __global int* p5,
+        __global int* JTG_RESTRICT p5,
         int p5_len,
-        __global uint* p6,
+        __global uint* JTG_RESTRICT p6,
         int p6_len,
-        __global long* p7,
+        __global long* JTG_RESTRICT p7,
         int p7_len,
-        __global ulong* p8,
+        __global ulong* JTG_RESTRICT p8,
         int p8_len,
-        __global float* p9,
+        __global float* JTG_RESTRICT p9,
         int p9_len,
-        __global double* p10,
+        __global double* JTG_RESTRICT p10,
         int p10_len)
 {
     p1[0] = (char)p0[0];

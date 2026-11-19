@@ -2,7 +2,13 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
-__kernel void k0(int p0, long p1, float p2, double p3, __global double* p4, int p4_len)
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
+__kernel void k0(int p0, long p1, float p2, double p3, __global double* JTG_RESTRICT p4, int p4_len)
 {
     int v0 = p0;
     long v1 = p1;

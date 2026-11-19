@@ -2,6 +2,12 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 static inline int gpu_div_i32(int a, int b) { return b == -1 ? (int)(0u - (uint)a) : a / b; }
 static inline int gpu_rem_i32(int a, int b) { return b == -1 ? 0 : a % b; }
 static inline long gpu_div_i64(long a, long b) { return b == -1 ? (long)(0ul - (ulong)a) : a / b; }
@@ -29,19 +35,19 @@ static inline long gpu_floordiv_i64(long a, long b) { long q = gpu_div_i64(a, b)
 static inline long gpu_floormod_i64(long a, long b) { long r = gpu_rem_i64(a, b); return (a ^ b) < 0 && r != 0 ? (long)((ulong)r + (ulong)b) : r; }
 
 __kernel void k0(
-        __global float* p0,
+        __global float* JTG_RESTRICT p0,
         int p0_len,
-        __global float* p1,
+        __global float* JTG_RESTRICT p1,
         int p1_len,
-        __global int* p2,
+        __global int* JTG_RESTRICT p2,
         int p2_len,
-        __global long* p3,
+        __global long* JTG_RESTRICT p3,
         int p3_len,
-        __global float* p4,
+        __global float* JTG_RESTRICT p4,
         int p4_len,
-        __global int* p5,
+        __global int* JTG_RESTRICT p5,
         int p5_len,
-        __global long* p6,
+        __global long* JTG_RESTRICT p6,
         int p6_len)
 {
     int v0 = (int)get_global_id(0);

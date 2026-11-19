@@ -2,6 +2,12 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 typedef struct {
     float x;
     float y;
@@ -34,7 +40,11 @@ float energy(Particle p)
     return 0.5f * (p.v.x * p.v.x + p.v.y * p.v.y + p.v.z * p.v.z);
 }
 
-__kernel void locals(__global Particle* ps, int ps_len, __global float* out, int out_len)
+__kernel void locals(
+        __global Particle* JTG_RESTRICT ps,
+        int ps_len,
+        __global float* JTG_RESTRICT out,
+        int out_len)
 {
 #line 97
     int g = (int)get_global_id(0);

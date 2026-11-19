@@ -29,6 +29,8 @@ final class Names {
             "volatile", "while", "bool", "true", "false", "half", "uchar", "ushort", "uint", "ulong", "size_t",
             "ptrdiff_t", "intptr_t", "uintptr_t", "kernel", "global", "local", "constant", "private", "image2d_t",
             "image3d_t", "sampler_t", "event_t", "NULL",
+            // макросы самого кодгена (Aliasing)
+            "JTG_RESTRICT", "JTG_ALIASED",
             // макросы, которые использует сгенерированный код
             "NAN", "INFINITY", "INT_MIN", "INT_MAX", "LONG_MIN", "LONG_MAX", "M_PI", "M_E", "FLT_MAX", "FLT_MIN",
             "DBL_MAX", "DBL_MIN", "CHAR_BIT", "SCHAR_MAX", "UCHAR_MAX", "SHRT_MAX", "USHRT_MAX", "UINT_MAX",

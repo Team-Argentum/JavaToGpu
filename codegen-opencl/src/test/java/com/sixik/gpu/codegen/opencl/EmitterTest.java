@@ -53,7 +53,7 @@ class EmitterTest {
     void debugTextCarriesNamesAndLines() {
         String src = emit(Fixtures.computeSine(), EmitOptions.DEBUG).source();
         assertTrue(src.contains("__kernel void computeSine("));
-        assertTrue(src.contains("__global float* input"));
+        assertTrue(src.contains("__global float* JTG_RESTRICT input"));
         assertTrue(src.contains("input_len"));
         assertTrue(src.contains("#line 3\n"));
     }
@@ -654,6 +654,45 @@ class EmitterTest {
         assertTrue(src.contains("((__global double2*)p3)[1] = ((__global const double2*)p3)[0];"), src);
     }
 
+    /**
+     * {@code restrict} (через макрос {@link Aliasing#MACRO}) - только на {@code __global}-буферах ядра: не на
+     * {@code __constant} и не на параметрах device-функций; {@link ClProgram.KernelAbi#aliasConflict} видит перекрытие
+     * записанного буфера и не видит двойного чтения.
+     */
+    @Test
+    void globalKernelBuffersAreRestrict() {
+        IrBuilder b = new IrBuilder();
+        int g = b.array(AddressSpace.GLOBAL, Types.F32);
+        int c = b.array(AddressSpace.CONSTANT, Types.F32);
+        int dev = b.beginFunction(IrModule.DEVICE, Types.F32, g);
+        b.endFunction(b.block(b.returnStmt(b.load(b.elemPtr(b.param(0), b.constI32(0))))));
+        b.beginFunction(IrModule.KERNEL, Types.VOID, g, g, c);
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)),
+                b.binary(Op.ADD, b.call(dev, b.param(1)), b.load(b.elemPtr(b.param(2), b.constI32(0)))))));
+        Result<ClProgram> res = OpenClEmitter.program(b.build(), EmitOptions.RELEASE);
+        assertTrue(res.isOk(), res.diagnostics().toString());
+        String src = res.value().source();
+        assertTrue(src.contains("#ifdef JTG_ALIASED\n#define JTG_RESTRICT\n#else\n#define JTG_RESTRICT restrict\n#endif\n"),
+                src);
+        assertTrue(src.contains("        __global float* JTG_RESTRICT p0,\n        int p0_len,\n"
+                + "        __global float* JTG_RESTRICT p1,\n        int p1_len,\n        __constant float* p2,\n"), src);
+        assertTrue(src.contains("float f0(__global float* p0, int p0_len)"), src);
+
+        ClProgram.KernelAbi abi = res.value().kernels().get(0);
+        assertTrue(abi.params().get(0).restricted());
+        assertFalse(abi.params().get(4).restricted());
+        assertTrue(abi.aliasConflict(new Object[]{1L, 1L, 2L}), "the written p0 is also p1");
+        assertTrue(abi.aliasConflict(new Object[]{1L, 2L, 1L}), "the written p0 is also the __constant p2");
+        assertFalse(abi.aliasConflict(new Object[]{1L, 2L, 2L}), "p1 and p2 are only read");
+        assertFalse(abi.aliasConflict(new Object[]{1L, 2L, 3L}));
+
+        // без __global-буферов ядра макрос не нужен
+        IrBuilder s = new IrBuilder();
+        s.beginFunction(IrModule.KERNEL, Types.VOID, Types.I32);
+        s.endFunction(s.block());
+        assertFalse(OpenClEmitter.program(s.build(), EmitOptions.RELEASE).value().source().contains("JTG_"));
+    }
+
     /** Private-массив - параметр device-функции: {@code __private}-указатель и длина рядом. */
     @Test
     void privateArrayParameterOfADeviceFunction() {
@@ -785,7 +824,7 @@ class EmitterTest {
         assertEquals(v4, a.args().get(0).type(), "array element is a vector");
         assertEquals(KernelArg.SCALAR, a.args().get(2).kind());
         assertEquals(v4, a.args().get(2).type(), "vector by value");
-        assertTrue(a.source().contains("__global float4* items, int items_len, float4 scale"), a.source());
+        assertTrue(a.source().contains("__global float4* JTG_RESTRICT items, int items_len, float4 scale"), a.source());
     }
 
     @Test

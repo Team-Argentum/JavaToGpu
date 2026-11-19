@@ -106,6 +106,32 @@ public record ClProgram(String source, String buildOptions, int requiredFeatures
             return reqdWorkGroup.clone();
         }
 
+        /**
+         * Нужен ли запуску вариант программы без {@code restrict} ({@link Aliasing}): один буфер стоит в двух
+         * параметрах, и хотя бы один из них ядро меняет. Такой вариант собирается из того же {@link ClProgram#source()}
+         * с опциями {@code buildOptions() + " " + Aliasing.ALIASED_OPTION}.
+         *
+         * @param buffers буфер по индексу параметра IR ({@link Param#param()}) - дескриптор {@code cl_mem} или иной
+         *                ключ, сравнение по {@code equals}; {@code null} для небуферных параметров
+         * @return {@code true} - запускать вариант с {@link Aliasing#ALIASED_OPTION}
+         */
+        public boolean aliasConflict(Object[] buffers) {
+            for (int i = 0; i < params.size(); i++) {
+                Param a = params.get(i);
+                if (a.kind() != Param.BUFFER || buffers[a.param()] == null) {
+                    continue;
+                }
+                for (int j = i + 1; j < params.size(); j++) {
+                    Param b = params.get(j);
+                    if (b.kind() == Param.BUFFER && buffers[a.param()].equals(buffers[b.param()])
+                            && (a.writes() || b.writes()) && (a.restricted() || b.restricted())) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         @Override
         public boolean equals(Object o) {
             return o instanceof KernelAbi k && name.equals(k.name) && function == k.function
@@ -157,6 +183,11 @@ public record ClProgram(String source, String buildOptions, int requiredFeatures
         /** @return записан ли буфер ядром */
         public boolean writes() {
             return (access & com.sixik.gpu.ir.Validator.ACCESS_WRITE) != 0;
+        }
+
+        /** @return напечатан ли буфер с {@code restrict} ({@link Aliasing}): {@code __global}-буфер */
+        public boolean restricted() {
+            return kind == BUFFER && space == com.sixik.gpu.ir.AddressSpace.GLOBAL;
         }
     }
 }

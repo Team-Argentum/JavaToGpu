@@ -2,6 +2,12 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 typedef struct {
     float x;
     float y;
@@ -28,7 +34,11 @@ Particle bump(Particle p, float d)
     return gpu_with_Particle_0(p, p.x + d);
 }
 
-__kernel void structs(__global float* in, int in_len, __global float* out, int out_len)
+__kernel void structs(
+        __global float* JTG_RESTRICT in,
+        int in_len,
+        __global float* JTG_RESTRICT out,
+        int out_len)
 {
     Particle p = gpu_make_Particle(in[0], in[1], (float4)(in[2], in[3], in[4], in[5]), 7);
     Body body = gpu_make_Body(bump(p, 0.5f), 2.5);

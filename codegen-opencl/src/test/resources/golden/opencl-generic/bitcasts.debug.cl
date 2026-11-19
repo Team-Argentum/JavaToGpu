@@ -2,22 +2,28 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 __kernel void bitcasts(
-        __global int* in32,
+        __global int* JTG_RESTRICT in32,
         int in32_len,
-        __global long* in64,
+        __global long* JTG_RESTRICT in64,
         int in64_len,
-        __global uint* out_u32,
+        __global uint* JTG_RESTRICT out_u32,
         int out_u32_len,
-        __global float* out_f32,
+        __global float* JTG_RESTRICT out_f32,
         int out_f32_len,
-        __global ulong* out_u64,
+        __global ulong* JTG_RESTRICT out_u64,
         int out_u64_len,
-        __global double* out_f64,
+        __global double* JTG_RESTRICT out_f64,
         int out_f64_len,
-        __global int* back32,
+        __global int* JTG_RESTRICT back32,
         int back32_len,
-        __global long* back64,
+        __global long* JTG_RESTRICT back64,
         int back64_len)
 {
     out_u32[0] = as_uint(in32[0]);

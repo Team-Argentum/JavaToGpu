@@ -30,6 +30,15 @@ public final class CompiledKernel {
     Object boundTo;
 
     /**
+     * Вариант без {@code restrict} ({@link com.sixik.gpu.codegen.opencl.Aliasing}) для запусков, где один буфер стоит в
+     * двух параметрах и ядро его меняет: собирается при первой такой встрече, {@code 0} - ещё не собран. Под замком.
+     */
+    long aliasedProgram;
+    long aliasedKernel;
+    /** Последние аргументы выставлены в {@link #aliasedKernel}, а не в {@link #kernel}. Под замком. */
+    boolean aliasedActive;
+
+    /**
      * Исполнение по стадиям {@code KernelSplitter} либо {@code null}, если ядро запускается целиком. Выставляется при
      * сборке, до первого запуска.
      */
@@ -116,6 +125,21 @@ public final class CompiledKernel {
      */
     public int access(int param) {
         return access[param];
+    }
+
+    /** @return доступ по всем параметрам (без копии: только для чтения внутри пакета) */
+    int[] accessArray() {
+        return access;
+    }
+
+    /** @return объект драйвера, в который выставляются аргументы и который ставится в очередь. Под замком. */
+    long handle() {
+        return aliasedActive ? aliasedKernel : kernel;
+    }
+
+    /** @return собран ли вариант без {@code restrict} (для тестов) */
+    public boolean hasAliasedVariant() {
+        return aliasedKernel != 0;
     }
 
     /**

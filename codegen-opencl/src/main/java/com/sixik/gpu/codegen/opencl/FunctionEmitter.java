@@ -196,7 +196,9 @@ final class FunctionEmitter {
         for (int i = 0; i < m.fParamCount(f); i++) {
             int t = m.fParamType(f, i);
             if (m.typeKind(t) == Types.KIND_ARRAY) {
-                params.add(CTypes.space(Types.space(m, t)) + " " + lay.type(Types.elem(m, t)) + "* "
+                // буфер ядра в __global - restrict (через макрос: сборка с ALIASED_OPTION его снимает, Aliasing)
+                String restrict = kernel && Types.space(m, t) == AddressSpace.GLOBAL ? Aliasing.MACRO + " " : "";
+                params.add(CTypes.space(Types.space(m, t)) + " " + lay.type(Types.elem(m, t)) + "* " + restrict
                         + paramNames[i]);
                 params.add("int " + lenNames[i]);
             } else {

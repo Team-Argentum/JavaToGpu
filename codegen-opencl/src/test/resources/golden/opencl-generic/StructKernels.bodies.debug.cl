@@ -2,6 +2,12 @@
 #pragma OPENCL FP_CONTRACT OFF
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
+#ifdef JTG_ALIASED
+#define JTG_RESTRICT
+#else
+#define JTG_RESTRICT restrict
+#endif
+
 typedef struct {
     float x;
     float y;
@@ -22,7 +28,11 @@ static inline Particle gpu_with_Particle_2(Particle s, float4 v) { s.v = v; retu
 static inline Particle gpu_with_Particle_3(Particle s, int v) { s.id = v; return s; }
 static inline Pair gpu_make_Pair(int a0, long a1) { Pair r; r.a = a0; r.b = a1; return r; }
 
-__kernel void bodies(__global Body* bs, int bs_len, __global Pair* pairs, int pairs_len)
+__kernel void bodies(
+        __global Body* JTG_RESTRICT bs,
+        int bs_len,
+        __global Pair* JTG_RESTRICT pairs,
+        int pairs_len)
 {
 #line 122
     int g = (int)get_global_id(0);
