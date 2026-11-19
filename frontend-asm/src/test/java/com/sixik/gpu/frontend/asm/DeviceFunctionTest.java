@@ -200,6 +200,7 @@ class DeviceFunctionTest {
                 import com.sixik.gpu.api.annotations.Global;
                 import com.sixik.gpu.api.annotations.Kernel;
                 import com.sixik.gpu.api.annotations.Local;
+                import com.sixik.gpu.api.annotations.Private;
 
                 public class D {
                 """ + body + "\n}\n";
@@ -250,6 +251,87 @@ class DeviceFunctionTest {
                 @Kernel
                 public static void k(@Local int[] tmp, @Global int[] out) {
                     out[0] = first(tmp);
+                }
+                """));
+    }
+
+    /** {@code @Private}: массив из тела ядра передаётся в device-функцию по ссылке; IR обоих фронтендов совпадает. */
+    @Test
+    void privateArrayParameterGivesTheSameIr() {
+        String src = kernelClass("""
+                @DeviceFunction
+                static int push(@Private int[] stack, int top, int v) {
+                    stack[top] = v;
+                    return top + 1;
+                }
+
+                @DeviceFunction
+                static int sum(@Private int[] stack, int top) {
+                    int s = 0;
+                    for (int i = 0; i < top; i++) {
+                        s += stack[i] * stack.length;
+                    }
+                    return s;
+                }
+
+                @Kernel
+                public static void k(@Global int[] out, @Global int[] in) {
+                    int gid = Gpu.getGlobalId(0);
+                    int[] stack = new int[8];
+                    int top = 0;
+                    top = push(stack, top, in[gid]);
+                    top = push(stack, top, in[gid] * 2);
+                    out[gid] = sum(stack, top) + stack[1];
+                }
+                """);
+        JavacHarness.Outcome java = JavacHarness.compile(true, null, src);
+        assertTrue(java.success(), java.log());
+        AsmFrontend.Result asm = AsmFrontend.compile(ClassSource.of(java.classes()), List.of("d.D"), AsmFrontend.Options.DEFAULT);
+        assertSameIr(java, asm, "d.D", List.of("k"));
+    }
+
+    @Test
+    void privateMisuseIsReported() {
+        sameCodes("GPU0123", kernelClass("""
+                @Kernel
+                public static void k(@Private int[] tmp, @Global int[] out) {
+                    out[0] = 1;
+                }
+                """));
+        sameCodes("GPU0123", kernelClass("""
+                @DeviceFunction
+                static int f(@Private int x) {
+                    return x;
+                }
+
+                @Kernel
+                public static void k(@Global int[] out) {
+                    out[0] = f(1);
+                }
+                """));
+        sameCodes("GPU0123", kernelClass("""
+                @DeviceFunction
+                static int f(@Private @Local int[] a) {
+                    return a[0];
+                }
+
+                @Kernel
+                public static void k(@Global int[] out) {
+                    int[] t = new int[2];
+                    out[0] = f(t);
+                }
+                """));
+        // без @Private параметр - global: private-массив туда не передать
+        sameCodes("GPU0121", kernelClass("""
+                @DeviceFunction
+                static int f(int[] a) {
+                    return a[0];
+                }
+
+                @Kernel
+                public static void k(@Global int[] out) {
+                    int[] t = new int[2];
+                    out[0] = f(t);
                 }
                 """));
     }

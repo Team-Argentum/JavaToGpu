@@ -1,6 +1,7 @@
 package com.sixik.gpu.frontend.asm;
 
 import com.sixik.gpu.frontend.common.KernelAttributes;
+import com.sixik.gpu.frontend.common.ParamRules;
 import com.sixik.gpu.ir.IrBuilder;
 import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Types;
@@ -307,6 +308,13 @@ final class ModuleBuilder {
         for (int i = 0; i < args.length; i++) {
             String pname = ml.paramNames[i];
             String shown = args[i].getClassName();
+            if (ml.paramAnnotated(i, MethodLowerer.PRIVATE_ANNOTATION)) {
+                String why = ParamRules.privateMisuse(u.kernel, args[i].getSort() == Type.ARRAY,
+                        ml.paramAnnotated(i, MethodLowerer.LOCAL_ANNOTATION) || ml.paramAnnotated(i, MethodLowerer.GLOBAL_ANNOTATION));
+                if (why != null) {
+                    report(u, "GPU0123", u.line, pname, why);
+                }
+            }
             switch (ml.paramKinds[i]) {
                 case Kinds.K_INT, Kinds.K_LONG, Kinds.K_FLOAT, Kinds.K_DOUBLE -> {
                 }

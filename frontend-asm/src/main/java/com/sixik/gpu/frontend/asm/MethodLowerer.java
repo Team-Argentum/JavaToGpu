@@ -51,6 +51,7 @@ final class MethodLowerer {
     static final String GPU = "com/sixik/gpu/api/Gpu";
     static final String LOCAL_ANNOTATION = "Lcom/sixik/gpu/api/annotations/Local;";
     static final String GLOBAL_ANNOTATION = "Lcom/sixik/gpu/api/annotations/Global;";
+    static final String PRIVATE_ANNOTATION = "Lcom/sixik/gpu/api/annotations/Private;";
 
     /** Конструкция, которую фронтенд байткода ещё не поддерживает (шаги 17.15): становится {@code GPU0902}. */
     static final class NotYet extends RuntimeException {
@@ -390,12 +391,32 @@ final class MethodLowerer {
     // Параметры и локали (17.10)
     // =============================================================================================
 
+    /**
+     * @param i    индекс параметра
+     * @param desc дескриптор аннотации
+     * @return {@code true}, если на параметре есть аннотация (видимая на уровне класса)
+     */
+    boolean paramAnnotated(int i, String desc) {
+        List<AnnotationNode>[] anns = m.invisibleParameterAnnotations;
+        if (anns != null && i < anns.length && anns[i] != null) {
+            for (AnnotationNode a : anns[i]) {
+                if (a.desc.equals(desc)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private int paramSpace(int i) {
         List<AnnotationNode>[] anns = m.invisibleParameterAnnotations;
         if (anns != null && i < anns.length && anns[i] != null) {
             for (AnnotationNode a : anns[i]) {
                 if (a.desc.equals(LOCAL_ANNOTATION)) {
                     return com.sixik.gpu.ir.AddressSpace.LOCAL;
+                }
+                if (a.desc.equals(PRIVATE_ANNOTATION)) {
+                    return com.sixik.gpu.ir.AddressSpace.PRIVATE;
                 }
                 if (a.desc.equals(GLOBAL_ANNOTATION) && Boolean.TRUE.equals(Annotations.explicitValues(a).get("constant"))) {
                     return com.sixik.gpu.ir.AddressSpace.CONSTANT;

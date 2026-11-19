@@ -3,7 +3,9 @@ package com.sixik.gpu.frontend.java;
 import com.sixik.gpu.api.Gpu;
 import com.sixik.gpu.api.annotations.DeviceFunction;
 import com.sixik.gpu.api.annotations.Kernel;
+import com.sixik.gpu.api.annotations.Global;
 import com.sixik.gpu.api.annotations.Local;
+import com.sixik.gpu.api.annotations.Private;
 import com.sixik.gpu.api.annotations.Struct;
 import com.sixik.gpu.ir.Builtins;
 import com.sun.source.tree.ArrayAccessTree;
@@ -184,6 +186,13 @@ final class SubsetChecker extends TreePathScanner<Void, Void> {
         TypeMirror t = pe.asType();
         int k = JavaTypes.kindOf(t);
         String pname = pe.getSimpleName().toString();
+        if (pe.getAnnotation(Private.class) != null) {
+            String why = com.sixik.gpu.frontend.common.ParamRules.privateMisuse(kernel, k == JavaTypes.K_ARRAY && JavaTypes.isJavaArray(t),
+                    pe.getAnnotation(Local.class) != null || pe.getAnnotation(Global.class) != null);
+            if (why != null) {
+                rep.report(pp, "GPU0123", pname, why);
+            }
+        }
         switch (k) {
             case JavaTypes.K_INT, JavaTypes.K_LONG, JavaTypes.K_FLOAT, JavaTypes.K_DOUBLE -> {
             }

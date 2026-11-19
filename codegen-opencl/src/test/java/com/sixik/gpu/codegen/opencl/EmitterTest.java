@@ -618,6 +618,34 @@ class EmitterTest {
         assertFalse(r.value().source().contains("cl_khr_int64_extended_atomics"));
     }
 
+    /** Private-массив - параметр device-функции: {@code __private}-указатель и длина рядом. */
+    @Test
+    void privateArrayParameterOfADeviceFunction() {
+        IrBuilder b = new IrBuilder();
+        int priv = b.array(AddressSpace.PRIVATE, Types.I32);
+        int f = b.beginFunction(IrModule.DEVICE, Types.I32, priv, Types.I32);
+        b.nameFunction("touch");
+        b.nameParams("scratch", "v");
+        b.endFunction(b.block(
+                b.store(b.elemPtr(b.param(0), b.constI32(1)), b.binary(Op.ADD, b.param(1), b.arrayLen(b.param(0)))),
+                b.returnStmt(b.load(b.elemPtr(b.param(0), b.constI32(0))))));
+        int out = b.array(AddressSpace.GLOBAL, Types.I32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, out);
+        int p = b.declareLocal(priv);
+        int r = b.declareLocal(Types.I32);
+        b.endFunction(b.block(
+                b.privateArrayDecl(p, b.constI32(4)),
+                b.store(b.elemPtr(b.localGet(p), b.constI32(0)), b.constI32(7)),
+                b.localDecl(r, b.call(f, b.localGet(p), b.constI32(10))),
+                b.store(b.elemPtr(b.param(0), b.constI32(0)), b.localGet(r)),
+                b.store(b.elemPtr(b.param(0), b.constI32(1)), b.load(b.elemPtr(b.localGet(p), b.constI32(1))))));
+        Result<Artifact> res = OpenClEmitter.emit(b.build(), Target.GENERIC);
+        assertTrue(res.isOk(), res.diagnostics().toString());
+        String src = res.value().source();
+        assertTrue(src.contains("(__private int* p0, int p0_len, int p1)"), src);
+        assertTrue(src.contains("f0(v0, 4, 10)"), src);
+    }
+
     @Test
     void pointerToLocalIsAddressOfAndAccessThroughItNamesTheLocalDirectly() {
         IrBuilder b = new IrBuilder();

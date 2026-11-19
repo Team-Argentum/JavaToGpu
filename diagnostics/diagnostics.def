@@ -59,8 +59,9 @@ GPU0117 error   Invalid array creation: {0} | Only 'T[] a = new T[constant];' in
 GPU0118 error   Assignment to parameter {0} with @Global(constant = true) | Copy the value into a local variable
 GPU0119 error   Type {0} is not supported in GPU code | Allowed: boolean, byte, short, char, int, long, float, double and one-dimensional arrays of primitives
 GPU0120 error   An array with @Local is allowed only in a kernel, at the top level of the body, with a constant size | Declare 'T[] a = new T[N];' at the start of the kernel
-GPU0121 error   Address space mismatch of array {0}: the function expects {1}, passed {2} | Pass an array of the same address space (@Global, @Local)
+GPU0121 error   Address space mismatch of array {0}: the function expects {1}, passed {2} | Pass an array of the same address space; mark the parameter @Local for local arrays and @Private for arrays created in the body (new T[N])
 GPU0122 error   Write to an element of array {0} with @Global(constant = true) | A constant array is read-only: copy the value into a @Global array
+GPU0123 error   Invalid @Private on parameter {0}: {1} | @Private marks an array parameter of a @DeviceFunction that receives an array created in the body (new T[N]); kernel parameters are @Global or @Local
 GPU0130 warning The barrier in kernel {0} may not be reached by all work-items of the group: {1} | The barrier must be placed where the whole group arrives; if the condition is the same for the group, wrap it in Gpu.assumeUniform(...)
 GPU0131 error   The barrier in kernel {0} is under divergent control flow (strictBarriers mode): {1} | Move barrier() out of the condition that depends on getGlobalId/getLocalId, or wrap the condition in Gpu.assumeUniform(...)
 GPU0191 error   Invalid @Struct declaration {0}: {1} | Fields are public, not final: int, long, float, double, vectors or other @Struct; a public no-arg constructor is required

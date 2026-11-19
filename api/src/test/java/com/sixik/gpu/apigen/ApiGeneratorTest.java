@@ -247,7 +247,7 @@ class ApiGeneratorTest {
         assertEquals(List.of(), out.skipped(), "since M10 every builtin has a Java representation");
         // Gpu + 4 скаляра x 5 размеров векторов + 4 класса-ссылки + 4 скаляра x 3 пространства указателей
         assertEquals(1 + 20 + 4 + 12, out.files().size());
-        assertEquals(40, def.builtins().size());
+        assertEquals(41, def.builtins().size());
         // JDK-интринсики (флаг jdk) вызываются как методы JDK: в Gpu их нет
         assertTrue(def.builtins().stream().filter(b -> b.flags().contains("jdk")).count() == 16);
         assertTrue(!out.files().get("com/sixik/gpu/api/Gpu.java").contains(" floor("), "Math.floor, not Gpu.floor");

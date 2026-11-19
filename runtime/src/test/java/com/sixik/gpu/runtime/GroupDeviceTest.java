@@ -80,6 +80,32 @@ class GroupDeviceTest {
                     }
                 }
 
+                @DeviceFunction
+                static int push(@Private int[] stack, int top, int v) {
+                    stack[top] = v;
+                    return top + 1;
+                }
+
+                @DeviceFunction
+                static int weighted(@Private int[] stack, int top) {
+                    int s = 0;
+                    for (int i = 0; i < top; i++) {
+                        s += stack[i] * (i + 1);
+                    }
+                    return s + stack.length;
+                }
+
+                @Kernel
+                public static void scratch(@Global int[] out, @Global int[] in) {
+                    int gid = Gpu.getGlobalId(0);
+                    int[] stack = new int[6];
+                    int top = 0;
+                    for (int k = 0; k < 4; k++) {
+                        top = push(stack, top, in[gid] + k);
+                    }
+                    out[gid] = weighted(stack, top) + stack[3];
+                }
+
                 @Kernel
                 public static void claim(@Global int[] keys, @Global int[] owner, @Global int[] winners, @Global long[] total) {
                     int gid = Gpu.getGlobalId(0);
@@ -132,7 +158,7 @@ class GroupDeviceTest {
     private Class<?> load(Path dir, URLClassLoader[] holder) throws Exception {
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
-        assertEquals(4, Weaver.weaveTree(dir).kernels());
+        assertEquals(5, Weaver.weaveTree(dir).kernels());
         holder[0] = new URLClassLoader(new URL[]{dir.toUri().toURL()}, getClass().getClassLoader());
         return holder[0].loadClass("demo.Groups");
     }
@@ -195,6 +221,20 @@ class GroupDeviceTest {
             }
             assertEquals(claimed, winners[0], "exactly one compare-exchange wins each slot");
             assertEquals(sum, total[0], "64-bit compare-exchange loop adds every key");
+
+            int[] src = new int[256];
+            int[] expectedScratch = new int[src.length];
+            for (int i = 0; i < src.length; i++) {
+                src[i] = rnd.nextInt(1000) - 500;
+                int w = 0;
+                for (int k = 0; k < 4; k++) {
+                    w += (src[i] + k) * (k + 1);
+                }
+                expectedScratch[i] = w + 6 + src[i] + 3;
+            }
+            int[] scratchOut = new int[src.length];
+            call(groups, "scratch", scratchOut, src);
+            assertArrayEquals(expectedScratch, scratchOut, "@Private array passed to device functions by reference");
         } finally {
             if (holder[0] != null) {
                 holder[0].close();

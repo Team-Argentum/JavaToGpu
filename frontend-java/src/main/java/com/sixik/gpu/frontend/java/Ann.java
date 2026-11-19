@@ -2,6 +2,7 @@ package com.sixik.gpu.frontend.java;
 
 import com.sixik.gpu.api.annotations.Global;
 import com.sixik.gpu.api.annotations.Local;
+import com.sixik.gpu.api.annotations.Private;
 import com.sixik.gpu.ir.AddressSpace;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.VariableTree;
@@ -89,8 +90,8 @@ final class Ann {
     }
 
     /**
-     * Адресное пространство массива-параметра: {@code @Local} - local; {@code @Global(constant = true)} - constant;
-     * иначе (в том числе без аннотации) - global.
+     * Адресное пространство массива-параметра: {@code @Local} - local; {@code @Private} - private (массив из тела
+     * вызывающего); {@code @Global(constant = true)} - constant; иначе (в том числе без аннотации) - global.
      *
      * @param param элемент параметра
      * @return {@link AddressSpace}
@@ -98,6 +99,9 @@ final class Ann {
     static int paramSpace(VariableElement param) {
         if (param.getAnnotation(Local.class) != null) {
             return AddressSpace.LOCAL;
+        }
+        if (param.getAnnotation(Private.class) != null) {
+            return AddressSpace.PRIVATE;
         }
         Global g = param.getAnnotation(Global.class);
         return g != null && g.constant() ? AddressSpace.CONSTANT : AddressSpace.GLOBAL;

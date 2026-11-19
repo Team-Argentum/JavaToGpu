@@ -229,6 +229,11 @@ class DiagnosticsTest {
                         c[0] = 1f; // <-
                     }
                     """),
+            new Case("GPU0123", """
+                    @Kernel public static void k(@Private int[] t, @Global int[] a) { // <-
+                        a[0] = 1;
+                    }
+                    """),
             new Case("GPU0191", """
                     @Struct public static final class Bad { public final int x = 1; public Bad() { } }
                     @Kernel public static void k(@Global Bad[] a) { } // <-
