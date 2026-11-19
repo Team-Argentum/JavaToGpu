@@ -7,7 +7,9 @@ import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Op;
 import com.sixik.gpu.ir.Types;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Исполнитель IR: обходит таблицу узлов одной функции-ядра для каждого work-item виртуального NDRange.
@@ -175,6 +177,7 @@ final class Machine {
     private final int[] typeSlots;     // по типу: число ячеек значения (скаляр 1, вектор - лейны, struct - сумма листьев)
     private final boolean[] typeAgg;   // по типу: вектор или struct
     private final int[][] fieldSlot;   // по struct-типу: смещение поля в ячейках
+    private final int[] tableBuf;      // по узлу const_table: номер буфера таблицы (буферы таблиц - после хостовых)
 
     // ---- состояние исполнения ---------------------------------------------------------------------
     private long[] stack = new long[256];
@@ -277,6 +280,37 @@ final class Machine {
             }
             arrayLocals[f] = arrs;
         }
+        // таблицы констант (const_table) - буферы только для чтения сразу после хостовых: живут весь запуск, как они
+        this.tableBuf = new int[m.nodeCount()];
+        java.util.Map<String, Integer> seen = new java.util.HashMap<>();
+        List<long[]> extra = new ArrayList<>();
+        for (int n = 0; n < m.nodeCount(); n++) {
+            if (m.op(n) != Op.CONST_TABLE) {
+                continue;
+            }
+            int elem = m.typeB(m.type(n));
+            String key = elem + ":" + m.a(n) + ":" + m.b(n);
+            Integer id = seen.get(key);
+            if (id == null) {
+                long[] t = new long[m.b(n)];
+                for (int i = 0; i < t.length; i++) {
+                    t[i] = Alu.canon(elem, m.constant(m.a(n) + i));
+                }
+                id = hostBufs.length + extra.size();
+                extra.add(t);
+                seen.put(key, id);
+            }
+            tableBuf[n] = id;
+        }
+        if (!extra.isEmpty()) {
+            int h = hostBufs.length;
+            hostBufs = Arrays.copyOf(hostBufs, h + extra.size());
+            hostElem = Arrays.copyOf(hostElem, h + extra.size());
+            for (int i = 0; i < extra.size(); i++) {
+                hostBufs[h + i] = extra.get(i);
+                hostElem[h + i] = 1;
+            }
+        }
         this.hostCount = hostBufs.length;
         this.bufs = Arrays.copyOf(hostBufs, Math.max(16, hostBufs.length + 8));
         this.bufElem = new int[bufs.length];
@@ -307,6 +341,7 @@ final class Machine {
         this.typeSlots = p.typeSlots;
         this.typeAgg = p.typeAgg;
         this.fieldSlot = p.fieldSlot;
+        this.tableBuf = p.tableBuf;
         this.hostCount = p.hostCount;
         this.limit = p.limit;
         this.workDim = p.workDim;
@@ -923,6 +958,8 @@ final class Machine {
                 return m.a(n);
             case Op.PARAM:
                 return stack[base + paramSlot[cur][m.a(n)]];
+            case Op.CONST_TABLE:
+                return tableBuf[n];
             case Op.LOCAL_GET:
                 return stack[slot(m.a(n))];
             case Op.EXTRACT:

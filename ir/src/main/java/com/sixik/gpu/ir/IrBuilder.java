@@ -331,6 +331,55 @@ public final class IrBuilder {
         return node(Op.PARAM, curParams[index], index, 0, 0);
     }
 
+    /** Уже добавленные таблицы: ключ - тип элемента и значения, значение - индекс первого значения в таблице констант. */
+    private final java.util.Map<String, Integer> tables = new java.util.HashMap<>();
+
+    /**
+     * Таблица констант ({@link Op#CONST_TABLE}): массив {@code Array<constant, elemType>}, который генератор печатает
+     * инициализированным {@code __constant}-массивом. Одинаковые таблицы делят значения в таблице констант модуля.
+     *
+     * @param elemType числовой скаляр (не {@code BOOL})
+     * @param bits     значения: целые - как у {@link #constInt}, {@code F32} - {@code Float.floatToRawIntBits} в
+     *                 младших 32 битах, {@code F64} - {@code Double.doubleToRawLongBits}
+     * @return id узла
+     */
+    public int constTable(int elemType, long[] bits) {
+        requireFunction();
+        if (!Types.isScalar(elemType) || elemType == Types.BOOL || elemType == Types.VOID) {
+            throw new IllegalArgumentException("constTable: element must be a numeric scalar, not " + elemType);
+        }
+        if (bits.length == 0) {
+            throw new IllegalArgumentException("constTable: the table is empty");
+        }
+        long[] norm = new long[bits.length];
+        for (int i = 0; i < bits.length; i++) {
+            norm[i] = normalize(elemType, bits[i]);
+        }
+        String key = elemType + ":" + Arrays.toString(norm);
+        Integer first = tables.get(key);
+        if (first == null) {
+            first = constCount;
+            for (long v : norm) {
+                addConst(v);
+            }
+            tables.put(key, first);
+        }
+        return node(Op.CONST_TABLE, array(AddressSpace.CONSTANT, elemType), first, bits.length, 0);
+    }
+
+    /** Значение элемента таблицы в каноническом виде: целые - по ширине типа со знаком/без, {@code F32} - 32 бита. */
+    static long normalize(int type, long v) {
+        return switch (type) {
+            case Types.I8 -> (byte) v;
+            case Types.U8 -> v & 0xFFL;
+            case Types.I16 -> (short) v;
+            case Types.U16 -> v & 0xFFFFL;
+            case Types.I32 -> (int) v;
+            case Types.U32, Types.F32 -> v & 0xFFFF_FFFFL;
+            default -> v;
+        };
+    }
+
     /**
      * Объявляет локаль текущей функции (только слот; объявление в коде - узлы {@code LOCAL_DECL} и др.).
      *

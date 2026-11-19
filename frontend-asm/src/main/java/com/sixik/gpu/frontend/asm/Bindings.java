@@ -12,6 +12,10 @@ import java.util.Objects;
  * привязанного {@code static} поля примитивного типа (не обязательно {@code final}) становится константой IR, и
  * оптимизатор сворачивает условия и удаляет мёртвые ветки. На JVM поле читается как обычно. Непривязанный
  * {@code getstatic} - {@code GPU0115}; значение не того типа - {@code GPU0308}. Неизменяемый объект.
+ *
+ * <p>Поле-массив привязывается {@link #table}: {@code getstatic} даёт таблицу констант ({@code __constant}-массив
+ * программы, решение 18.6-5), которую ядро индексирует и у которой берёт длину; запись в таблицу и сохранение её в
+ * локаль - {@code GPU0116}.
  */
 public final class Bindings {
 
@@ -42,6 +46,27 @@ public final class Bindings {
         Map<String, Object> m = new LinkedHashMap<>(constants);
         m.put(key(Objects.requireNonNull(owner, "owner"), Objects.requireNonNull(name, "name")), value);
         return new Bindings(Collections.unmodifiableMap(m));
+    }
+
+    /**
+     * Привязывает поле-массив к таблице констант. Массив копируется: последующие изменения на JVM на ядро не влияют.
+     *
+     * @param owner внутреннее имя класса поля ({@code ga2/Tables})
+     * @param name  имя поля
+     * @param array непустой массив {@code int[]}, {@code long[]}, {@code float[]}, {@code double[]}, {@code short[]},
+     *              {@code byte[]} либо {@code char[]} - того же типа, что и поле
+     * @return новые привязки (прежнее значение поля заменяется)
+     * @throws IllegalArgumentException если {@code array} - не массив примитивов
+     */
+    public Bindings table(String owner, String name, Object array) {
+        Objects.requireNonNull(array, "array");
+        if (!array.getClass().isArray() || !array.getClass().getComponentType().isPrimitive()) {
+            throw new IllegalArgumentException("a table is an array of primitives, got " + array.getClass().getName());
+        }
+        int n = java.lang.reflect.Array.getLength(array);
+        Object copy = java.lang.reflect.Array.newInstance(array.getClass().getComponentType(), n);
+        System.arraycopy(array, 0, copy, 0, n);
+        return constant(owner, name, copy);
     }
 
     /** @return {@code true}, если привязок нет */
@@ -94,8 +119,19 @@ public final class Bindings {
             case "D":
                 return value instanceof Double ? null : "the field is double, the value is " + type;
             default:
-                return "only fields of primitive types are bound, the field is " + shown(desc);
+                return desc.startsWith("[") ? tableProblem(desc, value)
+                        : "only fields of primitive types and their arrays are bound, the field is " + shown(desc);
         }
+    }
+
+    private static String tableProblem(String desc, Object value) {
+        if (desc.equals("[Z") || desc.length() != 2) {
+            return "a table is an int, long, float, double, short, byte or char array, the field is " + shown(desc);
+        }
+        if (!value.getClass().isArray() || !Type.getType(value.getClass()).getDescriptor().equals(desc)) {
+            return "the field is " + shown(desc) + ", the value is " + value.getClass().getSimpleName();
+        }
+        return java.lang.reflect.Array.getLength(value) == 0 ? "a table is not empty" : null;
     }
 
     private static String shown(String desc) {
@@ -114,9 +150,21 @@ public final class Bindings {
      *
      * @param desc  дескриптор поля
      * @param value значение
-     * @return константа
+     * @param field имя поля для диагностик ({@code pkg.Owner.name})
+     * @return константа либо таблица констант
      */
-    static Ex constantOf(String desc, Object value) {
+    static Ex constantOf(String desc, Object value, String field) {
+        if (desc.startsWith("[")) {
+            int n = java.lang.reflect.Array.getLength(value);
+            long[] bits = new long[n];
+            for (int i = 0; i < n; i++) {
+                Object v = java.lang.reflect.Array.get(value, i);
+                bits[i] = v instanceof Float f ? Float.floatToRawIntBits(f)
+                        : v instanceof Double d ? Double.doubleToRawLongBits(d)
+                        : v instanceof Character c ? c : ((Number) v).longValue();
+            }
+            return Ex.constTable(Kinds.ofDescriptor(desc.substring(1)), bits, field);
+        }
         switch (desc) {
             case "J":
                 return Ex.constant(Kinds.K_LONG, (Long) value);

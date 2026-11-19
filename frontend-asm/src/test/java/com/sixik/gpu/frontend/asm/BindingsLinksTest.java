@@ -187,7 +187,7 @@ class BindingsLinksTest {
         AsmJit.Result r = jit(flags(false, 1).constant("ga2/Flags", "SCALE", 2.5f), ERO);
         assertEquals(List.of("GPU0308"), codes(r), r.diagnostics().toString());
         assertTrue(r.diagnostics().get(0).message().contains("int, the value is Float"), r.diagnostics().toString());
-        assertEquals("only fields of primitive types are bound, the field is java.lang.String",
+        assertEquals("only fields of primitive types and their arrays are bound, the field is java.lang.String",
                 Bindings.problem("Ljava/lang/String;", "x"));
         assertEquals("the value 300 is out of range of byte", Bindings.problem("B", 300));
     }

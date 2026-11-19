@@ -46,9 +46,16 @@ final class LocalProp {
             }
         }
 
+        /** То же, что {@link #kill} для каждой локали множества, но одним проходом по окружению. */
         void killAll(BitSet locals) {
-            for (int l = locals.nextSetBit(0); l >= 0; l = locals.nextSetBit(l + 1)) {
-                kill(l);
+            if (locals.isEmpty()) {
+                return;
+            }
+            for (int j = 0; j < v.length; j++) {
+                if (v[j] != null && (locals.get(j) || v[j].op == Op.LOCAL_GET && v[j].imm >= 0
+                        && locals.get(v[j].imm))) {
+                    v[j] = null;
+                }
             }
         }
     }

@@ -225,6 +225,18 @@ final class Tree {
         return s;
     }
 
+    /**
+     * @param t узел {@code CONST_TABLE}
+     * @return значения таблицы (хранятся в {@link #ints} по два int на значение)
+     */
+    static long[] tableValues(Tree t) {
+        long[] v = new long[t.ints.length / 2];
+        for (int i = 0; i < v.length; i++) {
+            v[i] = (t.ints[2 * i] & 0xFFFF_FFFFL) | ((long) t.ints[2 * i + 1] << 32);
+        }
+        return v;
+    }
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();

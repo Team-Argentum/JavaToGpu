@@ -169,6 +169,16 @@ final class Codec {
                 t = new Tree(op, type, 0, wide ? m.constant(a) : a, Tree.NONE, Tree.NO_INTS, line, col);
             }
             case Op.CONST_BOOL -> t = new Tree(op, type, 0, a, Tree.NONE, Tree.NO_INTS, line, col);
+            case Op.CONST_TABLE -> {
+                // значения - в самом дереве (по два int на 64-битное значение): сборка пишет их в новую таблицу констант
+                int[] vals = new int[2 * b];
+                for (int i = 0; i < b; i++) {
+                    long v = m.constant(a + i);
+                    vals[2 * i] = (int) v;
+                    vals[2 * i + 1] = (int) (v >>> 32);
+                }
+                t = new Tree(op, type, m.typeB(type), b, Tree.NONE, vals, line, col); // imm - тип элемента
+            }
             case Op.SPEC_CONST, Op.PARAM, Op.LOCAL_GET, Op.LOCAL_ADDR, Op.BARRIER ->
                     t = new Tree(op, type, a, 0, Tree.NONE, Tree.NO_INTS, line, col);
             case Op.NEG, Op.NOT, Op.CONVERT, Op.BITCAST, Op.LOAD, Op.ARRAY_LEN, Op.SPLAT, Op.EXPR_STMT ->
@@ -402,6 +412,7 @@ final class Codec {
             case Op.CONST_BOOL -> id = b.constBool(t.k != 0);
             case Op.SPEC_CONST -> id = b.specConst(t.imm, t.type);
             case Op.PARAM -> id = b.param(t.imm);
+            case Op.CONST_TABLE -> id = b.constTable(t.imm, Tree.tableValues(t));
             case Op.ADD, Op.SUB, Op.MUL, Op.DIV, Op.REM, Op.AND, Op.OR, Op.XOR, Op.SHL, Op.SHR, Op.USHR,
                  Op.EQ, Op.NE, Op.LT, Op.LE, Op.GT, Op.GE -> id = b.binary(t.op, k[0], k[1]);
             case Op.NEG -> id = b.neg(k[0]);

@@ -749,6 +749,9 @@ final class Emitter {
             case Ex.ARRAY_LEN -> {
                 return b.arrayLen(full(e.kids[0]));
             }
+            case Ex.CONST_TABLE -> {
+                return b.constTable(Kinds.irType(e.elemKind), e.table);
+            }
             case Ex.INTRINSIC -> {
                 return b.intrinsic(e.aux, kids(e));
             }

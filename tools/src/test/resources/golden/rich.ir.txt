@@ -1,4 +1,4 @@
-module format=2 builtins=1 nodes=217 functions=3
+module format=2 builtins=1 nodes=224 functions=3
 type t16 = array<global,f32>
 type t17 = array<global,i32>
 type t18 = f32x4
@@ -9,8 +9,10 @@ type t22 = array<private,f32>
 type t23 = array<local,f32>
 type t24 = ptr<global,f32>
 type t25 = ptr<global,struct#19>
-type t26 = ptr<global,i32>
-type t27 = ptr<local,f32>
+type t26 = array<constant,i32>
+type t27 = ptr<constant,i32>
+type t28 = ptr<global,i32>
+type t29 = ptr<local,f32>
 func f0 device ret=f32 features=- group_sync=no
   param p0 : f32  access=NONE
   param p1 : f32  access=NONE
@@ -34,7 +36,7 @@ func f2 kernel ret=void reqd_wg=(64,1,1) inline=always opt=0 required=[SIMD] fea
   local l8 : array<local,f32>
   local l9 : f32
   local l10 : i32
-  body = n216
+  body = n223
 nodes:
   n0 param f32 p0
   n1 param f32 p1
@@ -214,42 +216,49 @@ nodes:
   n175 const_int i32 3
   n176 shr i32 n174 n175
   n177 local_set void l10 = n176
-  n178 param array<global,f32> p0
-  n179 array_len i32 n178
-  n180 local_set void l10 = n179
-  n181 const_bool bool false
-  n182 local_get i32 l0
-  n183 const_int i32 0
-  n184 eq bool n182 n183
-  n185 or bool n181 n184
-  n186 local_get i32 l0
-  n187 const_int i32 1
-  n188 ge bool n186 n187
-  n189 xor bool n185 n188
-  n190 const_float f32 3.0f
-  n191 local_set void l1 = n190
-  n192 block void [n191]
-  n193 if void n189 then n192
-  n194 param array<global,i32> p1
-  n195 const_int i32 0
-  n196 elem_ptr ptr<global,i32> n194[n195]
-  n197 const_int i32 1
-  n198 intrinsic i32 atomicAdd[n196, n197]
-  n199 expr_stmt void n198
-  n200 local_get array<local,f32> l8
-  n201 const_int i32 0
-  n202 elem_ptr ptr<local,f32> n200[n201]
-  n203 local_get f32 l1
-  n204 store void n202 = n203
-  n205 barrier void flags=1
-  n206 local_get array<local,f32> l8
-  n207 const_int i32 0
-  n208 elem_ptr ptr<local,f32> n206[n207]
-  n209 load f32 n208
-  n210 local_set void l1 = n209
-  n211 param array<global,f32> p3
-  n212 local_get i32 l0
-  n213 elem_ptr ptr<global,f32> n211[n212]
-  n214 local_get f32 l1
-  n215 store void n213 = n214
-  n216 block void [n14, n19, n21, n24, n26, n28, n33, n64, n76, n90, n96, n104, n109, n114, n118, n121, n126, n132, n136, n139, n151, n166, n173, n177, n180, n193, n199, n204, n205, n210, n215]
+  n178 const_table array<constant,i32> table c0+3
+  n179 local_get i32 l10
+  n180 const_int i32 1
+  n181 and i32 n179 n180
+  n182 elem_ptr ptr<constant,i32> n178[n181]
+  n183 load i32 n182
+  n184 local_set void l10 = n183
+  n185 param array<global,f32> p0
+  n186 array_len i32 n185
+  n187 local_set void l10 = n186
+  n188 const_bool bool false
+  n189 local_get i32 l0
+  n190 const_int i32 0
+  n191 eq bool n189 n190
+  n192 or bool n188 n191
+  n193 local_get i32 l0
+  n194 const_int i32 1
+  n195 ge bool n193 n194
+  n196 xor bool n192 n195
+  n197 const_float f32 3.0f
+  n198 local_set void l1 = n197
+  n199 block void [n198]
+  n200 if void n196 then n199
+  n201 param array<global,i32> p1
+  n202 const_int i32 0
+  n203 elem_ptr ptr<global,i32> n201[n202]
+  n204 const_int i32 1
+  n205 intrinsic i32 atomicAdd[n203, n204]
+  n206 expr_stmt void n205
+  n207 local_get array<local,f32> l8
+  n208 const_int i32 0
+  n209 elem_ptr ptr<local,f32> n207[n208]
+  n210 local_get f32 l1
+  n211 store void n209 = n210
+  n212 barrier void flags=1
+  n213 local_get array<local,f32> l8
+  n214 const_int i32 0
+  n215 elem_ptr ptr<local,f32> n213[n214]
+  n216 load f32 n215
+  n217 local_set void l1 = n216
+  n218 param array<global,f32> p3
+  n219 local_get i32 l0
+  n220 elem_ptr ptr<global,f32> n218[n219]
+  n221 local_get f32 l1
+  n222 store void n220 = n221
+  n223 block void [n14, n19, n21, n24, n26, n28, n33, n64, n76, n90, n96, n104, n109, n114, n118, n121, n126, n132, n136, n139, n151, n166, n173, n177, n184, n187, n200, n206, n211, n212, n217, n222]

@@ -16,7 +16,6 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import java.util.ArrayList;
-import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -200,7 +199,6 @@ final class LvtSynth {
             // ---- определения: все записи в слоты, кроме параметров
             List<Integer> defs = new ArrayList<>();
             Map<Integer, Integer> defBit = new HashMap<>();
-            Map<Integer, BitSet> slotDefs = new HashMap<>();
             for (int k = 0; k < n; k++) {
                 AbstractInsnNode in = insns.get(k);
                 if (!isDef(in)) {
@@ -212,48 +210,34 @@ final class LvtSynth {
                     continue;
                 }
                 defBit.put(k, defs.size());
-                slotDefs.computeIfAbsent(s, x -> new BitSet()).set(defs.size());
                 defs.add(k);
             }
             if (defs.isEmpty() && !hasLocalUse()) {
                 return;
             }
-            // ---- достигающие определения по блокам
+            // ---- веба записей: чтение объединяет все достигающие его записи слота (union-find по записям). Чтение
+            // без записи выше в своём блоке ищет записи обратным обходом от предшественников; слоты обходятся по
+            // одному, а мемо «выход блока» - массивы на число блоков, поэтому память линейна, а время - O(слоты x
+            // блоки) без множителя глубины циклов (итерации достигающих определений на BitSet стоили куб на
+            // вложенных циклах). Пустое множество (путь от входа без записи) у проверенного байткода бывает только
+            // в мёртвом коде.
             Cfg g = Cfg.build(insns, List.of());
             int nb = g.size();
             boolean[] reachable = reachable(g);
-            BitSet[] out = new BitSet[nb];
+            int[] blockOf = new int[n];
             for (int b = 0; b < nb; b++) {
-                out[b] = new BitSet();
-            }
-            boolean changed = true;
-            while (changed) {
-                changed = false;
-                for (int b = 0; b < nb; b++) {
-                    BitSet cur = in(g, b, out);
-                    Cfg.Block bl = g.get(b);
-                    for (int k = bl.start; k < bl.end; k++) {
-                        Integer bit = defBit.get(k);
-                        if (bit != null) {
-                            cur.andNot(slotDefs.get(slotOf(insns.get(k))));
-                            cur.set(bit);
-                        }
-                    }
-                    if (!cur.equals(out[b])) {
-                        out[b] = cur;
-                        changed = true;
-                    }
+                Cfg.Block bl = g.get(b);
+                for (int k = bl.start; k < bl.end; k++) {
+                    blockOf[k] = b;
                 }
             }
-            // ---- union-find определений: чтение объединяет все достигающие его записи слота
-            int[] parent = new int[defs.size()];
-            for (int i = 0; i < parent.length; i++) {
-                parent[i] = i;
-            }
+            Uf uf = new Uf(defs.size());
             Map<Integer, Integer> useDef = new HashMap<>();
+            Map<Integer, List<int[]>> pending = new TreeMap<>();
+            Map<Integer, Integer> cur = new HashMap<>();
             for (int b = 0; b < nb; b++) {
-                BitSet cur = in(g, b, out);
                 Cfg.Block bl = g.get(b);
+                cur.clear();
                 for (int k = bl.start; k < bl.end; k++) {
                     AbstractInsnNode in = insns.get(k);
                     int s = slotOf(in);
@@ -261,46 +245,83 @@ final class LvtSynth {
                         continue;
                     }
                     if (isUse(in)) {
-                        BitSet r = (BitSet) cur.clone();
-                        BitSet sd = slotDefs.get(s);
-                        if (sd != null) {
-                            r.and(sd);
+                        Integer local = cur.get(s);
+                        if (local == null) {
+                            pending.computeIfAbsent(s, x -> new ArrayList<>()).add(new int[]{k, b});
+                        } else if (in instanceof IincInsnNode) {
+                            uf.union(local, defBit.get(k));
                         } else {
-                            r.clear();
-                        }
-                        int first = r.nextSetBit(0);
-                        if (first < 0) {
-                            if (reachable[b]) {
-                                problem("slot " + s + " is read before it is written (instruction " + k + ")");
-                            }
-                        } else {
-                            for (int d = r.nextSetBit(first + 1); d >= 0; d = r.nextSetBit(d + 1)) {
-                                union(parent, first, d);
-                            }
-                            if (in instanceof IincInsnNode) {
-                                union(parent, first, defBit.get(k));
-                            } else {
-                                useDef.put(k, first);
-                            }
+                            useDef.put(k, local);
                         }
                     }
                     Integer bit = defBit.get(k);
                     if (bit != null) {
-                        cur.andNot(slotDefs.get(s));
-                        cur.set(bit);
+                        cur.put(s, bit);
                     }
                 }
+            }
+            Map<Integer, List<Integer>> slotDefs = new HashMap<>();
+            for (int i = 0; i < defs.size(); i++) {
+                slotDefs.computeIfAbsent(slotOf(insns.get(defs.get(i))), x -> new ArrayList<>()).add(i);
+            }
+            int[] last = new int[nb];
+            int[] exit = new int[nb];
+            java.util.Arrays.fill(last, -1);
+            java.util.Arrays.fill(exit, -1);
+            List<Integer> touched = new ArrayList<>();
+            List<int[]> unread = new ArrayList<>();
+            for (Map.Entry<Integer, List<int[]>> e : pending.entrySet()) {
+                int s = e.getKey();
+                List<Integer> sd = slotDefs.getOrDefault(s, List.of());
+                for (int i = 0; i < sd.size(); i++) {
+                    last[blockOf[defs.get(sd.get(i))]] = i;
+                }
+                Uf local = new Uf(sd.size());
+                List<int[]> nodes = new ArrayList<>();
+                for (int[] u : e.getValue()) {
+                    int node = local.add();
+                    for (int p : g.get(u[1]).preds) {
+                        local.union(node, exitNode(g, p, last, exit, touched, local));
+                    }
+                    nodes.add(new int[]{u[0], u[1], node});
+                }
+                for (int i = 0; i < sd.size(); i++) {
+                    uf.union(sd.get(i), sd.get(local.find(i)));
+                }
+                for (int[] u : nodes) {
+                    int root = local.find(u[2]);
+                    if (root >= sd.size()) {
+                        if (reachable[u[1]]) {
+                            unread.add(new int[]{u[0], s});
+                        }
+                    } else if (insns.get(u[0]) instanceof IincInsnNode) {
+                        uf.union(sd.get(root), defBit.get(u[0]));
+                    } else {
+                        useDef.put(u[0], sd.get(root));
+                    }
+                }
+                for (int i : sd) {
+                    last[blockOf[defs.get(i)]] = -1;
+                }
+                for (int t : touched) {
+                    exit[t] = -1;
+                }
+                touched.clear();
+            }
+            unread.sort((x, y) -> Integer.compare(x[0], y[0]));
+            for (int[] u : unread) {
+                problem("slot " + u[1] + " is read before it is written (instruction " + u[0] + ")");
             }
             // ---- веба
             Map<Integer, Web> byRoot = new TreeMap<>();
             for (int i = 0; i < defs.size(); i++) {
-                int root = find(parent, i);
+                int root = uf.find(i);
                 int k = defs.get(i);
                 Web w = byRoot.computeIfAbsent(root, r -> new Web(slotOf(insns.get(defs.get(r)))));
                 add(w, k);
                 w.firstDef = Math.min(w.firstDef, k);
             }
-            useDef.forEach((k, d) -> add(byRoot.get(find(parent, d)), k));
+            useDef.forEach((k, d) -> add(byRoot.get(uf.find(d)), k));
             List<Web> webs = new ArrayList<>(byRoot.values());
             webs.sort((a, b) -> Integer.compare(a.min, b.min));
             for (Web w : webs) {
@@ -691,12 +712,40 @@ final class LvtSynth {
 
         // ---- поток данных --------------------------------------------------------------------
 
-        private static BitSet in(Cfg g, int b, BitSet[] out) {
-            BitSet r = new BitSet();
-            for (int p : g.get(b).preds) {
-                r.or(out[p]);
+        /**
+         * Узел union-find текущего слота «записи, достигающие конца блока {@code p}»: последняя запись слота в блоке
+         * ({@code last}, номер записи в слоте) либо объединение выходов предшественников. Обход итеративный, каждый
+         * выход создаётся один раз ({@code exit}, сбрасывается по {@code touched} после слота).
+         */
+        private static int exitNode(Cfg g, int p, int[] last, int[] exit, List<Integer> touched, Uf uf) {
+            if (last[p] >= 0) {
+                return last[p];
             }
-            return r;
+            if (exit[p] >= 0) {
+                return exit[p];
+            }
+            int top = uf.add();
+            exit[p] = top;
+            touched.add(p);
+            java.util.ArrayDeque<Integer> work = new java.util.ArrayDeque<>();
+            work.push(p);
+            while (!work.isEmpty()) {
+                int q = work.pop();
+                int node = exit[q];
+                for (int r : g.get(q).preds) {
+                    if (last[r] >= 0) {
+                        uf.union(node, last[r]);
+                        continue;
+                    }
+                    if (exit[r] < 0) {
+                        exit[r] = uf.add();
+                        touched.add(r);
+                        work.push(r);
+                    }
+                    uf.union(node, exit[r]);
+                }
+            }
+            return top;
         }
 
         private static boolean[] reachable(Cfg g) {
@@ -724,19 +773,41 @@ final class LvtSynth {
             return r;
         }
 
-        private static int find(int[] parent, int x) {
-            while (parent[x] != x) {
-                parent[x] = parent[parent[x]];
-                x = parent[x];
-            }
-            return x;
-        }
+        /** Union-find с растущим числом узлов; корень - меньший номер, поэтому корень с записью - запись. */
+        private static final class Uf {
+            private int[] parent;
+            private int size;
 
-        private static void union(int[] parent, int a, int b) {
-            int ra = find(parent, a);
-            int rb = find(parent, b);
-            if (ra != rb) {
-                parent[Math.max(ra, rb)] = Math.min(ra, rb);
+            Uf(int n) {
+                parent = new int[Math.max(16, n * 2)];
+                for (int i = 0; i < n; i++) {
+                    parent[i] = i;
+                }
+                size = n;
+            }
+
+            int add() {
+                if (size == parent.length) {
+                    parent = java.util.Arrays.copyOf(parent, size * 2);
+                }
+                parent[size] = size;
+                return size++;
+            }
+
+            int find(int x) {
+                while (parent[x] != x) {
+                    parent[x] = parent[parent[x]];
+                    x = parent[x];
+                }
+                return x;
+            }
+
+            void union(int a, int b) {
+                int ra = find(a);
+                int rb = find(b);
+                if (ra != rb) {
+                    parent[Math.max(ra, rb)] = Math.min(ra, rb);
+                }
             }
         }
     }

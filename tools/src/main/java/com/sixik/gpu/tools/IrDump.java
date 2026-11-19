@@ -226,6 +226,7 @@ public final class IrDump {
             case Op.CONST_BOOL -> a != 0 ? "true" : "false";
             case Op.SPEC_CONST -> "#" + a;
             case Op.PARAM -> "p" + a;
+            case Op.CONST_TABLE -> "table c" + a + "+" + b;
             case Op.NEG, Op.NOT, Op.CONVERT, Op.BITCAST, Op.LOAD, Op.ARRAY_LEN, Op.SPLAT, Op.EXPR_STMT -> "n" + a;
             case Op.SELECT -> "n" + a + " ? n" + b + " : n" + c;
             case Op.LOCAL_DECL, Op.LOCAL_SET -> "l" + a + " = n" + b;

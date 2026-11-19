@@ -26,6 +26,14 @@ public final class Op {
     public static final int SPEC_CONST = 4;
     /** Параметр функции: {@code a}=индекс параметра. */
     public static final int PARAM = 5;
+    /**
+     * Таблица констант модуля (FRONTEND_ASM_RUNTIME.md, S3, решение 18.6-5): {@code a}=индекс первого значения в
+     * таблице 64-битных констант, {@code b}=число элементов. Тип узла - {@code Array<constant, T>}, {@code T} - числовой
+     * скаляр (не {@code BOOL}); значение элемента - одна 64-битная константа (целые - со знаком/без, как у
+     * {@code CONST_INT}; {@code F32} - сырые биты в младших 32; {@code F64} - сырые биты). Генератор печатает таблицу
+     * инициализированным {@code __constant}-массивом программы; узлы с теми же {@code (тип, a, b)} - один массив.
+     */
+    public static final int CONST_TABLE = 6;
 
     // ---- арифметика ------------------------------------------------------------------------------
     /** Сложение: {@code a + b}. */
@@ -165,6 +173,7 @@ public final class Op {
         name(CONST_BOOL, "const_bool", false);
         name(SPEC_CONST, "spec_const", false);
         name(PARAM, "param", false);
+        name(CONST_TABLE, "const_table", false);
         name(ADD, "add", false);
         name(SUB, "sub", false);
         name(MUL, "mul", false);

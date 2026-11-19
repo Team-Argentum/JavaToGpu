@@ -695,6 +695,24 @@ public final class Validator {
                         err("IR-T09", f, n, "node type " + tn(t) + " does not match the parameter type " + tn(m.fParamType(f, a)));
                     }
                 }
+                case Op.CONST_TABLE -> {
+                    if (m.typeKind(t) != Types.KIND_ARRAY || m.typeA(t) != AddressSpace.CONSTANT
+                            || !Types.isScalar(m.typeB(t)) || m.typeB(t) == Types.BOOL || m.typeB(t) == Types.VOID) {
+                        err("IR-T09", f, n, "a constant table must have type Array<constant, T> with a numeric scalar T, not "
+                                + tn(t));
+                    } else if (b <= 0 || a < 0 || (long) a + b > m.constCount()) {
+                        err("IR-S01", f, n, "constant table " + a + "+" + b + " outside the table of constants ("
+                                + m.constCount() + ")");
+                    } else {
+                        int e = m.typeB(t);
+                        for (int i = 0; i < b; i++) {
+                            if (IrBuilder.normalize(e, m.constant(a + i)) != m.constant(a + i)) {
+                                err("IR-T09", f, n, "value " + i + " of the constant table does not fit " + tn(e));
+                                break;
+                            }
+                        }
+                    }
+                }
                 case Op.ADD, Op.SUB, Op.MUL, Op.DIV, Op.REM -> {
                     if (ty(a) != ty(b)) {
                         err("IR-T01", f, n, "operand types differ: " + tn(ty(a)) + " and " + tn(ty(b)));
@@ -1559,31 +1577,32 @@ public final class Validator {
         private void checkBarriers(int f) {
             int lc = Math.max(0, m.fLocalCount(f));
             boolean[] localTaint = new boolean[lc];
-            boolean changed = true;
+            // проход сам помечает локали, поэтому прямой код сходится за один-два прохода, а не за проход на локаль
             int guard = 0;
-            while (changed && guard++ <= lc + 1) {
-                changed = false;
-                computeTaint(f, localTaint);
-                for (int n = 0; n < nodeCount; n++) {
-                    if (owner[n] != f || bad[n]) {
-                        continue;
-                    }
-                    int op = m.op(n);
-                    if ((op == Op.LOCAL_DECL || op == Op.LOCAL_SET) && m.b(n) >= 0 && m.b(n) < nodeCount
-                            && m.a(n) >= 0 && m.a(n) < lc && taint[m.b(n)] && !localTaint[m.a(n)]) {
-                        localTaint[m.a(n)] = true;
-                        changed = true;
-                    }
-                }
+            while (computeTaint(f, localTaint) && guard++ <= lc + 1) {
+                // повтор - ради обратных дуг циклов
             }
             computeTaint(f, localTaint);
             barrierWalk(f, m.fBody(f), false);
         }
 
-        private void computeTaint(int f, boolean[] localTaint) {
+        /**
+         * Один проход расходимости по узлам функции (операнды раньше узла). Запись расходящегося значения в локаль
+         * помечает локаль сразу, и чтения ниже по номеру видят её в этом же проходе.
+         *
+         * @return помечена ли новая локаль (нужен ещё проход)
+         */
+        private boolean computeTaint(int f, boolean[] localTaint) {
+            boolean changed = false;
             for (int n = 0; n < nodeCount; n++) {
                 if (owner[n] != f || bad[n] || Op.isStatement(m.op(n))) {
                     taint[n] = false;
+                    int op = owner[n] == f && !bad[n] ? m.op(n) : -1;
+                    if ((op == Op.LOCAL_DECL || op == Op.LOCAL_SET) && m.b(n) >= 0 && m.b(n) < nodeCount
+                            && m.a(n) >= 0 && m.a(n) < localTaint.length && taint[m.b(n)] && !localTaint[m.a(n)]) {
+                        localTaint[m.a(n)] = true;
+                        changed = true;
+                    }
                     continue;
                 }
                 int op = m.op(n);
@@ -1610,6 +1629,7 @@ public final class Validator {
                 }
                 taint[n] = t;
             }
+            return changed;
         }
 
         /** Выход через {@code break/continue}: расходимость живёт до конца ближайшего цикла/switch. */
@@ -1695,6 +1715,20 @@ public final class Validator {
             if (n < 0 || n >= nodeCount || bad[n] || !Op.isStatement(m.op(n))) {
                 return 0;
             }
+            if (exitMemo == null) {
+                exitMemo = new int[nodeCount];
+                java.util.Arrays.fill(exitMemo, -1);
+            }
+            if (exitMemo[n] < 0) {
+                exitMemo[n] = exitMaskOf(n);
+            }
+            return exitMemo[n];
+        }
+
+        /** Маска выходов по узлам; вложенные {@code if} обходятся один раз (мемо {@link #exitMemo}). */
+        private int[] exitMemo;
+
+        private int exitMaskOf(int n) {
             int op = m.op(n);
             if (op == Op.RETURN) {
                 return EXIT_RETURN;

@@ -878,6 +878,42 @@ public final class GpuContext implements AutoCloseable {
     }
 
     /**
+     * Суммарный размер различных таблиц констант модуля ({@code CONST_TABLE}): одинаковые таблицы печатаются одним
+     * {@code __constant}-массивом, поэтому считаются один раз.
+     *
+     * @param m модуль
+     * @return байты {@code __constant}-памяти области программы
+     */
+    static long constantTableBytes(IrModule m) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        long bytes = 0;
+        for (int n = 0; n < m.nodeCount(); n++) {
+            if (m.op(n) == com.sixik.gpu.ir.Op.CONST_TABLE) {
+                int elem = m.typeB(m.type(n));
+                if (seen.add(elem + ":" + m.a(n) + ":" + m.b(n))) {
+                    bytes += (long) m.b(n) * AbiLayout.sizeOf(m, elem);
+                }
+            }
+        }
+        return bytes;
+    }
+
+    /**
+     * Проверка таблиц констант ({@code CONST_TABLE}, 18.6-5) против {@code CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE}.
+     *
+     * @return диагностика {@code RT-D04} либо {@code null}
+     */
+    private <T> Result<T> checkConstantTables(IrModule m) {
+        long bytes = constantTableBytes(m);
+        if (bytes > 0 && device.maxConstantBuffer() > 0 && bytes > device.maxConstantBuffer()) {
+            return failure("RT-D04", "constant tables take " + bytes + " bytes, but the device " + device.describe()
+                    + " provides " + device.maxConstantBuffer() + " (CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE); "
+                    + "bind smaller tables or pass them as @Global(constant = true) buffers");
+        }
+        return null;
+    }
+
+    /**
      * Сколько байт {@code local}-памяти объявляет ядро: сумма {@code длина × размер элемента} по узлам
      * {@code local_array_decl} верхнего уровня тела (правило IR-M02 запрещает их где-либо ещё). Размер элемента - по
      * {@link AbiLayout}, как у массива в C, поэтому {@code float3} считается за 16 байт.
@@ -1115,6 +1151,10 @@ public final class GpuContext implements AutoCloseable {
                     + device.describe() + " provides per work-group " + device.localMemory() + " (CL_DEVICE_LOCAL_MEM_SIZE); "
                     + "reduce the @Local arrays");
         }
+        Result<CompiledKernel> tooBig = checkConstantTables(m);
+        if (tooBig != null) {
+            return tooBig;
+        }
         int[] access = Validator.validate(m).functions()[kernel].paramAccess();
         if (!beginBuild()) {
             return failure("RT-X02", "context is closed");
@@ -1329,6 +1369,10 @@ public final class GpuContext implements AutoCloseable {
         if (missing != 0) {
             return failure("RT-D02", "device " + device.describe() + " does not support " + Features.describe(missing)
                     + ", but the program of " + kernels.length + " kernels requires them");
+        }
+        Result<CompiledProgram> tooBig = checkConstantTables(m);
+        if (tooBig != null) {
+            return tooBig;
         }
         Validator.FunctionInfo[] infos = Validator.validate(m).functions();
         for (int i = 0; i < kernels.length; i++) {

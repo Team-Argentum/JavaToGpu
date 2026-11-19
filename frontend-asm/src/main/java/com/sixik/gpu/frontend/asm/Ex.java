@@ -69,6 +69,8 @@ final class Ex {
     static final int NEW_PTR = 27;
     /** Переинтерпретация битов JDK-интринсиком ({@code Double.doubleToRawLongBits}, ...): {@code kids[0]} - значение. */
     static final int BITCAST = 28;
+    /** Таблица констант - привязанный массив ({@link Bindings#table}); значения в {@link #table}, имя поля в {@link #target}. */
+    static final int CONST_TABLE = 29;
 
     final int op;
     /** Вид Java результата ({@link Kinds}). */
@@ -95,6 +97,8 @@ final class Ex {
     String cls;
     /** Номера компонент {@code SHUFFLE}. */
     int[] lanes;
+    /** Для {@link #CONST_TABLE}: значения элементов (биты {@code float}/{@code double}). */
+    long[] table;
     /** Свежее значение struct ({@code copy()}, результат вызова, сохранённый во временную локаль): правило 17.8. */
     boolean fresh;
 
@@ -225,6 +229,13 @@ final class Ex {
     Ex typed(String c) {
         this.cls = c;
         return this;
+    }
+
+    static Ex constTable(int elemKind, long[] values, String field) {
+        Ex e = new Ex(CONST_TABLE, Kinds.K_ARRAY, elemKind, com.sixik.gpu.ir.AddressSpace.CONSTANT, false, 0,
+                values.length, null, NONE, false, field);
+        e.table = values;
+        return e;
     }
 
     static Ex newArray(int elemKind, int length) {

@@ -1298,7 +1298,8 @@ final class MethodLowerer {
             case Opcodes.GETFIELD -> getField((FieldInsnNode) in);
             case Opcodes.GETSTATIC -> {
                 FieldInsnNode f = (FieldInsnNode) in;
-                push(Bindings.constantOf(f.desc, bindings.constant(f.owner, f.name)));
+                push(Bindings.constantOf(f.desc, bindings.constant(f.owner, f.name),
+                        f.owner.replace('/', '.') + "." + f.name));
             }
             case Opcodes.PUTFIELD -> putField((FieldInsnNode) in);
             case Opcodes.NEW -> push(Ex.newObject(((TypeInsnNode) in).desc));
@@ -1476,6 +1477,10 @@ final class MethodLowerer {
         Ex v = pop();
         Var var = varForStore(in.var, in);
         if (var.kind == Kinds.K_ARRAY) {
+            if (v.op == Ex.CONST_TABLE) {
+                report("GPU0116", line, "table " + v.target + " is indexed directly, not through the variable " + var.name);
+                return;
+            }
             if (v.op != Ex.NEW_ARRAY) {
                 report("GPU0116", line, "array " + var.name + " cannot be reassigned");
                 return;
@@ -1548,6 +1553,10 @@ final class MethodLowerer {
         Ex v = pop();
         Ex idx = pop();
         Slot arr = popSlot();
+        if (arr.ex().op == Ex.CONST_TABLE) {
+            report("GPU0116", line, "table " + arr.ex().target + " is read-only (Bindings.table)");
+            return;
+        }
         requireFresh(v, arr.ex().elemKind, arr.ex().cls);
         Ex value = coerce(v, arr.ex().elemKind);
         // isPure в frontend-java: любой вызов, кроме чистого builtin, делает порядок вычисления наблюдаемым

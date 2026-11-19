@@ -75,6 +75,8 @@ final class FunctionEmitter {
     /** {@code 1/sqrt(x)} печатается как {@code rsqrt(x)}: у ядра {@code fp=reciprocal} (приближённое обратное). */
     private final boolean reciprocalSqrt;
     private final Helpers helpers;
+    /** Таблицы констант программы ({@code CONST_TABLE}); общие для всех функций. */
+    Tables tables;
     private final Layouts lay;
     private final String[] funcNames;
     private final String[] paramNames;
@@ -334,7 +336,7 @@ final class FunctionEmitter {
     private boolean cuttable(int n) {
         switch (m.op(n)) {
             case Op.CONST_INT, Op.CONST_FLOAT, Op.CONST_BOOL, Op.PARAM, Op.LOCAL_GET, Op.ELEM_PTR, Op.FIELD_PTR,
-                 Op.LOCAL_ADDR, Op.ARRAY_LEN, Op.CALL -> {
+                 Op.LOCAL_ADDR, Op.ARRAY_LEN, Op.CALL, Op.CONST_TABLE -> {
                 return false;
             }
             case Op.INTRINSIC -> {
@@ -1088,6 +1090,7 @@ final class FunctionEmitter {
         return switch (m.op(node)) {
             case Op.PARAM -> paramNames[m.a(node)];
             case Op.LOCAL_GET -> localNames[m.a(node)];
+            case Op.CONST_TABLE -> tables.name(node);
             default -> throw new IllegalStateException("an array value must be a parameter or a local");
         };
     }
@@ -1096,6 +1099,7 @@ final class FunctionEmitter {
         return switch (m.op(arrayNode)) {
             case Op.PARAM -> lenNames[m.a(arrayNode)];
             case Op.LOCAL_GET -> Integer.toString(arrayLen[m.a(arrayNode)]);
+            case Op.CONST_TABLE -> Integer.toString(m.b(arrayNode));
             default -> throw new IllegalStateException("an array value must be a parameter or a local");
         };
     }

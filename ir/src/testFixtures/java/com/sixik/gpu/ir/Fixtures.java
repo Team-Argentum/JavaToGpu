@@ -214,6 +214,9 @@ public final class Fixtures {
         body.add(b.localSet(acc, b.neg(b.binary(Op.DIV, b.binary(Op.SUB, b.localGet(acc), b.constF32(1.0f)),
                 b.constF32(2.0f)))));
         body.add(b.localSet(iv, b.binary(Op.SHR, b.localGet(iv), b.constI32(3))));
+        // таблица констант (const_table): значение тут же перезаписывается, результат фикстуры прежний
+        body.add(b.localSet(iv, b.load(b.elemPtr(b.constTable(Types.I32, new long[]{4, 5, 6}),
+                b.binary(Op.AND, b.localGet(iv), b.constI32(1))))));
         body.add(b.localSet(iv, b.arrayLen(b.param(0))));
         int logic = b.binary(Op.XOR,
                 b.binary(Op.OR, b.constBool(false), b.binary(Op.EQ, b.localGet(id), b.constI32(0))),

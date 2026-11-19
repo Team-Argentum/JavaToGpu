@@ -230,6 +230,8 @@ public final class OpenClEmitter {
         }
 
         Helpers helpers = new Helpers();
+        // таблицы констант (CONST_TABLE, 18.6-5): имена - в общем пространстве, объявления - до функций
+        Tables tables = new Tables(m, global);
         Layouts layouts = new Layouts(m, Support.usedTypes(m, reach), options.debug(), global);
         StringBuilder bodies = new StringBuilder();
         java.util.Map<Integer, List<KernelArg>> args = new java.util.HashMap<>();
@@ -241,6 +243,7 @@ public final class OpenClEmitter {
             int nativeMath = (fp[f] & IrModule.FP_NATIVE) != 0 ? target.nativeMath() : 0;
             FunctionEmitter fe = new FunctionEmitter(m, f, options, helpers, layouts, funcNames, global, nativeMath,
                     fp[f]);
+            fe.tables = tables;
             if (isKernel[f]) {
                 List<KernelArg> a = new ArrayList<>();
                 kernelArgs(m, f, fe, a);
@@ -273,6 +276,10 @@ public final class OpenClEmitter {
         }
         if (helpers.any()) {
             helpers.appendTo(src);
+            src.append('\n');
+        }
+        if (tables.any()) {
+            tables.appendTo(src);
             src.append('\n');
         }
         src.append(bodies);

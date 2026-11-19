@@ -196,6 +196,13 @@ final class Simplify {
             case Op.INTRINSIC -> {
                 return intrinsic(t);
             }
+            case Op.LOAD -> {
+                return tableLoad(t);
+            }
+            case Op.ARRAY_LEN -> {
+                Tree arr = t.kids[0];
+                return arr.op == Op.CONST_TABLE ? Tree.constLike(t, Types.I32, arr.k) : t;
+            }
             default -> {
                 return t;
             }
@@ -648,6 +655,22 @@ final class Simplify {
     }
 
     // ---- векторы и struct ----------------------------------------------------------------------
+
+    /** {@code table[c]} с константным индексом внутри таблицы - константа (таблица неизменна, 18.6-5). */
+    private Tree tableLoad(Tree t) {
+        Tree p = t.kids[0];
+        if (p.op != Op.ELEM_PTR || p.kids[0].op != Op.CONST_TABLE || p.kids[1].op != Op.CONST_INT) {
+            return t;
+        }
+        long i = (int) p.kids[1].k;
+        long[] v = Tree.tableValues(p.kids[0]);
+        if (i < 0 || i >= v.length) {
+            return t; // выход за границу - как есть (поведение определяет устройство)
+        }
+        int e = t.type;
+        long bits = Types.bits(e) == 64 ? v[(int) i] : (long) (int) v[(int) i];
+        return Tree.constLike(t, e, bits);
+    }
 
     private Tree extract(Tree t) {
         Tree v = t.kids[0];
