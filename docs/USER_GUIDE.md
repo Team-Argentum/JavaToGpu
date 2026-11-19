@@ -146,7 +146,7 @@ try (var scope = JavaToGpu.launch(LaunchConfig.of2D(width, height))) {
 | Векторы | неизменяемые `Float/Double/Int/Long × 2/3/4/8/16`, операции и покомпонентные builtins |
 | Struct | `@Struct`, value-семантика, вложенные struct и векторы; без массивов и указателей внутри |
 | Память | `@Global`, `@Global(constant = true)`, приватные массивы константного размера, `@Local` в теле ядра; параметры device-функций `@Local` и `@Private` |
-| Указатели | ссылки `FloatPtr` и аналоги; `Global/Local/Constant*Ptr` внутри ядра и в device-функциях |
+| Указатели | ссылки `FloatPtr` и аналоги; `Global/Local/Constant*Ptr` внутри ядра и в device-функциях; элементы `float`, `double`, `int`, `long`, `byte`, `short` |
 | Синхронизация | work-group barriers, целочисленные атомики 32/64 бит при поддержке устройства (`atomicAdd`…`atomicXchg`, `atomicCmpxchg`) |
 
 Запрещены произвольные объекты и куча, виртуальные вызовы, исключения, `try`, мониторы, строки,
@@ -169,6 +169,10 @@ static int push(@Private int[] stack, int top, int v) {
     return top + 1;
 }
 ```
+
+Указатели есть и для `byte[]`/`short[]`: `GlobalBytePtr`, `LocalBytePtr`, `ConstantBytePtr`, ссылка `BytePtr` и
+то же для `Short`. На устройстве это `__global char*` и т.п. Java-`byte` знаковый: беззнаковое значение `uchar`
+читается как `p.get(i) & 0xFF`. Атомиков для них нет (в OpenCL 1.2 их нет для 8 и 16 бит).
 
 `Gpu.atomicCmpxchg(ptr, expected, value)` — сравнение с обменом (`atomic_cmpxchg`, для `long` — `atom_cmpxchg` из
 `cl_khr_int64_base_atomics`): записывает `value`, если ячейка равна `expected`, и возвращает прежнее значение.

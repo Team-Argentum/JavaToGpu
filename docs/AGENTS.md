@@ -240,6 +240,8 @@ new AsmJit.Entry("gen/Router", "k", "([F[F)V",
 - Ошибочная точка входа пропускается, остальные строятся (`Result.kernels()` — только построенные).
 - Параметры-массивы без аннотаций — `__global`. `@Global(constant = true)` и `@Local` задаются аннотацией параметра;
   `@Private` — у параметра device-функции, которой передают массив из тела (`new int[N]`), иначе `GPU0121`.
+- Указатели `Global/Local/Constant{Float,Double,Int,Long,Byte,Short}Ptr` и ссылки `{...}Ptr`: для `uchar` —
+  `GlobalBytePtr`/`LocalBytePtr` и `p.get(i) & 0xFF`.
 - С `reqd_work_group_size` (`Map.of("x", 64)`) глобальный размер запуска должен делиться на 64: иначе `IN-L01` в
   интерпретаторе и `RT-L01` на устройстве.
 
