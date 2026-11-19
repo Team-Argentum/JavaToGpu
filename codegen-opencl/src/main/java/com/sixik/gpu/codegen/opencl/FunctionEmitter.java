@@ -1,5 +1,6 @@
 package com.sixik.gpu.codegen.opencl;
 
+import com.sixik.gpu.ir.AddressSpace;
 import com.sixik.gpu.ir.Builtins;
 import com.sixik.gpu.ir.IrModule;
 import com.sixik.gpu.ir.Op;
@@ -1085,6 +1086,36 @@ final class FunctionEmitter {
 
     // ---- память ------------------------------------------------------------------------------
 
+    /**
+     * {@code vloadN/vstoreN} по массиву скаляров. Массив-параметр {@code global} (и {@code constant} у ядра) - всегда
+     * начало буфера OpenCL, выровненного не хуже самого широкого встроенного типа ({@code CL_DEVICE_MEM_BASE_ADDR_ALIGN}),
+     * поэтому вектор номер {@code i} выровнен, и обращение печатается через указатель на вектор: драйвер выдаёт
+     * векторную инструкцию ({@code ld.global.v4.f32}), а {@code vload4} NVIDIA разбирает на скалярные. Таблицы констант,
+     * local/private-массивы и {@code constant}-параметры device-функций (туда может прийти таблица) выровнены лишь по
+     * элементу - для них {@code vloadN}/{@code vstoreN} OpenCL C.
+     */
+    private Ex vectorAccess(int n, boolean store) {
+        int arr = Operands.get(m, n, 0);
+        int at = m.type(arr);
+        int space = Types.space(m, at);
+        int elem = Types.elem(m, at);
+        int vt = store ? m.type(Operands.get(m, n, 2)) : m.type(n);
+        int lanes = m.typeB(vt);
+        String index = expr(Operands.get(m, n, 1)).s();
+        boolean aligned = m.op(arr) == Op.PARAM
+                && (space == AddressSpace.GLOBAL || space == AddressSpace.CONSTANT && m.fKind(f) == IrModule.KERNEL);
+        if (aligned) {
+            String cast = "((" + CTypes.space(space) + (store ? " " : " const ") + lay.type(vt) + "*)" + arrayName(arr) + ")";
+            String access = cast + "[" + index + "]";
+            return store ? new Ex(access + " = " + expr(Operands.get(m, n, 2)).s(), P_TERNARY) : new Ex(access, P_ATOM);
+        }
+        if (store) {
+            return new Ex("vstore" + lanes + "(" + expr(Operands.get(m, n, 2)).s() + ", " + index + ", " + arrayName(arr) + ")",
+                    P_ATOM);
+        }
+        return new Ex("vload" + lanes + "(" + index + ", " + arrayName(arr) + ")", P_ATOM);
+    }
+
     /** Имя массива-значения (параметр или локаль-массив). */
     private String arrayName(int node) {
         return switch (m.op(node)) {
@@ -1232,6 +1263,8 @@ final class FunctionEmitter {
             }
             case "assumeUniform":
                 return expr(Operands.get(m, n, 0));
+            case "vload2", "vload4", "vload8", "vload16", "vstore2", "vstore4", "vstore8", "vstore16":
+                return vectorAccess(n, name.startsWith("vstore"));
             case "atomicAdd", "atomicSub", "atomicMin", "atomicMax", "atomicAnd", "atomicOr", "atomicXor", "atomicXchg": {
                 // 32 бита - atomic_*, 64 бита - atom_* (cl_khr_int64_*_atomics); суффикс - имя операции в нижнем регистре
                 String fn = (Types.bits(t) == 64 ? "atom_" : "atomic_") + name.substring("atomic".length()).toLowerCase();

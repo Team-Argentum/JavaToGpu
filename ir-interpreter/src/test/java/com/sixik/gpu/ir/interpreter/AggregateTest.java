@@ -177,6 +177,50 @@ class AggregateTest {
         assertArrayEquals(new int[]{101, 102, 0, 3}, result);
     }
 
+    /** {@code vloadN/vstoreN}: вектор номер i - элементы {@code N*i .. N*i+N-1} global, constant и private-массивов. */
+    @Test
+    void vectorLoadAndStoreReadAndWriteConsecutiveElements() {
+        IrBuilder b = new IrBuilder();
+        int g = b.array(AddressSpace.GLOBAL, Types.F32);
+        int c = b.array(AddressSpace.CONSTANT, Types.F32);
+        int gd = b.array(AddressSpace.GLOBAL, Types.F64);
+        int v4 = b.vec(Types.F32, 4);
+        int d2 = b.vec(Types.F64, 2);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, g, g, c, gd);
+        int scratch = b.declareLocal(b.array(AddressSpace.PRIVATE, Types.F32));
+        int x = b.declareLocal(v4);
+        int vload4 = Builtins.idOf("vload4");
+        int vstore4 = Builtins.idOf("vstore4");
+        b.endFunction(b.block(
+                b.privateArrayDecl(scratch, b.constI32(8)),
+                // scratch[4..7] = in[4..7] + cin[4..7]; out[0..3] = scratch[4..7]; outd[2..3] = (outd[0], outd[1])
+                b.localDecl(x, b.binary(Op.ADD, b.intrinsic(vload4, b.param(1), b.constI32(1)),
+                        b.intrinsic(vload4, b.param(2), b.constI32(1)))),
+                b.exprStmt(b.intrinsic(vstore4, b.localGet(scratch), b.constI32(1), b.localGet(x))),
+                b.exprStmt(b.intrinsic(vstore4, b.param(0), b.constI32(0), b.intrinsic(vload4, b.localGet(scratch), b.constI32(1)))),
+                b.exprStmt(b.intrinsic(Builtins.idOf("vstore2"), b.param(3), b.constI32(1),
+                        b.intrinsic(Builtins.idOf("vload2"), b.param(3), b.constI32(0))))));
+        float[] out = new float[4];
+        float[] in = {0, 0, 0, 0, 1, 2, 3, 4};
+        float[] cin = {0, 0, 0, 0, 10, 20, 30, 40};
+        double[] outd = {5, 6, 0, 0};
+        ok(run(b.build(), NdRange.of1D(1), out, in, cin, outd));
+        assertArrayEquals(new float[]{11, 22, 33, 44}, out);
+        assertArrayEquals(new double[]{5, 6, 5, 6}, outd);
+    }
+
+    /** Выход вектора за конец массива - та же ошибка, что у обычного обращения. */
+    @Test
+    void vectorLoadOutOfBoundsIsAFault() {
+        IrBuilder b = new IrBuilder();
+        int g = b.array(AddressSpace.GLOBAL, Types.I32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, g);
+        b.endFunction(b.block(b.exprStmt(b.intrinsic(Builtins.idOf("vstore4"), b.param(0), b.constI32(1),
+                b.intrinsic(Builtins.idOf("vload4"), b.param(0), b.constI32(0))))));
+        Result<Interpreter.Execution> r = run(b.build(), NdRange.of1D(1), (Object) new int[6]);
+        assertTrue(!r.isOk() && r.diagnostics().get(0).code().equals("IN-R01"), r.diagnostics().toString());
+    }
+
     /** Private-массив передаётся в device-функцию по ссылке: запись видна вызывающему, длина - объявленная. */
     @Test
     void privateArrayIsPassedToADeviceFunctionByReference() {

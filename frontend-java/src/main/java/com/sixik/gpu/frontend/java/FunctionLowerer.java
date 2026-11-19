@@ -919,9 +919,17 @@ final class FunctionLowerer {
         int n = raw.size();
         int[] args = new int[n];
         boolean anyOpen = false;
+        boolean gpuBuiltin = callee.getEnclosingElement() instanceof TypeElement owner0
+                && owner0.getQualifiedName().contentEquals(Gpu.class.getName());
         for (int i = 0; i < n; i++) {
             V v = raw.get(i);
-            if (csig.paramKinds()[i] == JavaTypes.K_ARRAY) {
+            if (csig.paramKinds()[i] == JavaTypes.K_ARRAY && gpuBuiltin) {
+                // vloadN/vstoreN принимают массив любого пространства; запись в constant - та же ошибка, что a[i] = v
+                if (v.space() == AddressSpace.CONSTANT && callee.getSimpleName().toString().startsWith("vstore")) {
+                    rep.report(ps.get(i), "GPU0122", ps.get(i).getLeaf().toString());
+                }
+                args[i] = v.node();
+            } else if (csig.paramKinds()[i] == JavaTypes.K_ARRAY) {
                 if (v.space() != csig.spaces()[i]) {
                     rep.report(ps.get(i), "GPU0121", callee.getParameters().get(i).getSimpleName(),
                             Ann.spaceName(csig.spaces()[i]), Ann.spaceName(v.space()));

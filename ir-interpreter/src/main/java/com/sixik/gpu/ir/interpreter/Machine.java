@@ -106,6 +106,8 @@ final class Machine {
     private static final int B_COMPARE_UNSIGNED = 38;
     private static final int B_MULTIPLY_HIGH = 39;
     private static final int B_ATOMIC_CMPXCHG = 40;
+    private static final int B_VLOAD = 41;
+    private static final int B_VSTORE = 42;
 
     /** Соответствие «id builtin -> код исполнения»; {@link #B_NONE}, если интерпретатор builtin не знает. */
     private static final int[] BUILTIN_CODE;
@@ -157,6 +159,8 @@ final class Machine {
                 case "compareUnsigned" -> B_COMPARE_UNSIGNED;
                 case "multiplyHigh" -> B_MULTIPLY_HIGH;
                 case "atomicCmpxchg" -> B_ATOMIC_CMPXCHG;
+                case "vload2", "vload4", "vload8", "vload16" -> B_VLOAD;
+                case "vstore2", "vstore4", "vstore8", "vstore16" -> B_VSTORE;
                 default -> B_NONE;
             };
         }
@@ -1182,6 +1186,15 @@ final class Machine {
         }
     }
 
+    /**
+     * Адрес {@code k}-компонентного вектора номер {@code index} в массиве скаляров ({@code vloadN/vstoreN}): элемент
+     * {@code k * index}. Индекс складывается как {@code int}, как у {@code elem_ptr}: выход за границы ловит обращение.
+     */
+    private long vectorAddress(int arrayNode, long index, int k) {
+        long buf = eval(arrayNode);
+        return (buf << 32) | ((int) index * k) & 0xFFFFFFFFL;
+    }
+
     private long[] laneWise2(int n, int op, int st, int k) {
         long[] a = evalAgg(m.a(n));
         long[] b = evalAgg(m.b(n));
@@ -1205,6 +1218,11 @@ final class Machine {
         int code = BUILTIN_CODE[m.a(n)];
         int off = m.b(n);
         int argc = m.c(n);
+        if (code == B_VLOAD) {
+            // элементы массива скаляров занимают по ячейке: вектор - k ячеек подряд с элемента k*i
+            long p = vectorAddress(m.list(off), eval(m.list(off + 1)), k);
+            return faulted() ? new long[k] : loadAgg(n, p, k);
+        }
         if (code != B_SIN && code != B_COS && code != B_SQRT && code != B_FMA && code != B_MAX && code != B_MIN
                 && code != B_ASSUME_UNIFORM) {
             fault("IN-U01", n, "builtin " + Builtins.name(m.a(n)) + " over vectors is not supported by the interpreter");
@@ -1332,6 +1350,16 @@ final class Machine {
                 }
                 store(n, p, atomicApply(code, t, old, v));
                 return old;
+            }
+            case B_VSTORE: {
+                int value = m.list(off + 2);
+                int k = typeSlots[m.type(value)];
+                long p = vectorAddress(m.list(off), eval(m.list(off + 1)), k);
+                long[] v = evalAgg(value);
+                if (!faulted()) {
+                    storeAgg(n, p, v);
+                }
+                return 0;
             }
             case B_ATOMIC_CMPXCHG: {
                 // значения канонические (Alu.canon), поэтому равенство - сравнение long

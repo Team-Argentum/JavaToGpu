@@ -340,6 +340,40 @@ class DeviceFunctionTest {
         assertSameIr(java, asm, "d.D", List.of("bytes"));
     }
 
+    /** {@code vloadN/vstoreN} по global-, local- и private-массивам: IR обоих фронтендов совпадает. */
+    @Test
+    void vectorLoadsAndStoresGiveTheSameIr() {
+        String src = kernelClass("""
+                @DeviceFunction
+                static Float4 twice(@Global float[] f, int i) {
+                    Float4 v = Gpu.vload4(f, i);
+                    return new Float4(v.x * 2f, v.y * 2f, v.z * 2f, v.w * 2f);
+                }
+
+                @Kernel
+                @WorkGroup(x = 16)
+                public static void vec(@Global float[] of, @Global float[] f, @Global double[] od, @Global double[] d,
+                                       @Global int[] oi) {
+                    @Local int[] tile = new int[32];
+                    int i = Gpu.getGlobalId(0);
+                    int lid = Gpu.getLocalId(0);
+                    Gpu.vstore4(of, i, twice(f, i));
+                    Double4 u = Gpu.vload4(d, i);
+                    Gpu.vstore4(od, i, new Double4(u.x + u.y, u.y * u.z, u.z - u.w, u.w));
+                    int[] scratch = new int[4];
+                    Gpu.vstore2(scratch, 1, new Int2(i, lid));
+                    Gpu.vstore2(tile, lid, Gpu.vload2(scratch, 1));
+                    Gpu.barrier();
+                    Int2 t = Gpu.vload2(tile, (lid + 1) & 15);
+                    oi[i] = t.x * 1000 + t.y;
+                }
+                """);
+        JavacHarness.Outcome java = JavacHarness.compile(true, null, src);
+        assertTrue(java.success(), java.log());
+        AsmFrontend.Result asm = AsmFrontend.compile(ClassSource.of(java.classes()), List.of("d.D"), AsmFrontend.Options.DEFAULT);
+        assertSameIr(java, asm, "d.D", List.of("vec"));
+    }
+
     @Test
     void privateMisuseIsReported() {
         sameCodes("GPU0123", kernelClass("""

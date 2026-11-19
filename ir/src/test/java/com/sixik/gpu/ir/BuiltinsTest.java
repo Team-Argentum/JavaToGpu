@@ -87,8 +87,8 @@ class BuiltinsTest {
                 occupied++;
             }
         }
-        assertEquals(41, occupied);
-        assertEquals(41, Builtins.count());
+        assertEquals(49, occupied);
+        assertEquals(49, Builtins.count());
     }
 
     /** JDK-интринсики (S6-2): флаг {@code jdk}, классы {@code sf/si/sn} принимают только скаляры. */

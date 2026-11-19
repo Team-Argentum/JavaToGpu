@@ -660,6 +660,16 @@ public final class IrBuilder {
         for (int i = 0; i < args.length; i++) {
             argTypes[i] = typeOf(args[i]);
         }
+        int lanes = Builtins.isValid(builtinId) ? Builtins.resultLanes(builtinId) : 0;
+        int arr = lanes > 0 ? Builtins.arrayArg(builtinId) : -1;
+        if (arr >= 0 && arr < args.length && argTypes[arr] >= 0 && argTypes[arr] < types[IrModule.T_KIND].size()
+                && types[IrModule.T_KIND].get(argTypes[arr]) == Types.KIND_ARRAY) {
+            // vloadN: тип-вектор результата должен существовать до проверки сигнатуры
+            int elem = types[IrModule.T_B].get(argTypes[arr]);
+            if (Types.isScalar(elem) && elem != Types.BOOL) {
+                vec(elem, lanes);
+            }
+        }
         int ret = Builtins.resultType(snapshotTypes(), builtinId, argTypes, args.length);
         if (ret < 0) {
             throw new IllegalArgumentException("intrinsic: arguments do not fit builtin "

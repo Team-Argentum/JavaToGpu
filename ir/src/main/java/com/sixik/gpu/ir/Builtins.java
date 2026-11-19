@@ -42,6 +42,8 @@ public final class Builtins {
     private static final int TOK_BIND = 100;   // 100 + класс: связывает T
     private static final int TOK_REF = 200;    // ссылка на связанный T
     private static final int TOK_PTR = 300;    // 300 + класс: указатель на скаляр, связывает T
+    private static final int TOK_ARR = 400;    // 400 + класс: одномерный массив скаляров любого пространства, связывает T
+    private static final int TOK_VEC = 500;    // 500 + lanes: вектор из lanes компонент связанного T
 
     private static final int CLASS_FLOAT = 0;
     private static final int CLASS_INT = 1;
@@ -185,6 +187,16 @@ public final class Builtins {
         if (s.startsWith("ptr<T:") && s.endsWith(">")) {
             return TOK_PTR + cls(s.substring(6, s.length() - 1), id);
         }
+        if (s.startsWith("arr<T:") && s.endsWith(">")) {
+            return TOK_ARR + cls(s.substring(6, s.length() - 1), id);
+        }
+        if (s.startsWith("vec") && s.endsWith("<T>")) {
+            int lanes = Integer.parseInt(s.substring(3, s.length() - 3));
+            if (!Types.isValidLanes(lanes)) {
+                throw new IllegalStateException("builtins.def: invalid lane count in '" + s + "' for id " + id);
+            }
+            return TOK_VEC + lanes;
+        }
         return switch (s) {
             case "void" -> Types.VOID;
             case "bool" -> Types.BOOL;
@@ -273,6 +285,29 @@ public final class Builtins {
     }
 
     /**
+     * @param id id builtin
+     * @return число компонент векторного результата ({@code vecN<T>}) либо {@code 0}, если результат не такой
+     */
+    public static int resultLanes(int id) {
+        int ret = RET[id][0];
+        return ret >= TOK_VEC ? ret - TOK_VEC : 0;
+    }
+
+    /**
+     * @param id id builtin
+     * @return индекс аргумента-массива ({@code arr<T:...>}) либо {@code -1}
+     */
+    public static int arrayArg(int id) {
+        int[] sig = ARGS[id];
+        for (int i = 0; i < sig.length; i++) {
+            if (sig[i] >= TOK_ARR && sig[i] < TOK_VEC) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
      * Ищет id по имени.
      *
      * @param name имя builtin
@@ -320,7 +355,24 @@ public final class Builtins {
         for (int i = 0; i < n; i++) {
             int tok = sig[i];
             int t = argTypes[i];
-            if (tok >= TOK_PTR) {
+            if (tok >= TOK_VEC) {
+                if (bound == -1 || m.typeKind(t) != Types.KIND_VEC || m.typeA(t) != bound || m.typeB(t) != tok - TOK_VEC) {
+                    return -1;
+                }
+            } else if (tok >= TOK_ARR) {
+                if (m.typeKind(t) != Types.KIND_ARRAY) {
+                    return -1;
+                }
+                int elem = Types.elem(m, t);
+                if (!Types.isScalar(elem) || !inClass(elem, tok - TOK_ARR)) {
+                    return -1;
+                }
+                if (bound == -1) {
+                    bound = elem;
+                } else if (bound != elem) {
+                    return -1;
+                }
+            } else if (tok >= TOK_PTR) {
                 if (m.typeKind(t) != Types.KIND_PTR) {
                     return -1;
                 }
@@ -355,6 +407,15 @@ public final class Builtins {
             }
         }
         int ret = RET[id][0];
+        if (ret >= TOK_VEC) {
+            // вектор связанного скаляра: тип ищется в модуле (IrBuilder.intrinsic заводит его заранее)
+            for (int v = 0; v < m.typeCount(); v++) {
+                if (m.typeKind(v) == Types.KIND_VEC && m.typeA(v) == bound && m.typeB(v) == ret - TOK_VEC) {
+                    return v;
+                }
+            }
+            return -1;
+        }
         if (ret >= TOK_REF) {
             return bound;
         }

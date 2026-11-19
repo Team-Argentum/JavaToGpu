@@ -290,6 +290,7 @@ class PointerLoweringTest {
         rejects("GPU0122", "@Kernel public static void k(@Global(constant = true) float[] c) { c[0] = 1f; }");
         rejects("GPU0122", "@Kernel public static void k(@Global(constant = true) float[] c) { c[0] += 1f; }");
         rejects("GPU0122", "@Kernel public static void k(@Global(constant = true) int[] c) { c[1]++; }");
+        rejects("GPU0122", "@Kernel public static void k(@Global(constant = true) float[] c) { Gpu.vstore4(c, 0, Float4.splat(1f)); }");
     }
 
     @Test

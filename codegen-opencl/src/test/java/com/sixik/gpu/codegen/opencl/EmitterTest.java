@@ -618,6 +618,42 @@ class EmitterTest {
         assertFalse(r.value().source().contains("cl_khr_int64_extended_atomics"));
     }
 
+    /**
+     * {@code vloadN/vstoreN}: global-массив и constant-параметр ядра - через указатель на вектор (векторная инструкция),
+     * private-массив - {@code vload4/vstore4} OpenCL C (выровнен лишь по элементу).
+     */
+    @Test
+    void vectorAccessCastsBufferParametersAndUsesVloadElsewhere() {
+        IrBuilder b = new IrBuilder();
+        int g = b.array(AddressSpace.GLOBAL, Types.F32);
+        int c = b.array(AddressSpace.CONSTANT, Types.F32);
+        int gd = b.array(AddressSpace.GLOBAL, Types.F64);
+        int v4 = b.vec(Types.F32, 4);
+        int d2 = b.vec(Types.F64, 2);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, g, g, c, gd);
+        int scratch = b.declareLocal(b.array(AddressSpace.PRIVATE, Types.F32));
+        int x = b.declareLocal(v4);
+        int vload4 = com.sixik.gpu.ir.Builtins.idOf("vload4");
+        int vstore4 = com.sixik.gpu.ir.Builtins.idOf("vstore4");
+        b.endFunction(b.block(
+                b.privateArrayDecl(scratch, b.constI32(8)),
+                // scratch[4..7] = in[4..7] + cin[4..7]; out[0..3] = scratch[4..7]; outd[2..3] = (outd[0], outd[1])
+                b.localDecl(x, b.binary(Op.ADD, b.intrinsic(vload4, b.param(1), b.constI32(1)),
+                        b.intrinsic(vload4, b.param(2), b.constI32(1)))),
+                b.exprStmt(b.intrinsic(vstore4, b.localGet(scratch), b.constI32(1), b.localGet(x))),
+                b.exprStmt(b.intrinsic(vstore4, b.param(0), b.constI32(0), b.intrinsic(vload4, b.localGet(scratch), b.constI32(1)))),
+                b.exprStmt(b.intrinsic(com.sixik.gpu.ir.Builtins.idOf("vstore2"), b.param(3), b.constI32(1),
+                        b.intrinsic(com.sixik.gpu.ir.Builtins.idOf("vload2"), b.param(3), b.constI32(0))))));
+        Result<Artifact> res = OpenClEmitter.emit(b.build(), Target.GENERIC);
+        assertTrue(res.isOk(), res.diagnostics().toString());
+        String src = res.value().source();
+        assertTrue(src.contains("((__global const float4*)p1)[1]"), src);
+        assertTrue(src.contains("((__constant const float4*)p2)[1]"), src);
+        assertTrue(src.contains("vstore4(v1, 1, v0);"), src);
+        assertTrue(src.contains("((__global float4*)p0)[0] = vload4(1, v0);"), src);
+        assertTrue(src.contains("((__global double2*)p3)[1] = ((__global const double2*)p3)[0];"), src);
+    }
+
     /** Private-массив - параметр device-функции: {@code __private}-указатель и длина рядом. */
     @Test
     void privateArrayParameterOfADeviceFunction() {

@@ -1033,6 +1033,11 @@ public final class Validator {
                         } else if (ret != t) {
                             err("IR-T09", f, n, "builtin result type " + Builtins.name(a) + " must be " + tn(ret));
                         }
+                        int arr = Builtins.arrayArg(a);
+                        if (ret >= 0 && arr >= 0 && Builtins.has(a, Builtins.EFFECT)
+                                && m.typeA(argTypes[arr]) == AddressSpace.CONSTANT) {
+                            err("IR-M01", f, n, "writing to constant memory is forbidden (" + Builtins.name(a) + ")");
+                        }
                     }
                 }
                 case Op.BARRIER -> {
@@ -1263,6 +1268,12 @@ public final class Validator {
                                                 : Features.INT64_ATOMICS;
                                     }
                                     markAccess(access, m.list(m.b(n)), ACCESS_READ | ACCESS_WRITE);
+                                }
+                                int arr = Builtins.arrayArg(id);
+                                if (arr >= 0 && arr < m.c(n)) {
+                                    // vloadN читает массив, vstoreN пишет: режим нужен рантайму для копирования обратно
+                                    markAccess(access, m.list(m.b(n) + arr),
+                                            Builtins.has(id, Builtins.EFFECT) ? ACCESS_WRITE : ACCESS_READ);
                                 }
                             }
                         }

@@ -416,7 +416,8 @@ public final class ApiGenerator {
         List<String> toks = new ArrayList<>(b.args());
         toks.add(b.ret());
         for (String t : toks) {
-            boolean generic = t.equals("T") || t.startsWith("T:") || t.startsWith("ptr<T:");
+            boolean generic = t.equals("T") || t.startsWith("T:") || t.startsWith("ptr<T:") || t.startsWith("arr<T:")
+                    || t.startsWith("vec") && t.endsWith("<T>");
             if (!generic && !FIXED_JAVA.containsKey(t)) {
                 return "type '" + t + "' has no Java representation";
             }
@@ -432,12 +433,16 @@ public final class ApiGenerator {
         return switch (cls) {
             case "genf" -> List.of("f32", "f64");
             case "geni" -> List.of("i32", "i64");
-            case "genn" -> List.of("f32", "f64", "i32", "i64");
+            case "genn", "sn" -> List.of("f32", "f64", "i32", "i64");
             default -> throw new IllegalArgumentException("builtin " + builtin + ": unknown class '" + cls + "'");
         };
     }
 
     private static void genBuiltin(Def def, Builtin b, StringBuilder out) {
+        if (b.args().stream().anyMatch(a -> a.startsWith("arr<T:"))) {
+            genArrayBuiltin(b, out);
+            return;
+        }
         if (!isGeneric(b)) {
             if (!b.jvm().containsKey("") || b.jvm().size() != 1) {
                 throw new IllegalArgumentException("builtin " + b.name() + ": exactly one jvm implementation without types is required");
@@ -508,6 +513,45 @@ public final class ApiGenerator {
                 }
                 body.append(");");
                 emit(out, b, v, params, body.toString(), true);
+            }
+        }
+    }
+
+    /**
+     * Builtin по массиву скаляров ({@code vloadN}/{@code vstoreN}): перегрузка на каждый скаляр класса, JVM-тело строится
+     * покомпонентно - {@code new Float4(a[4*b], ...)} и {@code a[4*b + i] = c.lane}.
+     */
+    private static void genArrayBuiltin(Builtin b, StringBuilder out) {
+        if (!b.jvm().isEmpty()) {
+            throw new IllegalArgumentException("builtin " + b.name() + ": the jvm body of an array builtin is generated");
+        }
+        String arr = b.args().stream().filter(a -> a.startsWith("arr<T:")).findFirst().orElseThrow();
+        String vec = b.ret().startsWith("vec") ? b.ret()
+                : b.args().stream().filter(a -> a.startsWith("vec")).findFirst().orElseThrow(
+                        () -> new IllegalArgumentException("builtin " + b.name() + ": an array builtin needs a vecN<T>"));
+        int lanes = Integer.parseInt(vec.substring(3, vec.length() - 3));
+        boolean load = b.ret().equals(vec);
+        if (!(load ? b.args().equals(List.of(arr, "i32")) : b.ret().equals("void") && b.args().equals(List.of(arr, "i32", vec)))) {
+            throw new IllegalArgumentException("builtin " + b.name() + ": expected vecN<T> (arr<T:..>, i32) or void (arr<T:..>, i32, vecN<T>)");
+        }
+        for (String s : classScalars(arr.substring(6, arr.length() - 1), b.name())) {
+            String j = SCALARS.get(s).java();
+            String v = vectorName(s, lanes);
+            StringBuilder body = new StringBuilder();
+            if (load) {
+                body.append("return new ").append(v).append('(');
+                for (int i = 0; i < lanes; i++) {
+                    body.append(i == 0 ? "" : ",").append(lanes > 4 ? "\n                " : (i == 0 ? "" : " "))
+                            .append("a[").append(lanes).append(" * b").append(i == 0 ? "" : " + " + i).append(']');
+                }
+                body.append(");");
+                emit(out, b, v, List.of(j + "[]", "int"), body.toString(), false);
+            } else {
+                for (int i = 0; i < lanes; i++) {
+                    body.append(i == 0 ? "" : "\n        ").append("a[").append(lanes).append(" * b")
+                            .append(i == 0 ? "" : " + " + i).append("] = c.").append(laneName(lanes, i)).append(';');
+                }
+                emit(out, b, "void", List.of(j + "[]", "int", v), body.toString(), false);
             }
         }
     }

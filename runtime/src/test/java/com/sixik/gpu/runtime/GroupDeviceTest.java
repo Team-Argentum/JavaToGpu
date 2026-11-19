@@ -144,6 +144,30 @@ class GroupDeviceTest {
                     negs[gid] = r.value;
                 }
 
+                @DeviceFunction
+                static Float4 twice(@Global float[] f, int i) {
+                    Float4 v = Gpu.vload4(f, i);
+                    return new Float4(v.x * 2f, v.y * 2f, v.z * 2f, v.w * 2f);
+                }
+
+                @Kernel
+                @WorkGroup(x = 16)
+                public static void vec(@Global int[] oi, @Global float[] of, @Global float[] f, @Global double[] od,
+                                       @Global double[] d) {
+                    @Local int[] tile = new int[32];
+                    int i = Gpu.getGlobalId(0);
+                    int lid = Gpu.getLocalId(0);
+                    Gpu.vstore4(of, i, twice(f, i));
+                    Double4 u = Gpu.vload4(d, i);
+                    Gpu.vstore4(od, i, new Double4(u.x + u.y, u.y * u.z, u.z - u.w, u.w));
+                    int[] scratch = new int[4];
+                    Gpu.vstore2(scratch, 1, new Int2(i, lid));
+                    Gpu.vstore2(tile, lid, Gpu.vload2(scratch, 1));
+                    Gpu.barrier();
+                    Int2 t = Gpu.vload2(tile, (lid + 1) & 15);
+                    oi[i] = t.x * 1000 + t.y;
+                }
+
                 @Kernel
                 public static void claim(@Global int[] keys, @Global int[] owner, @Global int[] winners, @Global long[] total) {
                     int gid = Gpu.getGlobalId(0);
@@ -196,7 +220,7 @@ class GroupDeviceTest {
     private Class<?> load(Path dir, URLClassLoader[] holder) throws Exception {
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
-        assertEquals(6, Weaver.weaveTree(dir).kernels());
+        assertEquals(7, Weaver.weaveTree(dir).kernels());
         holder[0] = new URLClassLoader(new URL[]{dir.toUri().toURL()}, getClass().getClassLoader());
         return holder[0].loadClass("demo.Groups");
     }
@@ -295,6 +319,29 @@ class GroupDeviceTest {
                 assertEquals((byte) (bytes[i * 4] + 1), tiles[i], "LocalBytePtr: signed byte with wrap-around, item " + i);
                 assertEquals((short) -shortsBefore[i], negs[i], "ShortPtr reference, item " + i);
                 assertEquals((short) -shortsBefore[i], shorts[i], "GlobalShortPtr store, item " + i);
+            }
+
+            int vn = 128;
+            float[] f = new float[vn * 4];
+            double[] d = new double[vn * 4];
+            for (int i = 0; i < f.length; i++) {
+                f[i] = rnd.nextFloat() * 100f - 50f;
+                d[i] = rnd.nextDouble() * 100 - 50;
+            }
+            int[] oi = new int[vn];
+            float[] of = new float[vn * 4];
+            double[] od = new double[vn * 4];
+            call(groups, "vec", oi, of, f, od, d);
+            for (int i = 0; i < vn; i++) {
+                for (int c = 0; c < 4; c++) {
+                    assertEquals(f[4 * i + c] * 2f, of[4 * i + c], "vload4/vstore4 float, item " + i);
+                }
+                double x = d[4 * i], y = d[4 * i + 1], z = d[4 * i + 2], w = d[4 * i + 3];
+                assertArrayEquals(new double[]{x + y, y * z, z - w, w}, java.util.Arrays.copyOfRange(od, 4 * i, 4 * i + 4),
+                        "vload4/vstore4 double, item " + i);
+                int lid = i % 16;
+                int j = (lid + 1) & 15;
+                assertEquals((i - lid + j) * 1000 + j, oi[i], "vload2/vstore2 over private and local arrays, item " + i);
             }
         } finally {
             if (holder[0] != null) {

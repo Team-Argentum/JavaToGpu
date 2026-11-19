@@ -233,6 +233,24 @@ class ValidatorSemanticsTest {
     }
 
     @Test
+    void m01_vectorStoreIntoConstantMemory() {
+        expect(kernel(b -> new int[]{b.array(AddressSpace.CONSTANT, Types.F32)},
+                b -> new int[]{b.exprStmt(b.intrinsic(Builtins.idOf("vstore4"), b.param(0), b.constI32(0),
+                        b.splat(b.vec(Types.F32, 4), b.constF32(1f))))}), "IR-M01");
+    }
+
+    /** vloadN читает массив-параметр, vstoreN пишет: рантайм копирует на хост только записанные буферы. */
+    @Test
+    void vectorLoadAndStoreMarkParameterAccess() {
+        IrModule m = kernel(b -> new int[]{b.array(AddressSpace.GLOBAL, Types.F32), b.array(AddressSpace.GLOBAL, Types.F32)},
+                b -> new int[]{b.exprStmt(b.intrinsic(Builtins.idOf("vstore4"), b.param(0), b.constI32(0),
+                        b.intrinsic(Builtins.idOf("vload4"), b.param(1), b.constI32(0))))});
+        Validator.Report r = Validator.validate(m);
+        assertTrue(r.diagnostics().isEmpty(), r.diagnostics().toString());
+        assertArrayEquals(new int[]{Validator.ACCESS_WRITE, Validator.ACCESS_READ}, r.functions()[0].paramAccess());
+    }
+
+    @Test
     void m02_localArrayOutsideKernelTopLevel() {
         expect(kernel(NO_PARAMS, b -> {
             int l = b.declareLocal(b.array(AddressSpace.LOCAL, Types.F32));
