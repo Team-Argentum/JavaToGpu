@@ -3,7 +3,10 @@
 Пишешь GPU-код на Java (подмножество, не произвольный код) — библиотека преобразует его в корректный код под видеокарту и запускает.
 
 **Статус: M0–M13 реализованы; M14 — подготовка документации и alpha.** Текущая версия сборки — `0.2.0-SNAPSHOT`;
-доступна локальная Maven-публикация. Внешняя площадка и координаты alpha ещё не утверждены.
+релизы собирает [JitPack](https://jitpack.io/#Team-Argentum/JavaToGpu) по git-тегу:
+`com.github.Team-Argentum.JavaToGpu:<модуль>:<тег>`.
+Подключение и использование для агентов (и людей) — [`docs/AGENTS.md`](docs/AGENTS.md); правила работы в репозитории —
+[`AGENTS.md`](AGENTS.md).
 Прежняя реализация (`JavaToGpu 0.1.0-alpha.5`) сохранена в git-теге `legacy-alpha5`.
 Архитектура, принятые решения и план — в [`REWORK_ARCHITECTURE.md`](REWORK_ARCHITECTURE.md). Исходный концепт языка — в [`OldCodeConcept`](OldCodeConcept).
 

@@ -1,4 +1,6 @@
-// Репозиторий принадлежит сборке: публикация не меняет ~/.m2 и не обращается к внешней площадке.
+// publishLocal: репозиторий принадлежит сборке, публикация не меняет ~/.m2 и не обращается к внешней площадке.
+// JitPack (jitpack.yml) вызывает publishToMavenLocal: те же публикации ложатся в ~/.m2 сборочной машины JitPack, группа
+// и версия - из его окружения (корневой build.gradle).
 def publishedModules = ['api', 'ir', 'ir-optimizer', 'ir-interpreter', 'codegen-opencl', 'runtime',
                         'runtime-opencl-ffm', 'runtime-opencl-lwjgl',
                         'frontend-common', 'frontend-java', 'frontend-asm', 'weaver', 'gradle-plugin', 'test-support']
@@ -28,6 +30,24 @@ configure(publishedModules.collect { project(":${it}") }) {
             publications {
                 mavenJava(MavenPublication) {
                     from components.java
+                }
+            }
+        }
+        // метаданные POM - у всех публикаций, включая pluginMaven и marker плагина
+        publications.withType(MavenPublication).configureEach {
+            pom {
+                name = "JavaToGpu ${project.name}"
+                description = project.description ?: "JavaToGpu module ${project.name}: GPU kernels written in Java, compiled to OpenCL C."
+                url = 'https://github.com/Team-Argentum/JavaToGpu'
+                licenses {
+                    license {
+                        name = 'GNU Lesser General Public License v3.0'
+                        url = 'https://www.gnu.org/licenses/lgpl-3.0.html'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/Team-Argentum/JavaToGpu'
+                    connection = 'scm:git:https://github.com/Team-Argentum/JavaToGpu.git'
                 }
             }
         }

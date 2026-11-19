@@ -1,3 +1,8 @@
+// Toolchain JDK 25 (и 17 для jdk17Smoke) скачивается, если его нет на машине: так собирает JitPack (jitpack.yml).
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
 // Модули и их допустимые зависимости описаны в REWORK_ARCHITECTURE.md, раздел 11.
 // Граф проверяется задачей verifyModuleBoundaries (см. build.gradle).
 rootProject.name = 'gpu'

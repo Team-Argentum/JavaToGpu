@@ -46,8 +46,14 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
     public static final String EXTENSION = "gpu";
     /** Аргумент JVM, разрешающий FFM-доступ к нативному коду. */
     public static final String NATIVE_ACCESS = "--enable-native-access=ALL-UNNAMED";
-    /** Группа координат библиотек по умолчанию. */
+    /**
+     * Группа координат библиотек, если ресурс сборки плагина её не задал (классы из каталога в тестах). Опубликованный
+     * плагин берёт группу, с которой собран сам ({@link #defaultGroup()}): у сборки JitPack это
+     * {@code com.github.Team-Argentum.JavaToGpu}.
+     */
     public static final String DEFAULT_GROUP = "io.github.deussixik";
+    /** Ресурс с координатами сборки плагина ({@code group=...}), пишется задачей {@code processResources}. */
+    static final String BUILD_RESOURCE = "/META-INF/javatogpu/plugin.properties";
 
     /** Модули, которые попадают в classpath приложения. */
     static final List<String> RUNTIME_MODULES = List.of("api", "ir", "ir-optimizer", "codegen-opencl", "runtime");
@@ -66,7 +72,7 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
         project.getPluginManager().apply(JavaPlugin.class);
         JavaToGpuExtension ext = project.getExtensions().create(EXTENSION, JavaToGpuExtension.class);
         ext.getVersion().convention(defaultVersion());
-        ext.getGroup().convention(DEFAULT_GROUP);
+        ext.getGroup().convention(defaultGroup());
         ext.getAutoDependencies().convention(true);
         ext.getWeave().convention(true);
         ext.getStrictBarriers().convention(false);
@@ -103,6 +109,23 @@ public final class JavaToGpuPlugin implements Plugin<Project> {
                 exec.doFirst("javatogpu-jvm-args", task -> {
                     exec.jvmArgs(jvmArgs(ext));
                 }));
+    }
+
+    /** @return группа, с которой опубликован сам плагин, либо {@link #DEFAULT_GROUP} */
+    static String defaultGroup() {
+        try (java.io.InputStream in = JavaToGpuPlugin.class.getResourceAsStream(BUILD_RESOURCE)) {
+            if (in != null) {
+                java.util.Properties p = new java.util.Properties();
+                p.load(in);
+                String g = p.getProperty("group");
+                if (g != null && !g.isBlank()) {
+                    return g.trim();
+                }
+            }
+        } catch (java.io.IOException e) {
+            // ресурс повреждён - группа по умолчанию
+        }
+        return DEFAULT_GROUP;
     }
 
     /** Версия плагина из манифеста его jar; в тестах (классы из каталога) её нет, версию задаёт {@code gpu.version}. */

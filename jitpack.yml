@@ -1,0 +1,10 @@
+# Сборка релиза на JitPack: https://jitpack.io/#Team-Argentum/JavaToGpu
+# Модули публикуются как com.github.Team-Argentum.JavaToGpu:<модуль>:<тег> (группа и версия - корневой build.gradle).
+# Gradle 9 запускается на JDK 21; toolchain JDK 25, под который собираются модули, ставит SDKMAN, а если не вышло -
+# скачивает foojay-resolver (settings.gradle). Тесты здесь не гоняются: они идут в CI (.github/workflows/ci.yml).
+jdk:
+  - openjdk21
+before_install:
+  - sdk install java 25.0.1-tem < /dev/null || true
+install:
+  - ./gradlew publishToMavenLocal -x test --no-daemon --stacktrace -Porg.gradle.java.installations.paths=$HOME/.sdkman/candidates/java/25.0.1-tem

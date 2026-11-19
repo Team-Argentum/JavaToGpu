@@ -16,8 +16,12 @@
 уроков от первого ядра до слияния ядер и явного API, каждый с комментариями и идеями, что поменять.
 
 Далее используйте [независимый Gradle-проект](../examples/standalone/README.md). Он содержит полные настройки
-`pluginManagement`, репозитория библиотек, JDK и JUnit. Публикация пишет только в `build/local-maven`;
-внешняя площадка и итоговые координаты alpha остаются открытым вопросом O8.
+`pluginManagement`, репозитория библиотек, JDK и JUnit. Задача `publishLocal` пишет только в `build/local-maven`.
+
+Релизы собирает JitPack по git-тегу: `com.github.Team-Argentum.JavaToGpu:<модуль>:<тег>` из репозитория
+`https://jitpack.io`. Плагин подключается по id `io.github.deussixik.javatogpu` через `resolutionStrategy`, который
+сопоставляет id модулю `gradle-plugin`; плагин из JitPack сам берёт библиотеки той же группы и версии. Готовые
+фрагменты `settings.gradle`/`build.gradle` — [docs/AGENTS.md](AGENTS.md), раздел 3.
 
 Потребителю нужны JDK 25 для приложения и **JDK 25 для запуска Gradle с плагином**. Сам репозиторий библиотеки
 можно собирать Gradle на 21+ с установленным toolchain 25. Плагин подключает `api`, `ir`, `ir-optimizer`, `codegen-opencl`,

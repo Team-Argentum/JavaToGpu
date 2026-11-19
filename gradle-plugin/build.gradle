@@ -24,12 +24,26 @@ gradlePlugin {
     }
 }
 
-// Версия библиотек по умолчанию = версия плагина (читается из манифеста).
+// Версия библиотек по умолчанию = версия плагина (читается из манифеста), группа - группа сборки плагина (ресурс
+// META-INF/javatogpu/plugin.properties): плагин из JitPack подключает библиотеки из JitPack.
 jar {
     manifest {
         attributes('Implementation-Version': project.version)
     }
 }
+
+def generatedPluginResources = layout.buildDirectory.dir('generated/plugin-resources')
+def writePluginProperties = tasks.register('writePluginProperties') {
+    def group = project.group.toString()
+    inputs.property('group', group)
+    outputs.dir(generatedPluginResources)
+    doLast {
+        def f = generatedPluginResources.get().file('META-INF/javatogpu/plugin.properties').asFile
+        f.parentFile.mkdirs()
+        f.text = "group=${group}\n"
+    }
+}
+sourceSets.main.resources.srcDir(files(generatedPluginResources).builtBy(writePluginProperties))
 
 // Тестовому проекту TestKit нужны jar'ы библиотек: они кладутся в flatDir (зависимости плагин добавляет сам).
 def libraryModules = ['api', 'ir', 'ir-optimizer', 'codegen-opencl', 'runtime', 'runtime-opencl-ffm', 'frontend-common',

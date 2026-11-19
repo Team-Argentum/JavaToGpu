@@ -3,8 +3,13 @@ plugins {
 }
 
 // Новое поколение проекта (см. REWORK_ARCHITECTURE.md). Прежний код — в теге legacy-alpha5.
-group = 'io.github.deussixik'
-version = '0.2.0-SNAPSHOT'
+// Координаты публикации. JitPack (JITPACK=true) задаёт GROUP (com.github.<владелец>), ARTIFACT (репозиторий) и
+// VERSION (тег или коммит): модули публикуются как com.github.Team-Argentum.JavaToGpu:<модуль>:<тег>, и межмодульные
+// зависимости в POM указывают туда же. Локально то же проверяется свойствами -PpublishGroup и -PpublishVersion.
+def jitpack = System.getenv('JITPACK') == 'true'
+group = findProperty('publishGroup')
+        ?: (jitpack ? "${System.getenv('GROUP')}.${System.getenv('ARTIFACT')}" : 'io.github.deussixik')
+version = findProperty('publishVersion') ?: (jitpack ? System.getenv('VERSION') : '0.2.0-SNAPSHOT')
 
 def JAVA_VERSION = 25
 // Модули, которые встраиваются в приложения на Java 17+ (Minecraft 1.18-1.21.x): их main собирается с --release 17,
