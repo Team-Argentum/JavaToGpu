@@ -142,6 +142,12 @@ public final class Validator {
         private final boolean[] divergentInside;
         /** Функция (с вызываемыми) делит {@code float} или берёт {@code sqrt(float)}: для ядер {@code exact}. */
         private final boolean[] divideSqrtInside;
+        /**
+         * Узлы по функциям: узлы функции {@code f} - {@code fnNodes[fnStart[f] .. fnStart[f + 1])} по возрастанию id.
+         * Проходы «по функции» обходят только свои узлы, а не весь модуль (иначе время растёт как функции × узлы).
+         */
+        private int[] fnStart;
+        private int[] fnNodes;
 
         Run(IrModule m, Options opts) {
             this.m = m;
@@ -212,6 +218,7 @@ public final class Validator {
             computeReachability();
             countParents();
             propagateBad();
+            indexNodesByFunction();
             for (int n = 0; n < nodeCount; n++) {
                 if (owner[n] >= 0 && !bad[n] && funcShapeOk[owner[n]]) {
                     checkNodeTypes(owner[n], n);
@@ -601,6 +608,26 @@ public final class Validator {
                         bad[n] = true;
                         break;
                     }
+                }
+            }
+        }
+
+        /** Раскладывает узлы по владельцам (сортировка подсчётом, порядок id внутри функции сохраняется). */
+        private void indexNodesByFunction() {
+            fnStart = new int[funcCount + 1];
+            for (int n = 0; n < nodeCount; n++) {
+                if (owner[n] >= 0 && owner[n] < funcCount) {
+                    fnStart[owner[n] + 1]++;
+                }
+            }
+            for (int f = 0; f < funcCount; f++) {
+                fnStart[f + 1] += fnStart[f];
+            }
+            fnNodes = new int[fnStart[funcCount]];
+            int[] next = java.util.Arrays.copyOf(fnStart, funcCount);
+            for (int n = 0; n < nodeCount; n++) {
+                if (owner[n] >= 0 && owner[n] < funcCount) {
+                    fnNodes[next[owner[n]]++] = n;
                 }
             }
         }
@@ -1219,8 +1246,9 @@ public final class Validator {
                         }
                     }
                 }
-                for (int n = 0; n < nodeCount; n++) {
-                    if (owner[n] != f || bad[n]) {
+                for (int idx = fnStart[f]; idx < fnStart[f + 1]; idx++) {
+                    int n = fnNodes[idx];
+                    if (bad[n]) {
                         continue;
                     }
                     int op = m.op(n);
@@ -1605,12 +1633,15 @@ public final class Validator {
          */
         private boolean computeTaint(int f, boolean[] localTaint) {
             boolean changed = false;
-            for (int n = 0; n < nodeCount; n++) {
-                if (owner[n] != f || bad[n] || Op.isStatement(m.op(n))) {
+            // обходятся только узлы f; taint узла другой функции здесь считается ложным
+            for (int idx = fnStart[f]; idx < fnStart[f + 1]; idx++) {
+                int n = fnNodes[idx];
+                if (bad[n] || Op.isStatement(m.op(n))) {
                     taint[n] = false;
-                    int op = owner[n] == f && !bad[n] ? m.op(n) : -1;
+                    int op = !bad[n] ? m.op(n) : -1;
                     if ((op == Op.LOCAL_DECL || op == Op.LOCAL_SET) && m.b(n) >= 0 && m.b(n) < nodeCount
-                            && m.a(n) >= 0 && m.a(n) < localTaint.length && taint[m.b(n)] && !localTaint[m.a(n)]) {
+                            && m.a(n) >= 0 && m.a(n) < localTaint.length && taintOf(f, m.b(n))
+                            && !localTaint[m.a(n)]) {
                         localTaint[m.a(n)] = true;
                         changed = true;
                     }
@@ -1635,12 +1666,17 @@ public final class Validator {
                 for (int k = 0; k < cnt && !t; k++) {
                     int o = Operands.get(m, n, k);
                     if (o >= 0 && o < n) {
-                        t |= taint[o];
+                        t |= taintOf(f, o);
                     }
                 }
                 taint[n] = t;
             }
             return changed;
+        }
+
+        /** Расходимость узла {@code n} при проходе по функции {@code f}: узлы других функций не расходятся. */
+        private boolean taintOf(int f, int n) {
+            return owner[n] == f && taint[n];
         }
 
         /** Выход через {@code break/continue}: расходимость живёт до конца ближайшего цикла/switch. */
@@ -1683,7 +1719,7 @@ public final class Validator {
                     return 0;
                 }
                 case Op.IF -> {
-                    boolean tainted = isTainted(m.a(n));
+                    boolean tainted = isTainted(f, m.a(n));
                     boolean d = divergent || tainted;
                     int r = barrierWalk(f, m.b(n), d) | barrierWalk(f, m.c(n), d);
                     if (tainted) {
@@ -1692,16 +1728,16 @@ public final class Validator {
                     return r;
                 }
                 case Op.LOOP -> {
-                    boolean d = divergent || isTainted(m.a(n));
+                    boolean d = divergent || isTainted(f, m.a(n));
                     int r = barrierWalk(f, m.b(n), d) | barrierWalk(f, m.c(n), d);
                     return r & ~EXIT_LOOP;   // после цикла потоки сходятся (остаётся только return)
                 }
                 case Op.DO_WHILE -> {
-                    boolean d = divergent || isTainted(m.b(n));
+                    boolean d = divergent || isTainted(f, m.b(n));
                     return barrierWalk(f, m.a(n), d) & ~EXIT_LOOP;
                 }
                 case Op.SWITCH -> {
-                    boolean d = divergent || isTainted(m.a(n));
+                    boolean d = divergent || isTainted(f, m.a(n));
                     int r = 0;
                     for (int i = 0; i < m.c(n); i++) {
                         r |= barrierWalk(f, m.list(m.b(n) + 3 * i + 2), d);
@@ -1714,8 +1750,8 @@ public final class Validator {
             }
         }
 
-        private boolean isTainted(int n) {
-            return n >= 0 && n < nodeCount && taint[n];
+        private boolean isTainted(int f, int n) {
+            return n >= 0 && n < nodeCount && taintOf(f, n);
         }
 
         /**
