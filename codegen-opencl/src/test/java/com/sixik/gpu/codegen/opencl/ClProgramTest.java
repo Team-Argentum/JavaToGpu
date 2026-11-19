@@ -97,6 +97,28 @@ class ClProgramTest {
         }
     }
 
+    /**
+     * Ресурсы для чужого рантайма: local-память ядра (по {@code AbiLayout}: {@code float3} - 16 байт) и таблицы
+     * констант программы (одинаковые таблицы - один раз).
+     */
+    @Test
+    void localMemoryAndConstantTablesAreReported() {
+        IrBuilder b = new IrBuilder();
+        int arr = b.array(AddressSpace.GLOBAL, Types.I32);
+        b.beginFunction(IrModule.KERNEL, Types.VOID, arr);
+        int tile = b.declareLocal(b.array(AddressSpace.LOCAL, Types.I32));
+        int vec = b.declareLocal(b.array(AddressSpace.LOCAL, b.vec(Types.F32, 3)));
+        long[] t = {1, 2, 3, 4, 5};
+        int sum = b.binary(Op.ADD, b.load(b.elemPtr(b.constTable(Types.I32, t), b.constI32(1))),
+                b.load(b.elemPtr(b.constTable(Types.I32, t), b.load(b.elemPtr(b.param(0), b.constI32(0))))));
+        b.endFunction(b.block(b.localArrayDecl(tile, b.constI32(64)), b.localArrayDecl(vec, b.constI32(4)),
+                b.barrier(1), b.store(b.elemPtr(b.param(0), b.constI32(0)), sum)));
+        Result<ClProgram> r = OpenClEmitter.program(b.build(), EmitOptions.RELEASE);
+        assertTrue(r.isOk(), r.diagnostics().toString());
+        assertEquals(64 * 4L + 4 * 16L, r.value().kernels().get(0).localMemoryBytes());
+        assertEquals(5 * 4L, r.value().constantBytes());
+    }
+
     @Test
     void moduleWithoutKernelsIsAnError() {
         IrBuilder b = new IrBuilder();

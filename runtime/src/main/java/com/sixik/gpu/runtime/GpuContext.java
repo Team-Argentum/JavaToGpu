@@ -885,17 +885,7 @@ public final class GpuContext implements AutoCloseable {
      * @return байты {@code __constant}-памяти области программы
      */
     static long constantTableBytes(IrModule m) {
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        long bytes = 0;
-        for (int n = 0; n < m.nodeCount(); n++) {
-            if (m.op(n) == com.sixik.gpu.ir.Op.CONST_TABLE) {
-                int elem = m.typeB(m.type(n));
-                if (seen.add(elem + ":" + m.a(n) + ":" + m.b(n))) {
-                    bytes += (long) m.b(n) * AbiLayout.sizeOf(m, elem);
-                }
-            }
-        }
-        return bytes;
+        return com.sixik.gpu.ir.ResourceUsage.constantTableBytes(m);
     }
 
     /**
@@ -923,18 +913,7 @@ public final class GpuContext implements AutoCloseable {
      * @return байты local-памяти на work-group
      */
     static long localMemoryBytes(IrModule m, int kernel) {
-        int body = m.fBody(kernel);
-        long bytes = 0;
-        if (m.op(body) == com.sixik.gpu.ir.Op.BLOCK) {
-            for (int i = 0; i < m.b(body); i++) {
-                int st = m.list(m.a(body) + i);
-                if (m.op(st) == com.sixik.gpu.ir.Op.LOCAL_ARRAY_DECL) {
-                    int elem = Types.elem(m, m.fLocalType(kernel, m.a(st)));
-                    bytes += (long) m.a(m.b(st)) * AbiLayout.sizeOf(m, elem);
-                }
-            }
-        }
-        return bytes;
+        return com.sixik.gpu.ir.ResourceUsage.localMemoryBytes(m, kernel);
     }
 
     /**

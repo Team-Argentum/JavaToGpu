@@ -158,10 +158,11 @@ public final class OpenClEmitter {
             }
             int f = k.function();
             int[] wg = {m.fReqWorkGroup(f, 0), m.fReqWorkGroup(f, 1), m.fReqWorkGroup(f, 2)};
-            abis.add(new ClProgram.KernelAbi(k.entry(), f, m.debug().functionName(f), wg, params));
+            abis.add(new ClProgram.KernelAbi(k.entry(), f, m.debug().functionName(f), wg, params,
+                    com.sixik.gpu.ir.ResourceUsage.localMemoryBytes(m, f)));
         }
-        return new Result<>(new ClProgram(pr.source(), pr.buildOptions(), pr.requiredFeatures(), abis),
-                p.diagnostics());
+        return new Result<>(new ClProgram(pr.source(), pr.buildOptions(), pr.requiredFeatures(), abis,
+                com.sixik.gpu.ir.ResourceUsage.constantTableBytes(m)), p.diagnostics());
     }
 
     private static List<Diagnostic> errors(Validator.Report report) {

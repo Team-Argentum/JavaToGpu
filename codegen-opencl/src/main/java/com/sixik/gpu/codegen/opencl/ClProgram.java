@@ -16,11 +16,27 @@ import java.util.List;
  * @param buildOptions     опции {@code clBuildProgram} (возможно пустая строка)
  * @param requiredFeatures маска {@link com.sixik.gpu.ir.Features}, которую должно поддерживать устройство
  * @param kernels          ядра программы в порядке модуля
+ * @param constantBytes    байты {@code __constant}-таблиц области программ ({@code Bindings.table}): вместе с
+ *                         {@code __constant}-буферами аргументов не должны превышать
+ *                         {@code CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE}
  */
-public record ClProgram(String source, String buildOptions, int requiredFeatures, List<KernelAbi> kernels) {
+public record ClProgram(String source, String buildOptions, int requiredFeatures, List<KernelAbi> kernels,
+                        long constantBytes) {
 
     public ClProgram {
         kernels = List.copyOf(kernels);
+    }
+
+    /**
+     * Программа без таблиц констант (прежняя форма).
+     *
+     * @param source           текст OpenCL C
+     * @param buildOptions     опции {@code clBuildProgram}
+     * @param requiredFeatures маска возможностей устройства
+     * @param kernels          ядра
+     */
+    public ClProgram(String source, String buildOptions, int requiredFeatures, List<KernelAbi> kernels) {
+        this(source, buildOptions, requiredFeatures, kernels, 0);
     }
 
     /**
@@ -60,12 +76,29 @@ public record ClProgram(String source, String buildOptions, int requiredFeatures
      * @param debugName     отладочное имя функции IR либо {@code null}
      * @param reqdWorkGroup обязательный размер work-group по осям {@code x, y, z} ({@code 0} - не задан)
      * @param params        аргументы OpenCL по порядку
+     * @param localMemoryBytes байты {@code __local}-массивов, которые ядро объявляет само (на work-group): не должны
+     *                      превышать {@code CL_DEVICE_LOCAL_MEM_SIZE}, а с ресурсами драйвера - и
+     *                      {@code CL_KERNEL_LOCAL_MEM_SIZE} собранного ядра
      */
-    public record KernelAbi(String name, int function, String debugName, int[] reqdWorkGroup, List<Param> params) {
+    public record KernelAbi(String name, int function, String debugName, int[] reqdWorkGroup, List<Param> params,
+                            long localMemoryBytes) {
 
         public KernelAbi {
             reqdWorkGroup = reqdWorkGroup.clone();
             params = List.copyOf(params);
+        }
+
+        /**
+         * ABI без local-памяти (прежняя форма).
+         *
+         * @param name          имя {@code __kernel}
+         * @param function      индекс функции
+         * @param debugName     отладочное имя
+         * @param reqdWorkGroup обязательный размер work-group
+         * @param params        аргументы
+         */
+        public KernelAbi(String name, int function, String debugName, int[] reqdWorkGroup, List<Param> params) {
+            this(name, function, debugName, reqdWorkGroup, params, 0);
         }
 
         @Override
@@ -77,18 +110,21 @@ public record ClProgram(String source, String buildOptions, int requiredFeatures
         public boolean equals(Object o) {
             return o instanceof KernelAbi k && name.equals(k.name) && function == k.function
                     && java.util.Objects.equals(debugName, k.debugName)
-                    && java.util.Arrays.equals(reqdWorkGroup, k.reqdWorkGroup) && params.equals(k.params);
+                    && java.util.Arrays.equals(reqdWorkGroup, k.reqdWorkGroup) && params.equals(k.params)
+                    && localMemoryBytes == k.localMemoryBytes;
         }
 
         @Override
         public int hashCode() {
-            return java.util.Objects.hash(name, function, debugName, java.util.Arrays.hashCode(reqdWorkGroup), params);
+            return java.util.Objects.hash(name, function, debugName, java.util.Arrays.hashCode(reqdWorkGroup), params,
+                    localMemoryBytes);
         }
 
         @Override
         public String toString() {
             return "KernelAbi[" + name + ", function=" + function + ", debugName=" + debugName + ", reqdWorkGroup="
-                    + java.util.Arrays.toString(reqdWorkGroup) + ", params=" + params + "]";
+                    + java.util.Arrays.toString(reqdWorkGroup) + ", params=" + params + ", localMemoryBytes="
+                    + localMemoryBytes + "]";
         }
     }
 
