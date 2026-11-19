@@ -242,6 +242,9 @@ new AsmJit.Entry("gen/Router", "k", "([F[F)V",
   `@Private` — у параметра device-функции, которой передают массив из тела (`new int[N]`), иначе `GPU0121`.
 - Указатели `Global/Local/Constant{Float,Double,Int,Long,Byte,Short}Ptr` и ссылки `{...}Ptr`: для `uchar` —
   `GlobalBytePtr`/`LocalBytePtr` и `p.get(i) & 0xFF`.
+- Векторный доступ к упакованным данным — `Gpu.vload4(a, i)` / `Gpu.vstore4(a, i, v)` (и 2/8/16) по `float[]` и др.: для
+  `@Global`-параметра это одна векторная инструкция, хост остаётся на `float[]`. Не переходите ради этого на `Float4[]`:
+  такие массивы копируются поэлементно с созданием объектов.
 - С `reqd_work_group_size` (`Map.of("x", 64)`) глобальный размер запуска должен делиться на 64: иначе `IN-L01` в
   интерпретаторе и `RT-L01` на устройстве.
 

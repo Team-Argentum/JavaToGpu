@@ -174,6 +174,19 @@ static int push(@Private int[] stack, int top, int v) {
 то же для `Short`. На устройстве это `__global char*` и т.п. Java-`byte` знаковый: беззнаковое значение `uchar`
 читается как `p.get(i) & 0xFF`. Атомиков для них нет (в OpenCL 1.2 их нет для 8 и 16 бит).
 
+`Gpu.vload2/4/8/16(a, i)` и `Gpu.vstore2/4/8/16(a, i, v)` читают и пишут вектор из элементов `a[N*i .. N*i+N-1]`
+массива `float[]`, `double[]`, `int[]` или `long[]`. На хосте массив остаётся обычным, копируется блоком, без объектов
+`Float4`. Для массива-параметра `@Global` (и `@Global(constant = true)` у ядра) обращение печатается через указатель на
+вектор: `((__global const float4*) a)[i]`. Буферы OpenCL выровнены, и драйвер выдаёт одну векторную инструкцию: на
+NVIDIA `ld.global.v4.f32` вместо четырёх `ld.global.f32`, для `double4` — две `v2.f64`. Встроенный в OpenCL `vload4`
+NVIDIA разбирает на скалярные загрузки. Для `@Local`-, private-массивов и таблиц `Bindings.table` печатается
+`vload4`/`vstore4`: результат тот же, но без гарантии векторной инструкции. `vstore` в constant-массив — `GPU0122`.
+
+```java
+Float4 v = Gpu.vload4(in, i);                       // in[4i .. 4i+3]
+Gpu.vstore4(out, i, new Float4(v.x + v.y, v.y * v.z, v.z - v.w, v.w));
+```
+
 `Gpu.atomicCmpxchg(ptr, expected, value)` — сравнение с обменом (`atomic_cmpxchg`, для `long` — `atom_cmpxchg` из
 `cl_khr_int64_base_atomics`): записывает `value`, если ячейка равна `expected`, и возвращает прежнее значение.
 
