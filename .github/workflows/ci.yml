@@ -50,6 +50,13 @@ jobs:
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_25_X64
           -Porg.gradle.java.installations.auto-download=false
 
+      # нижняя граница ASM загрузчиков модов (решение 18.6-7): корпус собирается под Java 21, ASM 9.7 читает до 23
+      - name: frontend-asm on ASM 9.7 (corpus built for Java 21)
+        run: >
+          ./gradlew :frontend-asm:test -PasmVersion=9.7
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_25_X64
+          -Porg.gradle.java.installations.auto-download=false
+
       - name: Test reports
         if: failure()
         uses: actions/upload-artifact@v5

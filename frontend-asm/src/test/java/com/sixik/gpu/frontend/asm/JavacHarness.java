@@ -99,6 +99,11 @@ final class JavacHarness {
             cp = extra + java.io.File.pathSeparator + cp;
         }
         List<String> opts = new ArrayList<>(List.of("-g", "-classpath", cp));
+        // прогон под ASM загрузчика (-PasmVersion=9.7): class-файлы не новее Java 21, как у библиотеки мода
+        String release = System.getProperty("gpu.test.release");
+        if (release != null) {
+            opts.addAll(List.of("--release", release));
+        }
         if (!processor) {
             opts.add("-proc:none");
         }

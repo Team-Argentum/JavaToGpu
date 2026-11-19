@@ -14,6 +14,17 @@ if (findProperty('asmVersion') != null) {
     }
 }
 
+// Корпус тестов под ASM загрузчика: ASM 9.7 читает class-файлы до Java 23, поэтому с -PasmVersion корпус (образцы
+// ir-interpreter и исходники, которые тесты компилируют javac в памяти) собирается с --release 21 - как библиотека мода
+// 1.21.1. Сами тесты остаются под 25 (зависят от модулей Java 25) и в корпус не входят. Без свойства корпус - Java 25.
+def corpusRelease = findProperty('asmVersion') != null ? 21 : null
+if (corpusRelease != null) {
+    evaluationDependsOn(':ir-interpreter')
+    project(':ir-interpreter').tasks.named('compileTestFixturesJava', JavaCompile) {
+        options.release = corpusRelease
+    }
+}
+
 dependencies {
     // типы публичного API (IrModule, KernelResources.IndexEntry в AsmFrontend.Kernel) - api, а не implementation
     api project(':ir')
@@ -46,6 +57,9 @@ tasks.named('test') {
     // classpath образцов задаётся явно, а не берётся из java.class.path воркера (как в frontend-java)
     systemProperty 'gpu.test.classpath', sourceSets.test.runtimeClasspath.asPath
     systemProperty 'gpu.examples.dir', rootProject.file('examples').absolutePath
+    if (corpusRelease != null) {
+        systemProperty 'gpu.test.release', corpusRelease.toString()
+    }
     // замер масштаба B0 (ScaleProbeTest): -Dprobe.scale=true прогоняет всю шкалу
     System.properties.findAll { it.key.toString().startsWith('probe.') }.each { k, v -> systemProperty k.toString(), v }
     // профиль замера: -Dprobe.jfr=<файл.jfr>
