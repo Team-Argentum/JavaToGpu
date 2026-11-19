@@ -106,6 +106,44 @@ class GroupDeviceTest {
                     out[gid] = weighted(stack, top) + stack[3];
                 }
 
+                @DeviceFunction
+                static int sumUnsigned(GlobalBytePtr p, int n) {
+                    int s = 0;
+                    for (int i = 0; i < n; i++) {
+                        s += p.get(i) & 0xFF;
+                    }
+                    return s;
+                }
+
+                @DeviceFunction
+                static void bump(LocalBytePtr t, int i) {
+                    t.set(i, (byte) (t.get(i) + 1));
+                }
+
+                @DeviceFunction
+                static void negate(ShortPtr r) {
+                    r.value = (short) -r.value;
+                }
+
+                @Kernel
+                @WorkGroup(x = 16)
+                public static void bytes(@Global int[] sums, @Global byte[] data, @Global short[] sh, @Global int[] tiles,
+                                         @Global int[] negs) {
+                    @Local byte[] tile = new byte[16];
+                    int gid = Gpu.getGlobalId(0);
+                    int lid = Gpu.getLocalId(0);
+                    tile[lid] = data[gid * 4];
+                    Gpu.barrier();
+                    bump(LocalBytePtr.of(tile, 0), lid);
+                    GlobalShortPtr s = GlobalShortPtr.of(sh, gid);
+                    ShortPtr r = new ShortPtr(s.get(0));
+                    negate(r);
+                    s.set(0, r.value);
+                    sums[gid] = sumUnsigned(GlobalBytePtr.of(data, gid * 4), 4);
+                    tiles[gid] = tile[lid];
+                    negs[gid] = r.value;
+                }
+
                 @Kernel
                 public static void claim(@Global int[] keys, @Global int[] owner, @Global int[] winners, @Global long[] total) {
                     int gid = Gpu.getGlobalId(0);
@@ -158,7 +196,7 @@ class GroupDeviceTest {
     private Class<?> load(Path dir, URLClassLoader[] holder) throws Exception {
         KernelCompiler.Compiled r = KernelCompiler.compile(dir, SOURCE);
         assertTrue(r.success(), r.diagnostics());
-        assertEquals(5, Weaver.weaveTree(dir).kernels());
+        assertEquals(6, Weaver.weaveTree(dir).kernels());
         holder[0] = new URLClassLoader(new URL[]{dir.toUri().toURL()}, getClass().getClassLoader());
         return holder[0].loadClass("demo.Groups");
     }
@@ -235,6 +273,29 @@ class GroupDeviceTest {
             int[] scratchOut = new int[src.length];
             call(groups, "scratch", scratchOut, src);
             assertArrayEquals(expectedScratch, scratchOut, "@Private array passed to device functions by reference");
+
+            int items = 64;
+            byte[] bytes = new byte[items * 4];
+            rnd.nextBytes(bytes);
+            short[] shorts = new short[items];
+            for (int i = 0; i < items; i++) {
+                shorts[i] = (short) (rnd.nextInt(65536) - 32768);
+            }
+            short[] shortsBefore = shorts.clone();
+            int[] sums = new int[items];
+            int[] tiles = new int[items];
+            int[] negs = new int[items];
+            call(groups, "bytes", sums, bytes, shorts, tiles, negs);
+            for (int i = 0; i < items; i++) {
+                int s = 0;
+                for (int k = 0; k < 4; k++) {
+                    s += bytes[i * 4 + k] & 0xFF;
+                }
+                assertEquals(s, sums[i], "GlobalBytePtr: unsigned sum of item " + i);
+                assertEquals((byte) (bytes[i * 4] + 1), tiles[i], "LocalBytePtr: signed byte with wrap-around, item " + i);
+                assertEquals((short) -shortsBefore[i], negs[i], "ShortPtr reference, item " + i);
+                assertEquals((short) -shortsBefore[i], shorts[i], "GlobalShortPtr store, item " + i);
+            }
         } finally {
             if (holder[0] != null) {
                 holder[0].close();

@@ -152,7 +152,7 @@ final class Aggregates {
         return vector(t) != null || isStruct(t);
     }
 
-    private static final Pattern POINTER = Pattern.compile("(Global|Local|Constant)?(Float|Double|Int|Long)Ptr");
+    private static final Pattern POINTER = Pattern.compile("(Global|Local|Constant)?(Float|Double|Int|Long|Byte|Short)Ptr");
 
     private static final Pattern RESIDENT = Pattern.compile("Gpu(Float|Double|Int|Long)Array");
 
@@ -184,7 +184,7 @@ final class Aggregates {
     /**
      * Описание pointer-типа (M9).
      *
-     * @param elemKind вид Java скалярного pointee ({@code K_FLOAT, K_DOUBLE, K_INT, K_LONG})
+     * @param elemKind вид Java скалярного pointee ({@code K_FLOAT, K_DOUBLE, K_INT, K_LONG, K_BYTE, K_SHORT})
      * @param space    пространство адресов указателя: у {@code FloatPtr} и других ссылок - {@code private}
      * @param ref      {@code true} для ссылки на скаляр ({@code FloatPtr ...}: поле {@code value}, создаётся через
      *                 {@code new}); {@code false} для явного указателя ({@code GlobalFloatPtr ...}: {@code of/get/set/plus})
@@ -209,6 +209,8 @@ final class Aggregates {
             case "Float" -> JavaTypes.K_FLOAT;
             case "Double" -> JavaTypes.K_DOUBLE;
             case "Int" -> JavaTypes.K_INT;
+            case "Byte" -> JavaTypes.K_BYTE;
+            case "Short" -> JavaTypes.K_SHORT;
             default -> JavaTypes.K_LONG;
         };
         if (m.group(1) == null) {

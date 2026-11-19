@@ -20,6 +20,9 @@ public final class BuiltinsDef {
 
     /** Скалярные типы, у которых есть Java-представление в API. */
     public static final Set<String> API_SCALARS = Set.of("f32", "f64", "i32", "i64");
+
+    /** Скаляры директивы {@code pointers}: кроме {@link #API_SCALARS} - элементы {@code byte[]} и {@code short[]}. */
+    public static final Set<String> POINTER_SCALARS = Set.of("f32", "f64", "i32", "i64", "i8", "i16");
     /** Допустимое число компонент вектора (совпадает с {@code Types} в модуле {@code ir}, правило IR-T07). */
     public static final Set<Integer> API_LANES = Set.of(2, 3, 4, 8, 16);
 
@@ -128,7 +131,9 @@ public final class BuiltinsDef {
                 }
                 case "pointers" -> {
                     for (String s : words(rest)) {
-                        requireScalar(s, no);
+                        if (!POINTER_SCALARS.contains(s)) {
+                            throw error(no, "pointers: type '" + s + "' has no Java pointer (allowed: " + POINTER_SCALARS + ")");
+                        }
                         pointerScalars.add(s);
                     }
                 }

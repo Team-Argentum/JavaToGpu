@@ -50,7 +50,10 @@ public final class ApiGenerator {
             "f32", new Scalar("f32", "float", "Float", "Float.floatToIntBits(%s) == Float.floatToIntBits(%s)", "Float"),
             "f64", new Scalar("f64", "double", "Double", "Double.doubleToLongBits(%s) == Double.doubleToLongBits(%s)", "Double"),
             "i32", new Scalar("i32", "int", "Int", "", "Integer"),
-            "i64", new Scalar("i64", "long", "Long", "", "Long"));
+            "i64", new Scalar("i64", "long", "Long", "", "Long"),
+            // только указатели (директива pointers): элементы byte[]/short[], на устройстве char/short
+            "i8", new Scalar("i8", "byte", "Byte", "", "Byte"),
+            "i16", new Scalar("i16", "short", "Short", "", "Short"));
 
     private static final Map<String, String> FIXED_JAVA = Map.of(
             "void", "void", "bool", "boolean", "i32", "int", "i64", "long", "f32", "float", "f64", "double");

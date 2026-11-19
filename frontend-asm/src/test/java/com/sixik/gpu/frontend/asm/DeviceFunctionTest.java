@@ -201,6 +201,8 @@ class DeviceFunctionTest {
                 import com.sixik.gpu.api.annotations.Kernel;
                 import com.sixik.gpu.api.annotations.Local;
                 import com.sixik.gpu.api.annotations.Private;
+                import com.sixik.gpu.api.annotations.WorkGroup;
+                import com.sixik.gpu.api.types.*;
 
                 public class D {
                 """ + body + "\n}\n";
@@ -288,6 +290,54 @@ class DeviceFunctionTest {
         assertTrue(java.success(), java.log());
         AsmFrontend.Result asm = AsmFrontend.compile(ClassSource.of(java.classes()), List.of("d.D"), AsmFrontend.Options.DEFAULT);
         assertSameIr(java, asm, "d.D", List.of("k"));
+    }
+
+    /** Указатели на {@code byte}/{@code short} (global, local, ссылка): IR обоих фронтендов совпадает. */
+    @Test
+    void byteAndShortPointersGiveTheSameIr() {
+        String src = kernelClass("""
+                @DeviceFunction
+                static int sumUnsigned(GlobalBytePtr p, int n) {
+                    int s = 0;
+                    for (int i = 0; i < n; i++) {
+                        s += p.get(i) & 0xFF;
+                    }
+                    return s;
+                }
+
+                @DeviceFunction
+                static void bump(LocalBytePtr t, int i) {
+                    t.set(i, (byte) (t.get(i) + 1));
+                }
+
+                @DeviceFunction
+                static void negate(ShortPtr r) {
+                    r.value = (short) -r.value;
+                }
+
+                @Kernel
+                @WorkGroup(x = 16)
+                public static void bytes(@Global int[] sums, @Global byte[] data, @Global short[] sh, @Global int[] tiles,
+                                         @Global int[] negs) {
+                    @Local byte[] tile = new byte[16];
+                    int gid = Gpu.getGlobalId(0);
+                    int lid = Gpu.getLocalId(0);
+                    tile[lid] = data[gid * 4];
+                    Gpu.barrier();
+                    bump(LocalBytePtr.of(tile, 0), lid);
+                    GlobalShortPtr s = GlobalShortPtr.of(sh, gid);
+                    ShortPtr r = new ShortPtr(s.get(0));
+                    negate(r);
+                    s.set(0, r.value);
+                    sums[gid] = sumUnsigned(GlobalBytePtr.of(data, gid * 4), 4);
+                    tiles[gid] = tile[lid];
+                    negs[gid] = r.value;
+                }
+                """);
+        JavacHarness.Outcome java = JavacHarness.compile(true, null, src);
+        assertTrue(java.success(), java.log());
+        AsmFrontend.Result asm = AsmFrontend.compile(ClassSource.of(java.classes()), List.of("d.D"), AsmFrontend.Options.DEFAULT);
+        assertSameIr(java, asm, "d.D", List.of("bytes"));
     }
 
     @Test

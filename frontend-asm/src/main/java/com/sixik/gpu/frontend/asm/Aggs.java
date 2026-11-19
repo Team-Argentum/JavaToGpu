@@ -37,7 +37,7 @@ final class Aggs {
     static final String STRUCT = "Lcom/sixik/gpu/api/annotations/Struct;";
 
     private static final Pattern VECTOR = Pattern.compile("(Float|Double|Int|Long)(2|3|4|8|16)");
-    private static final Pattern POINTER = Pattern.compile("(Global|Local|Constant)?(Float|Double|Int|Long)Ptr");
+    private static final Pattern POINTER = Pattern.compile("(Global|Local|Constant)?(Float|Double|Int|Long|Byte|Short)Ptr");
     private static final Pattern RESIDENT = Pattern.compile("Gpu(Float|Double|Int|Long)Array");
 
     /**
@@ -83,6 +83,8 @@ final class Aggs {
             case "Float" -> Kinds.K_FLOAT;
             case "Double" -> Kinds.K_DOUBLE;
             case "Int" -> Kinds.K_INT;
+            case "Byte" -> Kinds.K_BYTE;
+            case "Short" -> Kinds.K_SHORT;
             default -> Kinds.K_LONG;
         };
     }
