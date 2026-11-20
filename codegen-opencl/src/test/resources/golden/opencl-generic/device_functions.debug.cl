@@ -30,7 +30,7 @@ bool isOdd(long x)
     return (x & 1L) != 0L;
 }
 
-float scaled(__constant float* c, int c_len, int i)
+float scaled(__constant float* c, int i)
 {
     return c[i] * 2.0f;
 }
@@ -51,7 +51,7 @@ __kernel void device_functions(
         int out_i_len)
 {
     out_f[0] = sumArr(data, data_len);
-    out_f[1] = scaled(table, table_len, 2);
+    out_f[1] = scaled(table, 2);
     int scratch[5] = {0};
     fill(scratch, 5, 7);
     int sum = 0;

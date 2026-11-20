@@ -7,7 +7,7 @@
 #define JTG_RESTRICT restrict
 #endif
 
-void fold(__local int* tile, int tile_len, int lid, int s)
+void fold(__local int* tile, int lid, int s)
 {
 #line 35
     if (lid < s) {
@@ -39,7 +39,7 @@ __kernel void reduceSum(
 #line 49
         for (; s > 0; s = s >> 1) {
 #line 50
-            fold(tile, 64, lid, s);
+            fold(tile, lid, s);
         }
     }
 #line 52

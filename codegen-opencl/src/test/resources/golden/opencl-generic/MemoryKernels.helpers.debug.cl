@@ -9,7 +9,7 @@
 
 static inline int gpu_rem_i32(int a, int b) { return b == -1 ? 0 : a % b; }
 
-int sum(__global int* a, int a_len, int n)
+int sum(__global int* a, int n)
 {
 #line 28
     int s = 0;
@@ -26,7 +26,7 @@ int sum(__global int* a, int a_len, int n)
     return s;
 }
 
-void put(__global int* a, int a_len, int i, int v)
+void put(__global int* a, int i, int v)
 {
 #line 37
     a[i] = v;
@@ -63,11 +63,11 @@ __kernel void helpers(
 #line 114
     int g = (int)get_global_id(0);
 #line 115
-    out[(int)((uint)g * 4u)] = sum(in, in_len, (int)(1u + (uint)gpu_rem_i32(g, 5)));
+    out[(int)((uint)g * 4u)] = sum(in, (int)(1u + (uint)gpu_rem_i32(g, 5)));
 #line 116
-    put(out, out_len, (int)((uint)g * 4u + 1u), (int)((uint)twice(in[g]) + (uint)add(1, twice(2))));
+    put(out, (int)((uint)g * 4u + 1u), (int)((uint)twice(in[g]) + (uint)add(1, twice(2))));
 #line 117
-    out[(int)((uint)g * 4u + 2u)] = add(twice(g), sum(in, in_len, 2));
+    out[(int)((uint)g * 4u + 2u)] = add(twice(g), sum(in, 2));
 #line 118
     out[(int)((uint)g * 4u + 3u)] = in_len;
 #line 119

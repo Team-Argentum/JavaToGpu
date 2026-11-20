@@ -268,6 +268,7 @@ public final class Optimizer implements OptimizerPass {
                 }
                 changed |= step("simplify", this::simplify);
                 changed |= step("dead-functions", () -> DeadCode.markDeadFunctions(mt));
+                changed |= step("dead-params", () -> DeadParams.run(mt, Effects.analyze(mt)));
                 if (o.level() >= 2) {
                     changed |= step("coalesce", () -> perFunction((f, fn) -> Coalesce.run(fn, mt, fx)));
                     changed |= step("cse", () -> perFunction((f, fn) -> {

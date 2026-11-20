@@ -9,7 +9,7 @@
 
 static inline int gpu_rem_i32(int a, int b) { return b == -1 ? 0 : a % b; }
 
-int f0(__global int* p0, int p0_len, int p1)
+int f0(__global int* p0, int p1)
 {
     int v0 = 0;
     {
@@ -21,7 +21,7 @@ int f0(__global int* p0, int p0_len, int p1)
     return v0;
 }
 
-void f1(__global int* p0, int p0_len, int p1, int p2)
+void f1(__global int* p0, int p1, int p2)
 {
     p0[p1] = p2;
 }
@@ -52,9 +52,9 @@ __kernel void k5(
         int p3_len)
 {
     int v0 = (int)get_global_id(0);
-    p2[(int)((uint)v0 * 4u)] = f0(p0, p0_len, (int)(1u + (uint)gpu_rem_i32(v0, 5)));
-    f1(p2, p2_len, (int)((uint)v0 * 4u + 1u), (int)((uint)f3(p0[v0]) + (uint)f2(1, f3(2))));
-    p2[(int)((uint)v0 * 4u + 2u)] = f2(f3(v0), f0(p0, p0_len, 2));
+    p2[(int)((uint)v0 * 4u)] = f0(p0, (int)(1u + (uint)gpu_rem_i32(v0, 5)));
+    f1(p2, (int)((uint)v0 * 4u + 1u), (int)((uint)f3(p0[v0]) + (uint)f2(1, f3(2))));
+    p2[(int)((uint)v0 * 4u + 2u)] = f2(f3(v0), f0(p0, 2));
     p2[(int)((uint)v0 * 4u + 3u)] = p0_len;
     p3[v0] = f4(p1[v0], p1[gpu_rem_i32((int)((uint)v0 + 1u), p1_len)], 0.25f);
 }

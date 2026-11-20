@@ -236,6 +236,7 @@ public final class OpenClEmitter {
         Layouts layouts = new Layouts(m, Support.usedTypes(m, reach), options.debug(), global);
         StringBuilder bodies = new StringBuilder();
         java.util.Map<Integer, List<KernelArg>> args = new java.util.HashMap<>();
+        boolean[][] lengths = Lengths.used(m, reach, isKernel);
         for (int f = 0; f < n; f++) {
             if (!reach[f]) {
                 continue;
@@ -245,6 +246,7 @@ public final class OpenClEmitter {
             FunctionEmitter fe = new FunctionEmitter(m, f, options, helpers, layouts, funcNames, global, nativeMath,
                     fp[f]);
             fe.tables = tables;
+            fe.lengths = lengths;
             if (isKernel[f]) {
                 List<KernelArg> a = new ArrayList<>();
                 kernelArgs(m, f, fe, a);

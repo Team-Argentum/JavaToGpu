@@ -655,6 +655,39 @@ class EmitterTest {
     }
 
     /**
+     * Длина массива передаётся device-функции, только если она её читает сама или через вызываемую: {@code f0}
+     * читает длину, {@code f1} передаёт массив в {@code f0} (длина нужна), {@code f2} только индексирует, {@code f3}
+     * передаёт в {@code f2} (длина не нужна). У ядра длины - ABI, они остаются.
+     */
+    @Test
+    void lengthsArePassedOnlyWhereRead() {
+        IrBuilder b = new IrBuilder();
+        int g = b.array(AddressSpace.GLOBAL, Types.I32);
+        int f0 = b.beginFunction(IrModule.DEVICE, Types.I32, g);
+        b.endFunction(b.block(b.returnStmt(b.arrayLen(b.param(0)))));
+        int f1 = b.beginFunction(IrModule.DEVICE, Types.I32, g);
+        b.endFunction(b.block(b.returnStmt(b.call(f0, b.param(0)))));
+        int f2 = b.beginFunction(IrModule.DEVICE, Types.I32, g);
+        b.endFunction(b.block(b.returnStmt(b.load(b.elemPtr(b.param(0), b.constI32(1))))));
+        int f3 = b.beginFunction(IrModule.DEVICE, Types.I32, g);
+        b.endFunction(b.block(b.returnStmt(b.call(f2, b.param(0)))));
+        b.beginFunction(IrModule.KERNEL, Types.VOID, g);
+        b.endFunction(b.block(b.store(b.elemPtr(b.param(0), b.constI32(0)),
+                b.binary(Op.ADD, b.call(f1, b.param(0)), b.call(f3, b.param(0))))));
+        Result<ClProgram> res = OpenClEmitter.program(b.build(), EmitOptions.RELEASE);
+        assertTrue(res.isOk(), res.diagnostics().toString());
+        String src = res.value().source();
+        assertTrue(src.contains("int f0(__global int* p0, int p0_len)"), src);
+        assertTrue(src.contains("int f1(__global int* p0, int p0_len)"), src);
+        assertTrue(src.contains("return f0(p0, p0_len);"), src);
+        assertTrue(src.contains("int f2(__global int* p0)\n"), src);
+        assertTrue(src.contains("int f3(__global int* p0)\n"), src);
+        assertTrue(src.contains("return f2(p0);"), src);
+        assertTrue(src.contains("__kernel void k4(__global int* JTG_RESTRICT p0, int p0_len)"), src);
+        assertTrue(src.contains("f1(p0, p0_len)") && src.contains("f3(p0)"), src);
+    }
+
+    /**
      * {@code restrict} (через макрос {@link Aliasing#MACRO}) - только на {@code __global}-буферах ядра: не на
      * {@code __constant} и не на параметрах device-функций; {@link ClProgram.KernelAbi#aliasConflict} видит перекрытие
      * записанного буфера и не видит двойного чтения.
@@ -676,7 +709,7 @@ class EmitterTest {
                 src);
         assertTrue(src.contains("        __global float* JTG_RESTRICT p0,\n        int p0_len,\n"
                 + "        __global float* JTG_RESTRICT p1,\n        int p1_len,\n        __constant float* p2,\n"), src);
-        assertTrue(src.contains("float f0(__global float* p0, int p0_len)"), src);
+        assertTrue(src.contains("float f0(__global float* p0)"), src);
 
         ClProgram.KernelAbi abi = res.value().kernels().get(0);
         assertTrue(abi.params().get(0).restricted());

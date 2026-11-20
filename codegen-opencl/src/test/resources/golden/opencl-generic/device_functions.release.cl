@@ -30,7 +30,7 @@ bool f2(long p0)
     return (p0 & 1L) != 0L;
 }
 
-float f3(__constant float* p0, int p0_len, int p1)
+float f3(__constant float* p0, int p1)
 {
     return p0[p1] * 2.0f;
 }
@@ -51,7 +51,7 @@ __kernel void k5(
         int p3_len)
 {
     p2[0] = f0(p0, p0_len);
-    p2[1] = f3(p1, p1_len, 2);
+    p2[1] = f3(p1, 2);
     int v0[5] = {0};
     f1(v0, 5, 7);
     int v1 = 0;

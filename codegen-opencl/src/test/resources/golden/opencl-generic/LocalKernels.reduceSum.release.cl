@@ -7,7 +7,7 @@
 #define JTG_RESTRICT restrict
 #endif
 
-void f0(__local int* p0, int p0_len, int p1, int p2)
+void f0(__local int* p0, int p1, int p2)
 {
     if (p1 < p2) {
         p0[p1] = (int)((uint)p0[p1] + (uint)p0[(int)((uint)p1 + (uint)p2)]);
@@ -29,7 +29,7 @@ __kernel void k1(
     {
         int v2 = 32;
         for (; v2 > 0; v2 = v2 >> 1) {
-            f0(v0, 64, v1, v2);
+            f0(v0, v1, v2);
         }
     }
     if (v1 == 0) {

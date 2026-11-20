@@ -159,6 +159,21 @@ final class FunctionEmitter {
     }
 
     /**
+     * Нужные длины параметров-массивов ({@link Lengths#used}); {@code null} - передавать все.
+     */
+    boolean[][] lengths;
+
+    /**
+     * @param g функция
+     * @param i параметр-массив
+     * @return передаётся ли аргумент длины этого параметра
+     */
+    private boolean needsLength(int g, int i) {
+        return lengths == null || g < 0 || g >= lengths.length || lengths[g] == null || i >= lengths[g].length
+                || lengths[g][i];
+    }
+
+    /**
      * Печатает функцию целиком.
      *
      * @param kernel {@code true} для точки входа
@@ -200,7 +215,9 @@ final class FunctionEmitter {
                 String restrict = kernel && Types.space(m, t) == AddressSpace.GLOBAL ? Aliasing.MACRO + " " : "";
                 params.add(CTypes.space(Types.space(m, t)) + " " + lay.type(Types.elem(m, t)) + "* " + restrict
                         + paramNames[i]);
-                params.add("int " + lenNames[i]);
+                if (needsLength(f, i)) {
+                    params.add("int " + lenNames[i]);
+                }
             } else {
                 params.add(lay.type(t) + " " + paramNames[i]);
             }
@@ -1195,7 +1212,10 @@ final class FunctionEmitter {
             }
             first = false;
             if (isArray(arg)) {
-                sb.append(arrayName(arg)).append(", ").append(lengthOf(arg));
+                sb.append(arrayName(arg));
+                if (needsLength(callee, k)) {
+                    sb.append(", ").append(lengthOf(arg));
+                }
             } else {
                 sb.append(expr(arg).s());
             }
